@@ -1,14 +1,23 @@
 // ========================================
+// EDGE POLYFILL — Must be at module level
+// Cloudflare Workers lack XMLHttpRequest which Next.js checks at load time
+// ========================================
+if (typeof globalThis.XMLHttpRequest === 'undefined') {
+  (globalThis as any).XMLHttpRequest = class XMLHttpRequestStub {
+    open() {}
+    send() {}
+    setRequestHeader() {}
+    abort() {}
+    getAllResponseHeaders() { return ''; }
+    getResponseHeader() { return null; }
+    overrideMimeType() {}
+  };
+}
+
+// ========================================
 // LIGHTWEIGHT DATABASE CLIENT — Edge Compatible
 // Uses @libsql/client/http for pure HTTP transport
-// NO Prisma, NO WASM, NO Node.js APIs, NO XHR
 // ========================================
-//
-// CRITICAL: @libsql/client/http uses native fetch() directly.
-// The /http export only supports HTTP connections (no local SQLite),
-// which is exactly what we need for Turso in Edge Workers.
-// This avoids @libsql/client/node (uses XHR) and @libsql/client/web
-// (which may still pull in polyfills).
 
 import { createClient, Client } from '@libsql/client/http';
 
