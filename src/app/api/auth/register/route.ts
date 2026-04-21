@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
         email: emailLower,
         name: (name || '').trim(),
         avatarUrl: '',
+        isAdmin: false,
       },
       token,
       tenantId,

@@ -16,9 +16,9 @@ export async function GET(request: NextRequest) {
 
     const token = authHeader.replace('Bearer ', '');
 
-    // Buscar token + usuario
+    // Buscar token + usuario (incluyendo isAdmin)
     const result = await db.execute(
-      `SELECT t.id as tokenId, t.expiresAt, u.id as userId, u.email, u.name, u.avatarUrl, u.tenantId, u.googleId
+      `SELECT t.id as tokenId, t.expiresAt, u.id as userId, u.email, u.name, u.avatarUrl, u.tenantId, u.googleId, u.isAdmin
        FROM AuthToken t
        JOIN AuthUser u ON u.id = t.userId
        WHERE t.token = ?`,
@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
         avatarUrl: row.avatarUrl,
         tenantId: row.tenantId,
         googleId: row.googleId,
+        isAdmin: Boolean(row.isAdmin),
       },
     });
   } catch (error) {

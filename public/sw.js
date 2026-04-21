@@ -1,32 +1,35 @@
 // ========================================
 // ATLAS SERVICE WORKER — PWA Engine
 // Cloudflare Pages compatible (static file)
+// Pure vanilla JS — NO TypeScript syntax
 // ========================================
 //
 // Strategies:
-//   API routes    → NetworkFirst (tries online, cached fallback)
-//   Static assets → CacheFirst (CDN speed)
-//   App shell     → StaleWhileRevalidate (instant + update)
-//   Offline       → Custom offline fallback page
+//   API routes    -> NetworkFirst (tries online, cached fallback)
+//   Static assets -> CacheFirst (CDN speed)
+//   App shell     -> StaleWhileRevalidate (instant + update)
+//   Offline       -> Custom offline fallback page
 
-const CACHE_NAME = 'atlas-v1';
-const OFFLINE_URL = '/offline.html';
-const PRECACHE_URLS = [
+var CACHE_NAME = 'atlas-v2';
+var OFFLINE_URL = '/offline.html';
+var PRECACHE_URLS = [
   '/',
   '/manifest.json',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
+  '/offline.html'
 ];
 
 // ========================================
 // INSTALL — Precache core assets
 // ========================================
-self.addEventListener('install', (event) => {
+
+self.addEventListener('install', function(event) {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    caches.open(CACHE_NAME).then(function(cache) {
       return cache.addAll(PRECACHE_URLS);
-    }).then(() => {
-      return (self as unknown as ServiceWorkerGlobalScope).skipWaiting();
+    }).then(function() {
+      return self.skipWaiting();
     })
   );
 });
@@ -34,14 +37,15 @@ self.addEventListener('install', (event) => {
 // ========================================
 // ACTIVATE — Clean old caches
 // ========================================
-self.addEventListener('activate', (event) => {
+
+self.addEventListener('activate', function(event) {
   event.waitUntil(
-    caches.keys().then((names) => {
+    caches.keys().then(function(names) {
       return Promise.all(
-        names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))
+        names.filter(function(n) { return n !== CACHE_NAME; }).map(function(n) { return caches.delete(n); })
       );
-    }).then(() => {
-      return (self as unknown as ServiceWorkerGlobalScope).clients.claim();
+    }).then(function() {
+      return self.clients.claim();
     })
   );
 });
@@ -49,20 +53,21 @@ self.addEventListener('activate', (event) => {
 // ========================================
 // FETCH — Route strategies
 // ========================================
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-  const method = event.request.method;
+
+self.addEventListener('fetch', function(event) {
+  var url = new URL(event.request.url);
+  var method = event.request.method;
 
   // Only intercept GET requests
   if (method !== 'GET') return;
 
-  // API routes → NetworkFirst
+  // API routes -> NetworkFirst
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(networkFirst(event.request));
     return;
   }
 
-  // Static assets → CacheFirst
+  // Static assets -> CacheFirst
   if (
     url.pathname.startsWith('/icons/') ||
     url.pathname.startsWith('/_next/static/') ||
@@ -75,13 +80,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML pages → StaleWhileRevalidate
+  // HTML pages -> StaleWhileRevalidate
   if (
-    event.request.headers.get('accept')?.includes('text/html') ||
+    event.request.headers.get('accept') &&
+    event.request.headers.get('accept').indexOf('text/html') !== -1
+  ) {
+    event.respondWith(staleWhileRevalidate(event.request));
+    return;
+  }
+
+  // Page routes -> StaleWhileRevalidate
+  if (
     url.pathname === '/' ||
-    url.pathname.startsWith('/login') ||
-    url.pathname.startsWith('/register') ||
-    url.pathname.startsWith('/admin')
+    url.pathname.indexOf('/login') === 0 ||
+    url.pathname.indexOf('/register') === 0 ||
+    url.pathname.indexOf('/admin') === 0
   ) {
     event.respondWith(staleWhileRevalidate(event.request));
     return;
@@ -92,72 +105,77 @@ self.addEventListener('fetch', (event) => {
 // STRATEGIES
 // ========================================
 
-async function networkFirst(request: Request): Promise<Response> {
-  try {
-    const response = await fetch(request);
+function networkFirst(request) {
+  return fetch(request).then(function(response) {
     if (response.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone());
+      var cloned = response.clone();
+      caches.open(CACHE_NAME).then(function(cache) {
+        cache.put(request, cloned);
+      });
     }
     return response;
-  } catch {
-    const cached = await caches.match(request);
+  }).catch(function() {
+    return caches.match(request).then(function(cached) {
+      if (cached) return cached;
+      return new Response(
+        JSON.stringify({ error: 'Sin conexion', offline: true }),
+        { status: 503, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+  });
+}
+
+function cacheFirst(request) {
+  return caches.match(request).then(function(cached) {
     if (cached) return cached;
-    return new Response(
-      JSON.stringify({ error: 'Sin conexion', offline: true }),
-      { status: 503, headers: { 'Content-Type': 'application/json' } }
-    );
-  }
-}
 
-async function cacheFirst(request: Request): Promise<Response> {
-  const cached = await caches.match(request);
-  if (cached) return cached;
-
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch {
-    return new Response('', { status: 408, statusText: 'Offline' });
-  }
-}
-
-async function staleWhileRevalidate(request: Request): Promise<Response> {
-  const cache = await caches.open(CACHE_NAME);
-  const cached = await cache.match(request);
-
-  const fetchPromise = fetch(request)
-    .then((response) => {
+    return fetch(request).then(function(response) {
       if (response.ok) {
-        cache.put(request, response.clone());
+        var cloned = response.clone();
+        caches.open(CACHE_NAME).then(function(cache) {
+          cache.put(request, cloned);
+        });
       }
       return response;
-    })
-    .catch(() => cached || new Response('Offline', { status: 503 }));
+    }).catch(function() {
+      return new Response('', { status: 408, statusText: 'Offline' });
+    });
+  });
+}
 
-  return cached || fetchPromise;
+function staleWhileRevalidate(request) {
+  return caches.open(CACHE_NAME).then(function(cache) {
+    return cache.match(request).then(function(cached) {
+      var fetchPromise = fetch(request).then(function(response) {
+        if (response.ok) {
+          cache.put(request, response.clone());
+        }
+        return response;
+      }).catch(function() {
+        return cached || new Response('Offline', { status: 503 });
+      });
+
+      return cached || fetchPromise;
+    });
+  });
 }
 
 // ========================================
 // PUSH NOTIFICATIONS — Stub for Executive Plan
 // ========================================
 
-self.addEventListener('push', (event) => {
-  let data: { title?: string; body?: string; url?: string } = {};
+self.addEventListener('push', function(event) {
+  var data = {};
   if (event.data) {
     try {
       data = event.data.json();
-    } catch {
+    } catch (e) {
       data = { title: 'Atlas', body: event.data.text() };
     }
   }
 
-  const title = data.title || 'Atlas';
-  const options: NotificationOptions = {
+  var title = data.title || 'Atlas';
+  var options = {
     body: data.body || 'Tienes una nueva alerta.',
     icon: '/icons/icon-192x192.png',
     badge: '/icons/icon-192x192.png',
@@ -165,8 +183,8 @@ self.addEventListener('push', (event) => {
     data: { url: data.url || '/' },
     actions: [
       { action: 'open', title: 'Abrir Atlas' },
-      { action: 'dismiss', title: 'Ignorar' },
-    ],
+      { action: 'dismiss', title: 'Ignorar' }
+    ]
   };
 
   event.waitUntil(
@@ -174,22 +192,21 @@ self.addEventListener('push', (event) => {
   );
 });
 
-self.addEventListener('notificationclick', (event) => {
+self.addEventListener('notificationclick', function(event) {
   event.notification.close();
 
   if (event.action === 'dismiss') return;
 
-  const targetUrl = event.notification.data?.url || '/';
+  var targetUrl = (event.notification.data && event.notification.data.url) || '/';
+
   event.waitUntil(
-    self.clients.matchAll({ type: 'window' }).then((clients) => {
-      for (const client of clients) {
-        if (client.url === targetUrl && 'focus' in client) {
-          return client.focus();
+    self.clients.matchAll({ type: 'window' }).then(function(clients) {
+      for (var i = 0; i < clients.length; i++) {
+        if (clients[i].url === targetUrl && 'focus' in clients[i]) {
+          return clients[i].focus();
         }
       }
       return self.clients.openWindow(targetUrl);
     })
   );
 });
-
-export {};

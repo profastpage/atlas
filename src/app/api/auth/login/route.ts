@@ -19,9 +19,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Buscar usuario
+    // Buscar usuario (incluyendo isAdmin)
     const result = await db.execute(
-      `SELECT u.id, u.email, u.passwordHash, u.name, u.avatarUrl, u.googleId, u.tenantId
+      `SELECT u.id, u.email, u.passwordHash, u.name, u.avatarUrl, u.googleId, u.tenantId, u.isAdmin
        FROM AuthUser u WHERE u.email = ?`,
       [email.toLowerCase().trim()]
     );
@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
         email: user.email,
         name: user.name,
         avatarUrl: user.avatarUrl,
+        isAdmin: Boolean(user.isAdmin),
       },
       token,
       tenantId: user.tenantId,

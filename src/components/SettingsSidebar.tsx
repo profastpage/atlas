@@ -15,7 +15,7 @@ import {
 interface SettingsSidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  user: { id: string; email: string; name: string; tenantId: string } | null;
+  user: { id: string; email: string; name: string; tenantId: string; isAdmin?: boolean } | null;
   token: string;
   onOpenAdmin: () => void;
   forcePaywall?: boolean;
@@ -107,7 +107,7 @@ export default function SettingsSidebar({
   const [editName, setEditName] = useState('');
   const [userPlan, setUserPlan] = useState<UserPlan | null>(null);
   const [loadingPlan, setLoadingPlan] = useState(false);
-  const isAdmin = user?.email?.toLowerCase().includes('admin') ?? false;
+  const isAdmin = user?.isAdmin === true;
 
   // ---- Fetch user subscription on open ----
   useEffect(() => {
