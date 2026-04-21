@@ -341,9 +341,11 @@ export default function AtlasApp() {
         return;
       }
 
-      // CHECK 3: No plan, no trial — block
+      // CHECK 3: No plan, no trial — show plans immediately
       setHasActivePlan(false);
       setTrialInfo(null);
+      // Auto-open plan selection sidebar so user can choose and pay
+      setTimeout(() => setShowSettings(true), 500);
     } catch {
       setHasActivePlan(false);
       setTrialInfo(null);
@@ -1231,14 +1233,13 @@ export default function AtlasApp() {
       <SettingsSidebar
         isOpen={showSettings}
         onClose={() => {
-          // Free users cannot close settings AFTER exhausting 5 free responses
-          const paywallActive = trialBotResponses >= FREE_BOT_RESPONSES && hasActivePlan !== true;
-          if (isAuthenticated && paywallActive) return;
+          // Cannot close sidebar when paywall is active (no plan)
+          if (isAuthenticated && hasActivePlan === false) return;
           setShowSettings(false);
         }}
         user={userInfo ? { ...userInfo, tenantId } : null}
         token={token || ''}
-        forcePaywall={isAuthenticated && hasActivePlan !== true && trialBotResponses >= FREE_BOT_RESPONSES}
+        forcePaywall={isAuthenticated && hasActivePlan === false}
         userPlanType={userPlanType}
       />
 
@@ -1683,7 +1684,7 @@ export default function AtlasApp() {
               <a href="/login" className="text-emerald-400 hover:text-emerald-300 underline">
                 Inicia sesion
               </a>{' '}
-              para acceso ilimitado.
+              para obtener mas funciones profesionales.
             </span>
           </div>
         )}
