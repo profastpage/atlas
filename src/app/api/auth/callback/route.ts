@@ -9,18 +9,34 @@ import { getSupabaseServer } from '@/lib/supabase';
 import { db } from '@/lib/sql';
 import { generateToken, hashPassword } from '@/lib/password';
 
+const APP_URL = 'https://atlas-9mv.pages.dev';
+
 export async function GET(request: NextRequest) {
-  const supabase = getSupabaseServer();
-  if (!supabase) {
-    return NextResponse.redirect(new URL('/login?error=oauth_unavailable', request.url));
+  const { searchParams } = new URL(request.url);
+  const code = searchParams.get('code');
+  const errorParam = searchParams.get('error');
+
+  // If Supabase itself returned an error in the callback
+  if (errorParam) {
+    console.error('[OAUTH_CALLBACK] Supabase error param:', errorParam);
+    const desc = searchParams.get('error_description') || errorParam;
+    return NextResponse.redirect(`${APP_URL}/?_auth_error=${encodeURIComponent(desc)}`);
   }
 
-  const { searchParams } = new URL(request.url);
-  const APP_URL = 'https://atlas-9mv.pages.dev';
-  const code = searchParams.get('code');
-
   if (!code) {
-    return NextResponse.redirect(new URL('/login?error=no_code', request.url));
+    return NextResponse.redirect(`${APP_URL}/?_auth_error=no_code`);
+  }
+
+  let supabase;
+  try {
+    supabase = getSupabaseServer();
+  } catch (err) {
+    console.error('[OAUTH_CALLBACK] getSupabaseServer failed:', err);
+    return NextResponse.redirect(`${APP_URL}/?_auth_error=supabase_init`);
+  }
+
+  if (!supabase) {
+    return NextResponse.redirect(`${APP_URL}/?_auth_error=supabase_null`);
   }
 
   try {
@@ -29,7 +45,7 @@ export async function GET(request: NextRequest) {
 
     if (error || !data.session) {
       console.error('[OAUTH_CALLBACK] exchange error:', error);
-      return NextResponse.redirect(new URL('/login?error=oauth_failed', request.url));
+      return NextResponse.redirect(`${APP_URL}/?_auth_error=exchange_failed:${encodeURIComponent(error?.message || 'unknown')}`);
     }
 
     const sbUser = data.session.user;
@@ -39,7 +55,7 @@ export async function GET(request: NextRequest) {
     const avatarUrl = sbUser.user_metadata?.avatar_url || sbUser.user_metadata?.picture || null;
 
     if (!email) {
-      return NextResponse.redirect(new URL('/login?error=no_email', request.url));
+      return NextResponse.redirect(`${APP_URL}/?_auth_error=no_email`);
     }
 
     // 2. Check if user exists in Turso
@@ -53,7 +69,6 @@ export async function GET(request: NextRequest) {
     let isAdmin = false;
 
     if (existing.rows.length > 0) {
-      // Existing user — update Google ID if missing
       userId = existing.rows[0].id as string;
       tenantId = existing.rows[0].tenantId as string;
       isAdmin = Boolean(existing.rows[0].isAdmin);
@@ -63,11 +78,9 @@ export async function GET(request: NextRequest) {
         [googleId, avatarUrl, new Date().toISOString(), userId]
       );
     } else {
-      // New user — create in Turso
       userId = crypto.randomUUID();
       tenantId = crypto.randomUUID();
 
-      // Create a random password for Turso (Google users don't need it)
       const randomPwd = crypto.randomUUID();
       const passwordHash = await hashPassword(randomPwd);
 
@@ -77,12 +90,11 @@ export async function GET(request: NextRequest) {
         [userId, email, passwordHash, name, avatarUrl, googleId, tenantId, new Date().toISOString(), new Date().toISOString()]
       );
 
-      // Create Supabase profile
       try {
         await supabase.from('profiles').upsert(
-            { id: tenantId, plan_type: 'free' },
-            { onConflict: 'id' }
-          );
+          { id: tenantId, plan_type: 'free' },
+          { onConflict: 'id' }
+        );
       } catch (err) {
         console.error('[OAUTH_CALLBACK] profile upsert:', err);
       }
@@ -98,14 +110,15 @@ export async function GET(request: NextRequest) {
       [crypto.randomUUID(), userId, token, expiresAt.toISOString(), new Date().toISOString()]
     );
 
-    // 4. Redirect to main page with auth data (URL fragment — not sent to server)
+    // 4. Redirect to main page with auth data
     const userData = JSON.stringify({ id: userId, email, name, avatarUrl, isAdmin });
     const encodedUser = encodeURIComponent(userData);
     const redirectTo = `${APP_URL}/?_auth=1&token=${encodeURIComponent(token)}&tenantId=${encodeURIComponent(tenantId)}&user=${encodedUser}`;
 
     return NextResponse.redirect(redirectTo);
   } catch (error) {
-    console.error('[OAUTH_CALLBACK]', error);
-    return NextResponse.redirect(new URL('/login?error=internal', request.url));
+    console.error('[OAUTH_CALLBACK] fatal:', error);
+    const msg = error instanceof Error ? error.message : 'internal_error';
+    return NextResponse.redirect(`${APP_URL}/?_auth_error=catch:${encodeURIComponent(msg)}`);
   }
 }

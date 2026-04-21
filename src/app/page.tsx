@@ -148,8 +148,19 @@ export default function AtlasApp() {
   // ========================================
   useEffect(() => {
     // ---- CHECK FOR OAUTH CALLBACK PARAMS ----
-    // After Google OAuth, /api/auth/callback redirects here with token/tenantId/user
     const params = new URLSearchParams(window.location.search);
+
+    // ---- OAUTH ERROR ----
+    const authError = params.get('_auth_error');
+    if (authError) {
+      window.history.replaceState({}, '', '/');
+      console.error('[OAUTH ERROR]', authError);
+      // Show error to user via alert so we can debug
+      alert(`Error de autenticación: ${decodeURIComponent(authError)}. Contacta soporte.`);
+      return;
+    }
+
+    // ---- OAUTH SUCCESS ----
     const authParam = params.get('_auth');
     if (authParam === '1') {
       const oauthToken = params.get('token');
