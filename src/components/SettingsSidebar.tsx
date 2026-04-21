@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, LogOut, Edit3, Check, ShieldCheck, ChevronRight,
-  Crown, Zap, CheckCircle2, FileText, Bell, Star, Trash2, Clock
+  X, LogOut, Edit3, Check,
+  Crown, Zap, CheckCircle2, Bell, Star, Trash2, Clock
 } from 'lucide-react';
 
 // ========================================
@@ -24,7 +24,6 @@ interface SettingsSidebarProps {
   onClose: () => void;
   user: { id: string; email: string; name: string; tenantId: string; isAdmin?: boolean } | null;
   token: string;
-  onOpenAdmin: () => void;
   forcePaywall?: boolean;
   userPlanType?: string;
 }
@@ -108,7 +107,6 @@ export default function SettingsSidebar({
   isOpen,
   onClose,
   user,
-  onOpenAdmin,
   forcePaywall = false,
   userPlanType = '',
 }: SettingsSidebarProps) {
@@ -345,22 +343,12 @@ export default function SettingsSidebar({
                     </div>
                   </div>
                 ) : (
-                  /* ---- PAYWALL: NO ACTIVE PLAN ---- */
+                  /* ---- NO PLAN — SHOW PLANS DIRECTLY ---- */
                   <>
-                    <div className="bg-gradient-to-br from-gray-800/50 to-gray-800/30 rounded-xl p-4 border border-gray-700/30 mb-4">
-                      <div className="flex items-center gap-2.5 mb-1">
-                        <Crown className="w-5 h-5 text-amber-400" />
-                        <span className="text-sm font-semibold text-gray-300">Plan Gratuito</span>
-                      </div>
-                      <p className="text-[11px] text-gray-500 ml-[30px]">
-                        Mensajes limitados. Mejora tu experiencia.
-                      </p>
-                    </div>
-
                     {/* Upgrade CTA */}
                     <div className="text-center mb-4">
                       <p className="text-sm font-bold text-white">
-                        Accede al potencial completo de Atlas
+                        Activa tu plan para continuar
                       </p>
                       <p className="text-[11px] text-gray-500 mt-1">
                         Elige el plan que se adapte a tu ritmo
@@ -514,34 +502,7 @@ export default function SettingsSidebar({
                 </>
               )}
 
-              {/* ===== ADMIN ACCESS ===== */}
-              {isAdmin && (
-                <>
-                  <div className="border-t border-gray-800/40 my-5" />
-                  <section aria-label="Administracion">
-                    <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
-                      Administracion
-                    </h3>
-                    <button
-                      onClick={onOpenAdmin}
-                      className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/15 transition-all active:scale-[0.98] group"
-                    >
-                      <div className="w-9 h-9 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
-                        <ShieldCheck className="w-5 h-5 text-amber-400" />
-                      </div>
-                      <div className="text-left flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-amber-300">
-                          Panel de Administracion
-                        </p>
-                        <p className="text-[11px] text-amber-400/60">
-                          Metricas, usuarios, planes
-                        </p>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-amber-400/40 group-hover:text-amber-400 shrink-0" />
-                    </button>
-                  </section>
-                </>
-              )}
+              {/* Admin panel: hidden, accessible only via /admin URL */}
 
               <div className="border-t border-gray-800/40 my-5" />
 

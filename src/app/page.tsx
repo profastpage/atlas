@@ -1227,7 +1227,6 @@ export default function AtlasApp() {
         }}
         user={userInfo ? { ...userInfo, tenantId } : null}
         token={token || ''}
-        onOpenAdmin={() => { setShowSettings(false); window.location.href = '/admin'; }}
         forcePaywall={isAuthenticated && hasActivePlan !== true && trialBotResponses >= FREE_BOT_RESPONSES}
         userPlanType={userPlanType}
       />
@@ -1818,10 +1817,10 @@ export default function AtlasApp() {
       </div>
 
       {/* ====================================================================
-          UNIFIED PAYWALL — 5 responses block EVERYONE without paid plan
+          UNIFIED PAYWALL — 5 trial responses, then plans required for ALL users
           REGLA: !isStreaming && trialBotResponses >= 5 && hasActivePlan !== true
-          - Guest: "Iniciar Sesion" CTA
-          - Logged-in no plan: "Ver Planes" CTA
+          - Guest: sees plan selection + login CTA
+          - Logged-in no plan: sees plan selection + logout
           - Logged-in with plan: paywall NEVER shows (hasActivePlan === true)
           - During plan check: loading overlay handles it (checkingPlan === true)
           ==================================================================== */}
@@ -1832,57 +1831,37 @@ export default function AtlasApp() {
             <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
               {/* Icon */}
               <div className="text-center mb-5">
-                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border ${
-                  isAuthenticated
-                    ? 'bg-gradient-to-br from-amber-500/20 to-amber-600/5 border-amber-500/20'
-                    : 'bg-gradient-to-br from-emerald-500/20 to-emerald-600/5 border-emerald-500/20'
-                }`}>
-                  {isAuthenticated ? (
-                    <AlertTriangle className="w-8 h-8 text-amber-400" />
-                  ) : (
-                    <Lock className="w-8 h-8 text-emerald-400" />
-                  )}
+                <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-gradient-to-br from-amber-500/20 to-amber-600/5 border border-amber-500/20">
+                  <AlertTriangle className="w-8 h-8 text-amber-400" />
                 </div>
                 <h2 className="text-xl font-bold text-white">
-                  {isAuthenticated
-                    ? 'Selecciona un plan para continuar'
-                    : `Has utilizado tus ${FREE_BOT_RESPONSES} mensajes de prueba`
-                  }
+                  Selecciona un plan para continuar
                 </h2>
                 <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-                  {isAuthenticated
-                    ? 'El chat esta bloqueado hasta que actives un plan de suscripcion.'
-                    : 'Inicia sesion para continuar con tu Asesor Estrategico de Elite.'
-                  }
+                  Has utilizado tus {FREE_BOT_RESPONSES} mensajes de prueba. Activa una suscripcion para seguir usando tu Asesor Estrategico de Elite.
                 </p>
               </div>
 
-              {/* Action Button */}
+              {/* Action Buttons */}
               <div className="space-y-3">
                 {isAuthenticated ? (
-                  <>
-                    <button
-                      onClick={() => setShowSettings(true)}
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-gray-950 text-sm font-bold transition-all active:scale-[0.98] shadow-lg shadow-amber-500/20"
-                    >
-                      <Settings className="w-4 h-4" />
-                      Ver Planes
-                    </button>
-                    <button
-                      onClick={logout}
-                      className="w-full py-2.5 rounded-xl text-gray-500 text-sm hover:text-gray-300 transition-colors"
-                    >
-                      Cerrar Sesion
-                    </button>
-                  </>
-                ) : (
-                  <a
-                    href="/login"
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
+                  <button
+                    onClick={() => setShowSettings(true)}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-gray-950 text-sm font-bold transition-all active:scale-[0.98] shadow-lg shadow-amber-500/20"
                   >
-                    Iniciar Sesion
-                    <LogIn className="w-4 h-4" />
-                  </a>
+                    <Settings className="w-4 h-4" />
+                    Ver Planes
+                  </button>
+                ) : (
+                  <>
+                    <a
+                      href="/login"
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
+                    >
+                      Iniciar Sesion y Ver Planes
+                      <LogIn className="w-4 h-4" />
+                    </a>
+                  </>
                 )}
               </div>
             </div>
