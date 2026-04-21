@@ -7,17 +7,21 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
+const SITE_URL = 'https://atlas-9mv.pages.dev';
+
 export const metadata: Metadata = {
-  title: "Atlas — Coach Estratégico de Alto Rendimiento",
+  title: "Atlas - Consultor Estratégico de Élite 24/7",
   description:
-    "Atlas es tu consultor estratégico y coach personal 24/7. Metodología socrática y reencuadre cognitivo para resolver problemas de raíz.",
+    "Tu asistente de inteligencia artificial privado. Resuelve problemas de trabajo, estudios, emociones y estrategia con respuestas directas y sin relleno. Disponible las 24 horas.",
   keywords: [
     "Atlas",
+    "Consultor Estratégico",
     "Coach",
-    "Coaching",
-    "Psicología",
-    "Consultoría",
-    "Bienestar",
+    "IA",
+    "Inteligencia Artificial",
+    "Asistente",
+    "Productividad",
+    "Estrategia",
   ],
   manifest: "/manifest.json",
   appleWebApp: {
@@ -26,9 +30,27 @@ export const metadata: Metadata = {
     title: "Atlas",
   },
   openGraph: {
-    title: "Atlas — Coach Estratégico",
-    description: "Tu consultor estratégico 24/7. Resuelve el problema de raíz.",
+    title: "Atlas – Tu Consultor Estratégico 24/7",
+    description:
+      "Resuelve el problema de raíz. Sin relleno, sin listas aburridas. Asistencia en cualquier nicho: trabajo, estudios, salud y productividad.",
     type: "website",
+    url: SITE_URL,
+    siteName: "Atlas",
+    images: [
+      {
+        url: `${SITE_URL}/og-image.png`,
+        width: 1200,
+        height: 630,
+        alt: "Atlas – Consultor Estratégico de Élite",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Atlas – Tu Consultor Estratégico 24/7",
+    description:
+      "Resuelve el problema de raíz. Sin relleno, sin listas aburridas. Asistencia en cualquier nicho.",
+    images: [`${SITE_URL}/og-image.png`],
   },
   icons: {
     icon: [
