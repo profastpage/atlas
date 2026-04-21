@@ -4,7 +4,8 @@ import { createClient } from '@libsql/client'
 
 // ========================================
 // DATABASE CONFIG
-// Works locally (SQLite) and on Cloudflare Pages (libSQL/D1/Turso)
+// Local dev: SQLite file
+// Cloudflare Pages: Turso via libSQL
 // ========================================
 
 function createDatabaseClient() {
@@ -12,7 +13,11 @@ function createDatabaseClient() {
 
   // If using libsql:// or turso:// URL (Cloudflare Pages / Turso)
   if (databaseUrl.startsWith('libsql://') || databaseUrl.startsWith('turso://')) {
-    const libsql = createClient({ url: databaseUrl })
+    const authToken = process.env.TURSO_AUTH_TOKEN
+    const libsql = createClient({
+      url: databaseUrl,
+      authToken: authToken,
+    })
     const adapter = new PrismaLibSql(libsql)
     return new PrismaClient({ adapter, log: ['error'] })
   }
