@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, User, LogOut, Edit3, Check, ShieldCheck, ChevronRight, Crown, Zap
+  X, LogOut, Edit3, Check, ShieldCheck, ChevronRight,
+  Crown, Zap, CheckCircle2, FileText, Bell, Star
 } from 'lucide-react';
 
 // ========================================
-// SETTINGS SIDEBAR — with Subscription + Admin
-// Mobile First, Dark Theme
+// SETTINGS SIDEBAR — Premium Brand, Dynamic Plans
+// Mobile First, Dark Theme, NO "Hecho con IA"
 // ========================================
 
 interface SettingsSidebarProps {
@@ -19,9 +20,9 @@ interface SettingsSidebarProps {
   onOpenAdmin: () => void;
 }
 
-interface PlanInfo {
-  id: string;
-  name: string;
+interface UserPlan {
+  planName: string;
+  status: string;
   price: number;
   maxMessages: number;
   features: string[];
@@ -31,6 +32,69 @@ function getInitial(name: string): string {
   return (name || '?').charAt(0).toUpperCase();
 }
 
+// ========================================
+// PLAN DEFINITIONS — Static UI (Stripe later)
+// ========================================
+
+const PLANS = [
+  {
+    id: 'basico',
+    name: 'Plan Básico',
+    price: 20,
+    icon: Zap,
+    color: 'emerald',
+    features: [
+      'Chat de voz y texto 24/7',
+      'Memoria a largo plazo',
+      'Modo Expandido',
+    ],
+  },
+  {
+    id: 'pro',
+    name: 'Plan Pro',
+    price: 40,
+    icon: Star,
+    color: 'blue',
+    features: [
+      'Todo lo del Básico',
+      'Análisis profundo de PDFs y documentos',
+      'Check-in motivacional diario',
+    ],
+  },
+  {
+    id: 'ejecutivo',
+    name: 'Plan Ejecutivo',
+    price: 60,
+    icon: Crown,
+    color: 'amber',
+    features: [
+      'Todo lo del Pro',
+      'Sistema de Alarmas y Recordatorios push',
+      'Prioridad de servidores',
+    ],
+  },
+];
+
+const PLAN_LABELS: Record<string, string> = {
+  basico: 'Básico',
+  profesional: 'Pro',
+  pro: 'Pro',
+  elite: 'Ejecutivo',
+  ejecutivo: 'Ejecutivo',
+};
+
+const PLAN_PRICES: Record<string, number> = {
+  basico: 20,
+  profesional: 40,
+  pro: 40,
+  elite: 60,
+  ejecutivo: 60,
+};
+
+// ========================================
+// COMPONENT
+// ========================================
+
 export default function SettingsSidebar({
   isOpen,
   onClose,
@@ -39,9 +103,28 @@ export default function SettingsSidebar({
 }: SettingsSidebarProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
-  const [plans, setPlans] = useState<PlanInfo[]>([]);
-  const [showPlans, setShowPlans] = useState(false);
+  const [userPlan, setUserPlan] = useState<UserPlan | null>(null);
+  const [loadingPlan, setLoadingPlan] = useState(false);
   const isAdmin = user?.email?.toLowerCase().includes('admin') ?? false;
+
+  // ---- Fetch user subscription on open ----
+  useEffect(() => {
+    if (isOpen && user?.tenantId) {
+      setLoadingPlan(true);
+      fetch(`/api?action=subscription&tenantId=${user.tenantId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          const sub = data.subscription;
+          if (sub && sub.status && sub.status !== 'free') {
+            setUserPlan(sub);
+          } else {
+            setUserPlan(null);
+          }
+        })
+        .catch(() => setUserPlan(null))
+        .finally(() => setLoadingPlan(false));
+    }
+  }, [isOpen, user?.tenantId]);
 
   const startEditName = () => {
     if (user) {
@@ -54,19 +137,14 @@ export default function SettingsSidebar({
     setIsEditingName(false);
   };
 
-  const loadPlans = async () => {
-    if (plans.length > 0) {
-      setShowPlans(!showPlans);
-      return;
-    }
-    try {
-      const res = await fetch('/api?action=plans');
-      const data = await res.json();
-      setPlans(data.plans || []);
-      setShowPlans(true);
-    } catch {
-      console.error('[PLANS] Error loading plans');
-    }
+  const hasActivePlan = userPlan && userPlan.status !== 'free';
+
+  const getPlanDisplayName = (planName: string) => {
+    return PLAN_LABELS[planName.toLowerCase()] || planName;
+  };
+
+  const getPlanPrice = (planName: string) => {
+    return PLAN_PRICES[planName.toLowerCase()] || 0;
   };
 
   return (
@@ -89,7 +167,7 @@ export default function SettingsSidebar({
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed top-0 right-0 bottom-0 z-[70] w-full sm:w-80 bg-gray-900 rounded-l-2xl shadow-2xl shadow-black/40 flex flex-col overflow-hidden"
+            className="fixed top-0 right-0 bottom-0 z-[70] w-full sm:w-[380px] bg-gray-900 rounded-l-2xl shadow-2xl shadow-black/40 flex flex-col overflow-hidden"
             role="dialog"
             aria-modal="true"
           >
@@ -106,8 +184,8 @@ export default function SettingsSidebar({
 
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto px-5 pb-6 min-h-0 overscroll-contain">
-              {/* User Profile */}
-              <section aria-label="User profile">
+              {/* ===== USER PROFILE ===== */}
+              <section aria-label="Perfil de usuario">
                 <div className="flex items-center gap-3.5">
                   <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/20">
                     <span className="text-xl font-bold text-white">
@@ -152,66 +230,135 @@ export default function SettingsSidebar({
 
               <div className="border-t border-gray-800/40 my-5" />
 
-              {/* Plan Section */}
+              {/* ===== PLAN SECTION ===== */}
               <section aria-label="Plan">
-                <button
-                  onClick={loadPlans}
-                  className="w-full flex items-center justify-between mb-3"
-                >
-                  <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">
-                    Tu Plan
-                  </h3>
-                  <ChevronRight className={`w-3.5 h-3.5 text-gray-600 transition-transform ${showPlans ? 'rotate-90' : ''}`} />
-                </button>
-                <div className="bg-gray-800/40 rounded-xl p-4 border border-gray-700/30">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Crown className="w-4 h-4 text-amber-400" />
-                    <span className="text-sm font-semibold text-emerald-400">Plan Gratuito</span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/20 text-emerald-400">
-                      Activo
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-400">
-                    5 mensajes como invitado, ilimitados con cuenta registrada.
-                  </p>
-                </div>
+                <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
+                  Tu Plan
+                </h3>
 
-                {/* Plans List (expandable) */}
-                <AnimatePresence>
-                  {showPlans && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.3 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="mt-3 space-y-2">
-                        {plans.map((plan) => (
-                          <div key={plan.id} className="bg-gray-800/30 rounded-lg p-3 border border-gray-800/40">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-semibold text-gray-300">{plan.name}</span>
-                              <span className="text-xs font-bold text-white">S/ {plan.price}<span className="text-[9px] text-gray-500 font-normal">/mes</span></span>
+                {loadingPlan ? (
+                  <div className="bg-gray-800/40 rounded-xl p-4 border border-gray-700/30 animate-pulse">
+                    <div className="h-4 bg-gray-700/50 rounded w-24 mb-2" />
+                    <div className="h-3 bg-gray-700/50 rounded w-40" />
+                  </div>
+                ) : hasActivePlan ? (
+                  /* ---- ACTIVE PLAN BADGE ---- */
+                  <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 rounded-xl p-4 border border-emerald-500/20">
+                    <div className="flex items-center gap-2.5 mb-1">
+                      <Crown className="w-5 h-5 text-emerald-400" />
+                      <span className="text-sm font-bold text-white">
+                        Plan {getPlanDisplayName(userPlan.planName)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 ml-[30px]">
+                      <span className="text-xs text-gray-300 font-medium">
+                        S/ {getPlanPrice(userPlan.planName)}/mes
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">
+                        <CheckCircle2 className="w-2.5 h-2.5" />
+                        Activo
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  /* ---- PAYWALL: NO ACTIVE PLAN ---- */
+                  <>
+                    <div className="bg-gradient-to-br from-gray-800/50 to-gray-800/30 rounded-xl p-4 border border-gray-700/30 mb-4">
+                      <div className="flex items-center gap-2.5 mb-1">
+                        <Crown className="w-5 h-5 text-amber-400" />
+                        <span className="text-sm font-semibold text-gray-300">Plan Gratuito</span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 ml-[30px]">
+                        Mensajes limitados. Mejora tu experiencia.
+                      </p>
+                    </div>
+
+                    {/* Upgrade CTA */}
+                    <div className="text-center mb-4">
+                      <p className="text-sm font-bold text-white">
+                        Accede al potencial completo de Atlas
+                      </p>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Elige el plan que se adapte a tu ritmo
+                      </p>
+                    </div>
+
+                    {/* Plan Cards */}
+                    <div className="space-y-2.5">
+                      {PLANS.map((plan) => {
+                        const PlanIcon = plan.icon;
+                        return (
+                          <div
+                            key={plan.id}
+                            className={`rounded-xl p-3.5 border transition-all ${
+                              plan.id === 'ejecutivo'
+                                ? 'bg-gradient-to-br from-amber-500/5 to-amber-600/5 border-amber-500/20'
+                                : plan.id === 'pro'
+                                  ? 'bg-gradient-to-br from-blue-500/5 to-blue-600/5 border-blue-500/20'
+                                  : 'bg-gray-800/30 border-gray-700/30'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <PlanIcon className={`w-4 h-4 ${
+                                  plan.id === 'ejecutivo' ? 'text-amber-400' :
+                                  plan.id === 'pro' ? 'text-blue-400' : 'text-emerald-400'
+                                }`} />
+                                <span className="text-xs font-bold text-white">
+                                  {plan.name}
+                                </span>
+                              </div>
+                              <span className="text-xs font-bold text-white">
+                                S/ {plan.price}
+                                <span className="text-[9px] text-gray-500 font-normal">/mes</span>
+                              </span>
                             </div>
-                            <p className="text-[10px] text-gray-500 mt-1">
-                              {plan.maxMessages === -1 ? 'Mensajes ilimitados' : `${plan.maxMessages} mensajes/mes`}
-                            </p>
-                            <button className="mt-2 w-full py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 text-[11px] font-medium hover:bg-emerald-600/30 transition-all flex items-center justify-center gap-1">
-                              <Zap className="w-3 h-3" /> Upgrade
+
+                            {/* Features */}
+                            <ul className="space-y-1 mb-3">
+                              {plan.features.map((feat) => (
+                                <li
+                                  key={feat}
+                                  className="flex items-start gap-1.5 text-[11px] text-gray-400"
+                                >
+                                  <span className={`mt-0.5 shrink-0 ${
+                                    plan.id === 'ejecutivo' ? 'text-amber-400' :
+                                    plan.id === 'pro' ? 'text-blue-400' : 'text-emerald-400'
+                                  }`}>
+                                    {'\u2022'}
+                                  </span>
+                                  {feat}
+                                </li>
+                              ))}
+                            </ul>
+
+                            {/* CTA Button */}
+                            <button
+                              onClick={() => console.log(`Plan seleccionado: ${plan.id}`)}
+                              className={`w-full py-2 rounded-lg text-[11px] font-semibold transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 ${
+                                plan.id === 'ejecutivo'
+                                  ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/20'
+                                  : plan.id === 'pro'
+                                    ? 'bg-blue-500/15 text-blue-300 hover:bg-blue-500/25 border border-blue-500/20'
+                                    : 'bg-emerald-600/15 text-emerald-300 hover:bg-emerald-600/25 border border-emerald-500/20'
+                              }`}
+                            >
+                              <Zap className="w-3 h-3" />
+                              Elegir Plan
                             </button>
                           </div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </section>
 
-              {/* Admin Access */}
+              {/* ===== ADMIN ACCESS ===== */}
               {isAdmin && (
                 <>
                   <div className="border-t border-gray-800/40 my-5" />
-                  <section aria-label="Admin access">
+                  <section aria-label="Administracion">
                     <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
                       Administracion
                     </h3>
@@ -238,7 +385,7 @@ export default function SettingsSidebar({
 
               <div className="border-t border-gray-800/40 my-5" />
 
-              {/* Logout */}
+              {/* ===== LOGOUT ===== */}
               <button
                 onClick={() => {
                   localStorage.removeItem('atlas_token');
@@ -257,12 +404,13 @@ export default function SettingsSidebar({
                 </div>
               </button>
 
-              {/* App Info */}
-              <div className="border-t border-gray-800/40 my-5" />
-              <div className="text-center py-2">
-                <p className="text-xs font-semibold text-gray-500">Atlas Coach v1.0</p>
-                <p className="text-[11px] text-gray-600 mt-0.5">Hecho con IA</p>
+              {/* ===== FOOTER — Clean brand, no experiment vibes ===== */}
+              <div className="border-t border-gray-800/40 mt-5 pt-4">
+                <p className="text-center text-[10px] text-gray-700">
+                  &copy; Atlas Coach
+                </p>
               </div>
+
               <div className="h-[env(safe-area-inset-bottom,0px)]" />
             </div>
           </motion.aside>
