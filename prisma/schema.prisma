@@ -7,58 +7,53 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Tenant {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// ========================================
+// MULTI-TENANT CORE
+// ========================================
 
-  sessions  Session[]
-  profile   UserProfile?
-  memories  Memory[]
+model Tenant {
+  id        String     @id @default(cuid())
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  sessions   Session[]
+  userMemory UserMemory?
 }
 
 model Session {
   id        String   @id @default(cuid())
   tenantId  String
-  title     String   @default("Nueva conversación")
+  title     String   @default("Sesión Atlas")
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  messages  Message[]
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages Message[]
 }
 
 model Message {
   id        String   @id @default(cuid())
   sessionId String
-  role      String   // "user" | "assistant"
+  role      String   // "user" | "assistant" | "system"
   content   String
   timestamp DateTime @default(now())
 
-  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
-model UserProfile {
-  id        String   @id @default(cuid())
-  tenantId  String   @unique
-  summary   String   @default("")
-  keyTopics String   @default("") // JSON array of key topics as string
-  updatedAt DateTime @updatedAt
+// ========================================
+// SUPABASE-STYLE USER MEMORY MODULE
+// Mirror of: user_memory table (user_id, user_name, context_summary)
+// ========================================
 
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-}
+model UserMemory {
+  id             String   @id @default(cuid())
+  tenantId       String   @unique  // acts as user_id in Supabase
+  userName       String   @default("")       // user_name field
+  contextSummary String   @default("")       // context_summary field (1-line summaries only)
+  lastTopic      String   @default("")       // último tema tratado para referencia rápida
+  updatedAt      DateTime @updatedAt
 
-model Memory {
-  id        String   @id @default(cuid())
-  tenantId  String
-  category  String   @default("general") // "personal", "goal", "challenge", "insight"
-  content   String
-  importance Int     @default(5) // 1-10 scale
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId, category])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }

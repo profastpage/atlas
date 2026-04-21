@@ -1,56 +1,64 @@
+// ========================================
+// MÓDULO DE SESIÓN — Gestión Multi-Tenant
+// Crea Tenant + UserMemory + Session
+// ========================================
+
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { tenantId, sessionId } = body;
+    const { tenantId } = body;
 
-    // If no tenantId, create a new tenant
     let tenant;
+    const isNew = !tenantId;
+
     if (!tenantId) {
+      // Crear nuevo tenant + user_memory vacío + primera sesión
       tenant = await db.tenant.create({
         data: {
-          id: uuidv4(),
-          profile: {
+          userMemory: {
             create: {
-              summary: '',
-              keyTopics: '[]',
+              userName: '',
+              contextSummary: '',
+              lastTopic: '',
             },
           },
         },
-        include: { profile: true },
+        include: { userMemory: true },
       });
     } else {
       tenant = await db.tenant.findUnique({
         where: { id: tenantId },
-        include: { profile: true },
+        include: { userMemory: true },
       });
       if (!tenant) {
-        return NextResponse.json({ error: 'Tenant not found' }, { status: 404 });
+        return NextResponse.json({ error: 'Tenant no encontrado' }, { status: 404 });
       }
     }
 
-    // Create a new session for this tenant
+    // Crear nueva sesión
     const session = await db.session.create({
       data: {
-        id: uuidv4(),
         tenantId: tenant.id,
       },
     });
 
+    // Determinar si es un usuario nuevo (sin memoria previa)
+    const isNewUser = !tenant.userMemory?.contextSummary;
+
     return NextResponse.json({
       tenantId: tenant.id,
       sessionId: session.id,
-      isNew: !tenantId,
+      isNewTenant: isNew,
+      isNewUser,
+      userName: tenant.userMemory?.userName || '',
+      contextSummary: tenant.userMemory?.contextSummary || '',
     });
   } catch (error) {
-    console.error('Session creation error:', error);
-    return NextResponse.json(
-      { error: 'Failed to create session' },
-      { status: 500 }
-    );
+    console.error('[SESIÓN] Error:', error);
+    return NextResponse.json({ error: 'Error al crear sesión' }, { status: 500 });
   }
 }
 
@@ -60,24 +68,19 @@ export async function GET(request: NextRequest) {
     const tenantId = searchParams.get('tenantId');
 
     if (!tenantId) {
-      return NextResponse.json({ error: 'tenantId required' }, { status: 400 });
+      return NextResponse.json({ error: 'tenantId requerido' }, { status: 400 });
     }
 
     const sessions = await db.session.findMany({
       where: { tenantId },
       orderBy: { updatedAt: 'desc' },
       take: 20,
-      include: {
-        _count: { select: { messages: true } },
-      },
+      include: { _count: { select: { messages: true } } },
     });
 
     return NextResponse.json({ sessions });
   } catch (error) {
-    console.error('Session fetch error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch sessions' },
-      { status: 500 }
-    );
+    console.error('[SESIÓN] Error al listar:', error);
+    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }
