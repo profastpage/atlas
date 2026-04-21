@@ -194,3 +194,46 @@ Stage Summary:
 - Push exitoso: Cloudflare Pages recibirá commit 00d2891 con PostHog
 - Los commits 9392ff6 y anteriores ya estaban en el remote (Cloudflare ya los tenía)
 - El usuario probablemente veía versión cacheada del navegador
+---
+Task ID: 3
+Agent: main
+Task: Auto-update transparente PWA y navegador — eliminar necesidad de hard refresh
+
+Work Log:
+- Diagnosticado: sw.js CACHE_NAME='atlas-v2' estático, nunca se actualizaba entre deploys
+- Diagnosticado: _next/static/* usaba CacheFirst (servia JS viejo sin verificar)
+- Diagnosticado: HTML usaba StaleWhileRevalidate (servia HTML viejo, actualizaba en background pero nunca recargaba)
+- Diagnosticado: SW registration no usaba updateViaCache: 'none'
+- Diagnosticado: No había mecanismo de version checking
+
+Solución implementada (4 capas):
+
+1. sw.js v3 completo reescrito:
+   - NetworkFirst para HTML, _next/static, API routes
+   - CacheFirst solo para iconos/imagenes
+   - version.json check cada 2 minutos vía setInterval
+   - postMessage a todos los clients cuando detecta nueva version
+   - networkFirstWithReload compara HTML cached vs new, notifica si cambió
+   - skipWaiting() + clients.claim() en install/activate
+
+2. version.json generado en build time:
+   - prebuild script en package.json (Node.js one-liner)
+   - Genera version (timestamp unix), commit hash, ISO timestamp
+   - Cada build tiene version unica
+
+3. layout.tsx SW registration mejorada:
+   - updateViaCache: 'none' (SW nunca se cachea)
+   - reg.update() inmediato + cada 2 minutos
+   - Escucha messages: SW_UPDATED, CONTENT_UPDATED, NEW_VERSION_AVAILABLE
+   - Auto-reload con cooldown 2 min (evita loops)
+   - 500ms-1000ms delay antes de reload
+
+4. manifest.json: prefer_related_applications: false
+
+Build exitoso, commit d0b3399, push a origin/main.
+
+Stage Summary:
+- Los usuarios PWA y navegador recibirán actualizaciones automáticamente
+- Sin hard refresh necesario
+- Actualización en máximo 2 minutos después del deploy
+- Archivos modificados: sw.js, layout.tsx, manifest.json, package.json, version.json (nuevo), prebuild.sh (nuevo)
