@@ -371,7 +371,7 @@ export default function AdminPage() {
     try {
       await adminPost('change_plan', {
         tenantId: changePlanUser.tenantId,
-        newPlan: selectedPlan,
+        planType: selectedPlan,
       });
       setUsers((prev) =>
         prev.map((u) =>
