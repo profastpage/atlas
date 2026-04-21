@@ -147,6 +147,37 @@ export default function AtlasApp() {
   // INIT: Determine auth state
   // ========================================
   useEffect(() => {
+    // ---- CHECK FOR OAUTH CALLBACK PARAMS ----
+    // After Google OAuth, /api/auth/callback redirects here with token/tenantId/user
+    const params = new URLSearchParams(window.location.search);
+    const authParam = params.get('_auth');
+    if (authParam === '1') {
+      const oauthToken = params.get('token');
+      const oauthTenantId = params.get('tenantId');
+      const oauthUser = params.get('user');
+
+      if (oauthToken && oauthTenantId && oauthUser) {
+        localStorage.setItem('atlas_token', oauthToken);
+        localStorage.setItem('atlas_tenant_id', oauthTenantId);
+        localStorage.setItem('atlas_user', decodeURIComponent(oauthUser));
+
+        // Clean URL (remove auth params)
+        window.history.replaceState({}, '', '/');
+
+        // Now proceed with normal auth flow
+        setToken(oauthToken);
+        try {
+          const user = JSON.parse(decodeURIComponent(oauthUser));
+          setUserInfo(user);
+        } catch {}
+        setIsAuthenticated(true);
+        setTenantId(oauthTenantId);
+        checkPlanAfterLogin(oauthTenantId);
+        fetchSessions(oauthTenantId);
+        return;
+      }
+    }
+
     const savedToken = localStorage.getItem('atlas_token');
     const savedTenantId = localStorage.getItem('atlas_tenant_id');
     const savedUser = localStorage.getItem('atlas_user');

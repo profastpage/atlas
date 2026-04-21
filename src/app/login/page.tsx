@@ -1,13 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Eye, EyeOff, Mail, Lock, Loader2, ArrowRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Eye, EyeOff, Mail, Lock, Loader2, ArrowRight, X, CheckCircle2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
 // ========================================
 // LOGIN PAGE — /login
 // Mobile First, Dark Theme, Emerald Accent
+// Google OAuth + Forgot Password
 // ========================================
 
 export default function LoginPage() {
@@ -15,7 +16,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Forgot password modal
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotError, setForgotError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +45,7 @@ export default function LoginPage() {
         return;
       }
 
-      // Guardar sesión y redirigir al chat
+      // Guardar sesion y redirigir al chat
       localStorage.setItem('atlas_token', data.token);
       localStorage.setItem('atlas_tenant_id', data.tenantId);
       localStorage.setItem('atlas_user', JSON.stringify(data.user));
@@ -49,9 +58,54 @@ export default function LoginPage() {
     }
   };
 
-  const handleGoogleAuth = () => {
-    // Google OAuth requiere configuracion en Google Cloud Console
-    setError('Google Sign-In requiere configuracion en Google Cloud Console. Usa email/contrasena por ahora.');
+  const handleGoogleAuth = async () => {
+    setGoogleLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/auth/google');
+      const data = await res.json();
+
+      if (!res.ok || !data.url) {
+        setError(data.error || 'Error al conectar con Google');
+        console.error('[GOOGLE_AUTH]', data);
+        return;
+      }
+
+      // Redirect to Google OAuth consent screen
+      window.location.href = data.url;
+    } catch (err) {
+      console.error('[GOOGLE_AUTH]', err);
+      setError('Error de conexion con Google. Intenta de nuevo.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+    setForgotLoading(true);
+
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setForgotError(data.error || 'Error al enviar el correo');
+        return;
+      }
+
+      setForgotSent(true);
+    } catch {
+      setForgotError('Error de conexion. Intenta de nuevo.');
+    } finally {
+      setForgotLoading(false);
+    }
   };
 
   return (
@@ -93,15 +147,20 @@ export default function LoginPage() {
           {/* Google Button */}
           <button
             onClick={handleGoogleAuth}
-            className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-white/5 border border-gray-700/50 text-white text-sm font-medium hover:bg-white/10 transition-all mb-4 active:scale-[0.98]"
+            disabled={googleLoading}
+            className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-white/5 border border-gray-700/50 text-white text-sm font-medium hover:bg-white/10 transition-all mb-4 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-            </svg>
-            Iniciar sesion con Google
+            {googleLoading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+              </svg>
+            )}
+            {googleLoading ? 'Conectando con Google...' : 'Iniciar sesion con Google'}
           </button>
 
           {/* Divider */}
@@ -181,8 +240,24 @@ export default function LoginPage() {
             </button>
           </form>
 
+          {/* Forgot Password Link */}
+          <div className="text-center mt-4">
+            <button
+              type="button"
+              onClick={() => {
+                setShowForgot(true);
+                setForgotSent(false);
+                setForgotError('');
+                setForgotEmail(email);
+              }}
+              className="text-xs text-gray-500 hover:text-emerald-400 transition-colors"
+            >
+              Olvidaste tu contrasena?
+            </button>
+          </div>
+
           {/* Footer link */}
-          <p className="text-center text-xs text-gray-600 mt-5">
+          <p className="text-center text-xs text-gray-600 mt-4">
             No tienes cuenta?{' '}
             <Link
               href="/register"
@@ -208,6 +283,112 @@ export default function LoginPage() {
           Al continuar, aceptas los terminos de uso y politica de privacidad
         </p>
       </motion.div>
+
+      {/* ===== FORGOT PASSWORD MODAL ===== */}
+      <AnimatePresence>
+        {showForgot && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50"
+              onClick={() => setShowForgot(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-sm mx-auto"
+            >
+              <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-lg font-bold text-white">
+                    Recuperar Contrasena
+                  </h2>
+                  <button
+                    onClick={() => setShowForgot(false)}
+                    className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {forgotSent ? (
+                  /* Success State */
+                  <div className="text-center py-3">
+                    <div className="w-14 h-14 rounded-full bg-emerald-500/15 flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
+                      <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+                    </div>
+                    <p className="text-sm text-white font-medium mb-1">
+                      Enlace enviado
+                    </p>
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      Revisa tu bandeja de entrada o carpeta de spam. El enlace es valido por 1 hora.
+                    </p>
+                    <button
+                      onClick={() => setShowForgot(false)}
+                      className="w-full mt-5 py-2.5 rounded-xl bg-gray-800 text-gray-300 text-sm font-medium hover:bg-gray-700 transition-all"
+                    >
+                      Volver al login
+                    </button>
+                  </div>
+                ) : (
+                  /* Form */
+                  <form onSubmit={handleForgotPassword} className="space-y-4">
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      Ingresa tu email y te enviaremos un enlace para restablecer tu contrasena.
+                    </p>
+
+                    <div className="relative">
+                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                      <input
+                        type="email"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        placeholder="tu@email.com"
+                        className="w-full bg-gray-800/50 border border-gray-700/50 rounded-xl pl-11 pr-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all"
+                        autoComplete="email"
+                        required
+                        autoFocus
+                      />
+                    </div>
+
+                    {/* Error */}
+                    {forgotError && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex items-center gap-1.5 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2"
+                      >
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {forgotError}
+                      </motion.div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={forgotLoading || !forgotEmail}
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700/50 disabled:opacity-40 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
+                    >
+                      {forgotLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <>
+                          Enviar enlace de recuperacion
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  </form>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
