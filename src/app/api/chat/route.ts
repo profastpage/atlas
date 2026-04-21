@@ -34,23 +34,45 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ---- PASO 0: PLAN GATE — Verify active subscription ----
-    // Reject authenticated users without an active plan (security hardening)
+    // ---- PASO 0: PLAN GATE — Verify active subscription or trial ----
+    // Triple validation: paid plan → active trial → block
     try {
       if (supabase) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('plan_type')
+          .select('plan_type, trial_plan, trial_ends_at')
           .eq('id', tenantId)
           .single();
 
         const planType = profile?.plan_type;
-        if (planType === null || planType === undefined || planType === 'free') {
-          // User has no paid plan — block the request
-          return NextResponse.json(
-            { error: 'PLAN_REQUIRED', detail: 'Necesitas un plan activo para enviar mensajes. Selecciona un plan en Configuracion.' },
-            { status: 403 }
-          );
+        const trialPlan = profile?.trial_plan;
+        const trialEndsAt = profile?.trial_ends_at;
+
+        // CHECK 1: Does user have a paid plan?
+        const hasPaidPlan = planType && planType !== 'free' && planType !== null && planType !== undefined;
+
+        if (hasPaidPlan) {
+          // User has a paid plan — allow through
+          // Pass trial info in headers so frontend can show badge
+        } else {
+          // CHECK 2: Does user have an active trial?
+          let trialActive = false;
+          if (trialPlan && trialEndsAt) {
+            const now = new Date();
+            const endDate = new Date(trialEndsAt);
+            trialActive = endDate > now;
+          }
+
+          if (trialActive) {
+            // Active trial — allow through
+            // Trial info will be sent via response header for frontend badge
+          } else {
+            // CHECK 3: No plan, no valid trial — BLOCK
+            return NextResponse.json(
+              { error: 'PLAN_REQUIRED', detail: 'Necesitas un plan activo o una prueba vigente. Selecciona un plan en Configuracion.' },
+              { status: 403 }
+            );
+          }
         }
       }
     } catch (gateError) {

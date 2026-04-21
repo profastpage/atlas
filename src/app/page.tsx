@@ -84,6 +84,26 @@ export default function AtlasApp() {
   // ---- Plan Gate State ----
   const [hasActivePlan, setHasActivePlan] = useState<boolean | null>(null);
   const [checkingPlan, setCheckingPlan] = useState(false);
+  const [trialInfo, setTrialInfo] = useState<{ plan: string; hoursLeft: number; isActive: boolean } | null>(null);
+
+  // ---- Auto-refresh trial badge every 10 minutes ----
+  useEffect(() => {
+    if (!trialInfo?.isActive || !tenantId || !isAuthenticated) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api?action=trial_status&tenantId=${tenantId}`);
+        const data = await res.json();
+        if (data.trial?.isActive) {
+          setTrialInfo({ plan: data.trial.plan, hoursLeft: data.trial.hoursLeft, isActive: true });
+        } else {
+          // Trial expired while user was active — refresh plan status
+          setTrialInfo(null);
+          checkPlanAfterLogin(tenantId);
+        }
+      } catch {}
+    }, 10 * 60 * 1000); // Every 10 min
+    return () => clearInterval(interval);
+  }, [trialInfo?.isActive, tenantId, isAuthenticated]);
 
   // ---- Expand State ----
   const [expandingId, setExpandingId] = useState<string | null>(null);
@@ -237,13 +257,41 @@ export default function AtlasApp() {
   const checkPlanAfterLogin = async (tId: string) => {
     setCheckingPlan(true);
     try {
-      const res = await fetch(`/api?action=subscription&tenantId=${tId}`);
-      const data = await res.json();
-      const sub = data.subscription;
+      // Fetch subscription AND trial status in parallel
+      const [subRes, trialRes] = await Promise.all([
+        fetch(`/api?action=subscription&tenantId=${tId}`),
+        fetch(`/api?action=trial_status&tenantId=${tId}`),
+      ]);
+      const subData = await subRes.json();
+      const trialData = await trialRes.json();
+
+      const sub = subData.subscription;
       const planType = sub?.status === 'active' ? 'active' : null;
-      setHasActivePlan(!!planType);
+
+      // CHECK 1: Has paid plan?
+      if (planType) {
+        setHasActivePlan(true);
+        setTrialInfo(null);
+        return;
+      }
+
+      // CHECK 2: Has active trial?
+      if (trialData.trial?.isActive) {
+        setHasActivePlan(true); // Trial counts as active access
+        setTrialInfo({
+          plan: trialData.trial.plan,
+          hoursLeft: trialData.trial.hoursLeft,
+          isActive: true,
+        });
+        return;
+      }
+
+      // CHECK 3: No plan, no trial — block
+      setHasActivePlan(false);
+      setTrialInfo(null);
     } catch {
       setHasActivePlan(false);
+      setTrialInfo(null);
     } finally {
       setCheckingPlan(false);
     }
@@ -1038,9 +1086,16 @@ export default function AtlasApp() {
             <h1 className="text-[15px] font-bold text-white tracking-tight">
               ATLAS
             </h1>
-            <p className="text-[10px] text-emerald-400/70 font-medium tracking-wide uppercase">
-              Coach Cognitivo de Elite
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] text-emerald-400/70 font-medium tracking-wide uppercase">
+                Coach Cognitivo de Elite
+              </p>
+              {trialInfo?.isActive && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[9px] text-amber-400 font-semibold">
+                  Prueba {trialInfo.plan === 'pro' ? 'Pro' : 'Ejecutivo'} — {trialInfo.hoursLeft}h restantes
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2">

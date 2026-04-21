@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Users, MessageSquare, DollarSign, Activity,
-  ShieldCheck, Settings, BarChart3, ChevronRight, RefreshCw, LogOut, X, Eye, EyeOff
+  ShieldCheck, Settings, BarChart3, ChevronRight, RefreshCw, LogOut, X, Eye, EyeOff,
+  Gift, Clock, CheckCircle2
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -64,6 +65,9 @@ export default function AdminPage() {
   const [config, setConfig] = useState<ConfigData>({});
   const [loading, setLoading] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState<UserData | null>(null);
+  const [showTrialModal, setShowTrialModal] = useState<UserData | null>(null);
+  const [trialLoading, setTrialLoading] = useState(false);
+  const [trialSuccess, setTrialSuccess] = useState<string | null>(null);
 
   const adminFetch = useCallback(async (action: string) => {
     const res = await fetch(`/api?action=${action}`);
@@ -143,6 +147,35 @@ export default function AdminPage() {
   useEffect(() => {
     if (isAuthenticated) loadTab(activeTab);
   }, [isAuthenticated, activeTab, loadTab]);
+
+  // ========================================
+  // GRANT TRIAL
+  // ========================================
+  const handleGrantTrial = async (userId: UserData, plan: string, hours: number) => {
+    setTrialLoading(true);
+    setTrialSuccess(null);
+    try {
+      const res = await fetch('/api?action=grant_trial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: userId.tenantId, trialPlan: plan, durationHours: hours }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Error al otorgar prueba');
+        return;
+      }
+      setTrialSuccess(data.message);
+      setTimeout(() => {
+        setShowTrialModal(null);
+        setTrialSuccess(null);
+      }, 2000);
+    } catch {
+      alert('Error de conexion');
+    } finally {
+      setTrialLoading(false);
+    }
+  };
 
   const logout = () => {
     localStorage.removeItem('atlas_admin_token');
@@ -337,9 +370,14 @@ export default function AdminPage() {
                           <span className="text-[10px] text-gray-600">{formatDate(u.createdAt)}</span>
                         </div>
                       </div>
-                      <button onClick={() => setShowPasswordModal(u)} className="p-2 rounded-lg hover:bg-gray-800/60">
-                        <Eye className="w-3.5 h-3.5 text-gray-500" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => setShowTrialModal(u)} className="p-2 rounded-lg hover:bg-amber-500/10 group" title="Otorgar Prueba">
+                          <Gift className="w-3.5 h-3.5 text-gray-500 group-hover:text-amber-400" />
+                        </button>
+                        <button onClick={() => setShowPasswordModal(u)} className="p-2 rounded-lg hover:bg-gray-800/60">
+                          <Eye className="w-3.5 h-3.5 text-gray-500" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -442,6 +480,89 @@ export default function AdminPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Trial Grant Modal */}
+      <AnimatePresence>
+        {showTrialModal && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => !trialLoading && setShowTrialModal(null)} />
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+              className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-sm mx-auto">
+              <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-5 shadow-2xl">
+                {trialSuccess ? (
+                  <div className="text-center py-4">
+                    <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-3" />
+                    <p className="text-sm font-medium text-emerald-400">{trialSuccess}</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Gift className="w-4 h-4 text-amber-400" />
+                        Otorgar Prueba Premium
+                      </h3>
+                      <button onClick={() => setShowTrialModal(null)} className="p-1 rounded-full hover:bg-gray-800/60">
+                        <X className="w-4 h-4 text-gray-500" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-400 mb-4">
+                      Usuario: <span className="text-white font-medium">{showTrialModal.name || showTrialModal.email}</span>
+                    </p>
+
+                    {/* Plan selection */}
+                    <div className="mb-3">
+                      <label className="text-[11px] text-gray-500 uppercase tracking-wider font-semibold mb-2 block">Plan a probar</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {['pro', 'executive'].map((plan) => (
+                          <label key={plan} className={`cursor-pointer rounded-xl border p-3 transition-all ${
+                            'bg-gray-800/50 border-gray-700/50 hover:border-amber-500/40'
+                          }`}>
+                            <input type="radio" name="trialPlan" value={plan} className="sr-only" defaultChecked={plan === 'pro'} />
+                            <p className={`text-sm font-bold ${plan === 'executive' ? 'text-amber-400' : 'text-white'}`}>
+                              {plan === 'pro' ? 'Pro' : 'Ejecutivo'}
+                            </p>
+                            <p className="text-[10px] text-gray-500 mt-0.5">
+                              {plan === 'pro' ? 'S/40/mes' : 'S/60/mes'}
+                            </p>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Duration selection */}
+                    <div className="mb-4">
+                      <label className="text-[11px] text-gray-500 uppercase tracking-wider font-semibold mb-2 block">Duracion</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[{ label: '24 horas', h: 24 }, { label: '48 horas', h: 48 }, { label: '7 dias', h: 168 }].map((d) => (
+                          <label key={d.h} className="cursor-pointer rounded-xl border bg-gray-800/50 border-gray-700/50 hover:border-amber-500/40 p-2.5 transition-all text-center">
+                            <input type="radio" name="trialDuration" value={d.h} className="sr-only" defaultChecked={d.h === 48} />
+                            <Clock className="w-3.5 h-3.5 text-gray-400 mx-auto mb-1" />
+                            <p className="text-[11px] text-white font-medium">{d.label}</p>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        const plan = (document.querySelector('input[name="trialPlan"]:checked') as HTMLInputElement)?.value;
+                        const hours = Number((document.querySelector('input[name="trialDuration"]:checked') as HTMLInputElement)?.value);
+                        if (plan && hours) handleGrantTrial(showTrialModal, plan, hours);
+                      }}
+                      disabled={trialLoading}
+                      className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:bg-gray-700 text-white text-sm font-semibold transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                    >
+                      {trialLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
+                      {trialLoading ? 'Activando...' : 'Activar Prueba'}
+                    </button>
+                  </>
+                )}
               </div>
             </motion.div>
           </>

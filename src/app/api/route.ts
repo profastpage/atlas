@@ -2,6 +2,7 @@ export const runtime = 'edge';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/sql';
+import { supabase } from '@/lib/supabase';
 
 // ========================================
 // HEALTH CHECK + ADMIN API
@@ -35,6 +36,7 @@ async function handleAdminAction(request: NextRequest, action: string) {
       case 'plans': return handlePlans();
       case 'config': return handleConfig();
       case 'subscription': return handleSubscription(request);
+      case 'trial_status': return handleTrialStatus(request);
       default:
         return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });
     }
@@ -185,5 +187,121 @@ async function handleSubscription(request: NextRequest) {
   return NextResponse.json({
     subscription,
     messagesUsed: Number(usage.rows[0]?.total || 0),
+  });
+}
+
+// ========================================
+// TRIAL STATUS — Check if user has active trial
+// ========================================
+async function handleTrialStatus(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const tenantId = searchParams.get('tenantId');
+
+  if (!tenantId) {
+    return NextResponse.json({ error: 'tenantId requerido' }, { status: 400 });
+  }
+
+  if (!supabase) {
+    return NextResponse.json({ trial: null });
+  }
+
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('trial_plan, trial_ends_at, plan_type')
+      .eq('id', tenantId)
+      .single();
+
+    if (!profile) {
+      return NextResponse.json({ trial: null });
+    }
+
+    // Check if trial is still active
+    const now = new Date();
+    const trialEnds = profile.trial_ends_at ? new Date(profile.trial_ends_at) : null;
+    const isTrialActive = profile.trial_plan && trialEnds && trialEnds > now;
+
+    if (isTrialActive) {
+      const hoursLeft = Math.max(0, Math.round((trialEnds!.getTime() - now.getTime()) / (1000 * 60 * 60)));
+      return NextResponse.json({
+        trial: {
+          plan: profile.trial_plan,
+          endsAt: profile.trial_ends_at,
+          hoursLeft,
+          isActive: true,
+        },
+      });
+    }
+
+    return NextResponse.json({ trial: null });
+  } catch {
+    return NextResponse.json({ trial: null });
+  }
+}
+
+// ========================================
+// POST — Admin Actions (grant trial)
+// ========================================
+export async function POST(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const action = searchParams.get('action');
+
+  if (!action) {
+    return NextResponse.json({ error: 'Acción no especificada' }, { status: 400 });
+  }
+
+  if (action === 'grant_trial') {
+    return handleGrantTrial(request);
+  }
+
+  return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });
+}
+
+// ========================================
+// GRANT TRIAL — Admin gives premium trial
+// ========================================
+async function handleGrantTrial(request: NextRequest) {
+  if (!supabase) {
+    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  }
+
+  const body = await request.json();
+  const { tenantId, trialPlan, durationHours } = body;
+
+  if (!tenantId || !trialPlan || !durationHours) {
+    return NextResponse.json(
+      { error: 'tenantId, trialPlan y durationHours son obligatorios' },
+      { status: 400 }
+    );
+  }
+
+  const validPlans = ['pro', 'executive'];
+  if (!validPlans.includes(trialPlan)) {
+    return NextResponse.json(
+      { error: 'trialPlan debe ser "pro" o "executive"' },
+      { status: 400 }
+    );
+  }
+
+  const trialEndsAt = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
+
+  const { error } = await supabase
+    .from('profiles')
+    .upsert({
+      id: tenantId,
+      trial_plan: trialPlan,
+      trial_ends_at: trialEndsAt,
+    }, { onConflict: 'id' });
+
+  if (error) {
+    console.error('[TRIAL] Supabase error:', error);
+    return NextResponse.json({ error: 'Error al otorgar prueba' }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    success: true,
+    trialPlan,
+    trialEndsAt,
+    message: `Prueba ${trialPlan} activada por ${durationHours} horas`,
   });
 }
