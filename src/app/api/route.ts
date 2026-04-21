@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
   }
 
   // ---- HEALTH CHECK ----
-  return NextResponse.json({ status: 'ok', service: 'Atlas Coach v1.0' });
+  return NextResponse.json({ status: 'ok', service: 'Atlas Coach v1.1' });
 }
 
 async function handleAdminAction(request: NextRequest, action: string) {
