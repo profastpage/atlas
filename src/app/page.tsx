@@ -136,7 +136,7 @@ export default function AtlasApp() {
 
   // ---- Refs ----
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // ---- Settings State ----
   const [token, setToken] = useState('');
@@ -326,9 +326,14 @@ export default function AtlasApp() {
           interimTranscript += transcript;
         }
       }
-      // Show interim results in input in real-time
+      // Show interim results in input in real-time + auto-scroll
       if (interimTranscript || finalTranscript) {
         setInputValue(finalTranscript + interimTranscript);
+        // Auto-scroll textarea to bottom as text grows
+        requestAnimationFrame(() => {
+          const el = document.getElementById('chat-input') as HTMLTextAreaElement | null;
+          if (el) el.scrollTop = el.scrollHeight;
+        });
       }
     };
 
@@ -1661,14 +1666,15 @@ export default function AtlasApp() {
         )}
 
         <form onSubmit={handleSubmit} className="flex items-center gap-2 max-w-3xl mx-auto">
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
+            id="chat-input"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={'Escribe o habla tu mensaje...'}
-            className={`flex-1 min-w-0 bg-gray-800/50 border border-gray-700/40 rounded-full px-3.5 sm:px-4 py-2.5 sm:py-3 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all disabled:opacity-50 ${isListening ? 'border-red-500/50 ring-1 ring-red-500/20' : ''}`}
+            rows={1}
+            className={`flex-1 min-w-0 bg-gray-800/50 border border-gray-700/40 rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all disabled:opacity-50 resize-none overflow-y-auto max-h-28 leading-5 ${isListening ? 'border-red-500/50 ring-1 ring-red-500/20' : ''}`}
             disabled={isLoading || isStreaming}
           />
 
