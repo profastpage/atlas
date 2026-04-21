@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, Send, Plus, MessageSquare, Trash2, X, LogOut } from 'lucide-react';
+import { Mic, MicOff, Send, Plus, MessageSquare, Trash2, X, LogOut, Settings } from 'lucide-react';
 import { WELCOME_MESSAGE_NEW } from '@/lib/atlas';
 import AuthScreen from '@/components/AuthScreen';
+import SettingsSidebar from '@/components/SettingsSidebar';
+import AdminPanel from '@/components/AdminPanel';
 
 // ========================================
 // TYPES
@@ -63,16 +65,26 @@ export default function AtlasApp() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // ---- Settings & Admin State ----
+  const [token, setToken] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [adminToken, setAdminToken] = useState('');
+
   // ---- AUTH: Check saved session ----
   useEffect(() => {
-    const token = localStorage.getItem('atlas_token');
+    const savedToken = localStorage.getItem('atlas_token');
     const savedTenantId = localStorage.getItem('atlas_tenant_id');
     const savedUser = localStorage.getItem('atlas_user');
 
-    if (token && savedTenantId) {
+    if (savedToken) {
+      setToken(savedToken);
+    }
+
+    if (savedToken && savedTenantId) {
       // Validate token
       fetch('/api/auth/me', {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${savedToken}` },
       })
         .then((res) => {
           if (res.ok) return res.json();
@@ -114,6 +126,7 @@ export default function AtlasApp() {
     setMessages([]);
     setUserInfo(null);
     setAuthMode('login');
+    setToken('');
   };
 
   // ---- AUTH: On success ----
@@ -121,6 +134,9 @@ export default function AtlasApp() {
     setIsAuthenticated(true);
     setTenantId(data.tenantId);
     setUserInfo(data.user);
+    setToken(data.token);
+    localStorage.setItem('atlas_token', data.token);
+    localStorage.setItem('atlas_tenant_id', data.tenantId);
     fetchSessions(data.tenantId);
   };
 
@@ -151,10 +167,10 @@ export default function AtlasApp() {
 
         if (!data.isNewUser && data.userName && data.contextSummary) {
           // Usuario recurrente -- referencia directa
-          welcomeContent = `${data.userName}, otra vez aqui. Volvamos a tu problema: **${data.contextSummary.substring(0, 60)}**. ?Hubo algun cambio o seguimos en el mismo punto?`;
+          welcomeContent = `${data.userName}, otra vez aqui. Volvamos a tu problema: **${data.contextSummary.substring(0, 60)}**. Hubo algun cambio o seguimos en el mismo punto?`;
         } else if (!data.isNewUser && data.contextSummary) {
           // Sin nombre pero con contexto
-          welcomeContent = `Ya hemos hablado. Tu situacion previa: **${data.contextSummary.substring(0, 60)}**. ?Que hay de nuevo?`;
+          welcomeContent = `Ya hemos hablado. Tu situacion previa: **${data.contextSummary.substring(0, 60)}**. Que hay de nuevo?`;
         }
 
         setMessages([
@@ -395,6 +411,31 @@ export default function AtlasApp() {
   };
 
   // ========================================
+  // SETTINGS / ADMIN HANDLERS
+  // ========================================
+
+  const handleOpenAdmin = () => {
+    const pwd = prompt('Clave de administrador:');
+    if (pwd) {
+      fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'admin@atlas.app', password: pwd }),
+      })
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.token) {
+            setAdminToken(d.token);
+            setShowSettings(false);
+            setShowAdmin(true);
+          } else {
+            alert('Clave incorrecta');
+          }
+        });
+    }
+  };
+
+  // ========================================
   // FORMATTING
   // ========================================
 
@@ -434,9 +475,28 @@ export default function AtlasApp() {
     );
   }
 
+  // ---- ADMIN PANEL (authenticated + admin mode) ----
+  if (showAdmin) {
+    return (
+      <AdminPanel
+        adminToken={adminToken}
+        onBack={() => setShowAdmin(false)}
+      />
+    );
+  }
+
   // ---- CHAT SCREEN (authenticated) ----
   return (
     <div className="flex flex-col h-dvh bg-gray-950 text-white overflow-hidden">
+      {/* ===== SETTINGS SIDEBAR ===== */}
+      <SettingsSidebar
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        user={userInfo ? { ...userInfo, tenantId } : null}
+        token={token || ''}
+        onOpenAdmin={handleOpenAdmin}
+      />
+
       {/* ===== HEADER ===== */}
       <header className="flex items-center justify-between px-4 py-3 bg-gray-900/90 backdrop-blur-md border-b border-gray-800/40 z-20 shrink-0">
         <div className="flex items-center gap-3">
@@ -476,6 +536,14 @@ export default function AtlasApp() {
             aria-label="Nueva conversacion"
           >
             <Plus className="w-5 h-5 text-gray-400" />
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
+            aria-label="Configuracion"
+            title="Configuracion"
+          >
+            <Settings className="w-5 h-5 text-gray-400" />
           </button>
         </div>
       </header>
