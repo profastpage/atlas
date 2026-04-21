@@ -1570,13 +1570,13 @@ export default function AtlasApp() {
                   {formatTime(msg.timestamp)}
                 </p>
 
-                {/* Action buttons — visible on hover (desktop) or tap (mobile) */}
+                {/* Action buttons — always visible */}
                 {msg.role === 'assistant' && msg.id !== streamingId && msg.content && !msg.content.startsWith('Error') && (
-                  <div className="flex items-center flex-wrap gap-0.5 mt-1.5 ml-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-active:opacity-100 transition-opacity duration-150">
+                  <div className="flex items-center flex-wrap gap-0.5 mt-1.5 ml-0.5">
                     {/* Copy */}
                     <button
                       onClick={() => copyMessage(msg.id, msg.content)}
-                      className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-500 hover:text-emerald-400 hover:bg-emerald-500/5 transition-all active:scale-95 cursor-pointer select-none"
+                      className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all active:scale-95 cursor-pointer select-none"
                       title={copiedId === msg.id ? 'Copiado' : 'Copiar texto'}
                     >
                       {copiedId === msg.id ? (
@@ -1584,7 +1584,7 @@ export default function AtlasApp() {
                       ) : (
                         <Copy className="w-3.5 h-3.5" />
                       )}
-                      <span className="hidden sm:inline">
+                      <span>
                         {copiedId === msg.id ? 'Copiado' : 'Copiar'}
                       </span>
                     </button>
@@ -1592,18 +1592,18 @@ export default function AtlasApp() {
                     {/* Share */}
                     <button
                       onClick={() => shareMessage(msg.id, msg.content)}
-                      className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-500 hover:text-blue-400 hover:bg-blue-500/5 transition-all active:scale-95 cursor-pointer select-none"
+                      className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all active:scale-95 cursor-pointer select-none"
                       title="Compartir consejo"
                     >
                       {sharedId === msg.id ? (
                         <>
                           <Check className="w-3.5 h-3.5 text-blue-400" />
-                          <span className="text-blue-400 hidden sm:inline">Enlace copiado</span>
+                          <span className="text-blue-400">Enlace copiado</span>
                         </>
                       ) : (
                         <>
                           <Share2 className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Compartir</span>
+                          <span>Compartir</span>
                         </>
                       )}
                     </button>
@@ -1612,11 +1612,11 @@ export default function AtlasApp() {
                     {wordCount(msg.content) > 50 && (
                       <button
                         onClick={() => handleAlarmClick(msg.content)}
-                        className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-500 hover:text-amber-400 hover:bg-amber-500/5 transition-all active:scale-95 cursor-pointer select-none"
+                        className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all active:scale-95 cursor-pointer select-none"
                         title="Programar alarma"
                       >
                         <Bell className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Alarma</span>
+                        <span>Alarma</span>
                       </button>
                     )}
 

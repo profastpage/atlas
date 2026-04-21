@@ -31,7 +31,7 @@ export default function ExpandButton({ onExpand, isExpanding }) {
         >
           <button
             onClick={handleClick}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-medium text-gray-500 hover:text-emerald-400 hover:bg-emerald-500/5 transition-all active:scale-95 cursor-pointer select-none"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-medium text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all active:scale-95 cursor-pointer select-none"
           >
             <span className="text-[10px]">
               {'\u2192'}
