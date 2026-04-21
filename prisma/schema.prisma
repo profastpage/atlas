@@ -18,7 +18,41 @@ model Tenant {
 
   sessions   Session[]
   userMemory UserMemory?
+  authUser   AuthUser?
 }
+
+// ========================================
+// AUTH SYSTEM — Login / Register / Google
+// ========================================
+
+model AuthUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @default("")
+  name         String   @default("")
+  googleId     String   @default("")
+  avatarUrl    String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenantId String @unique
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tokens   AuthToken[]
+}
+
+model AuthToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ========================================
+// CHAT SYSTEM
+// ========================================
 
 model Session {
   id        String   @id @default(cuid())
@@ -35,7 +69,7 @@ model Session {
 model Message {
   id        String   @id @default(cuid())
   sessionId String
-  role      String   // "user" | "assistant" | "system"
+  role      String
   content   String
   timestamp DateTime @default(now())
 
@@ -43,16 +77,15 @@ model Message {
 }
 
 // ========================================
-// SUPABASE-STYLE USER MEMORY MODULE
-// Mirror of: user_memory table (user_id, user_name, context_summary)
+// MEMORY MODULE
 // ========================================
 
 model UserMemory {
   id             String   @id @default(cuid())
-  tenantId       String   @unique  // acts as user_id in Supabase
-  userName       String   @default("")       // user_name field
-  contextSummary String   @default("")       // context_summary field (1-line summaries only)
-  lastTopic      String   @default("")       // último tema tratado para referencia rápida
+  tenantId       String   @unique
+  userName       String   @default("")
+  contextSummary String   @default("")
+  lastTopic      String   @default("")
   updatedAt      DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

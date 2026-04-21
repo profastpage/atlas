@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, Send, Plus, MessageSquare, Trash2, X } from 'lucide-react';
+import { Mic, MicOff, Send, Plus, MessageSquare, Trash2, X, LogOut } from 'lucide-react';
 import { WELCOME_MESSAGE_NEW } from '@/lib/atlas';
+import AuthScreen from '@/components/AuthScreen';
 
 // ========================================
-// TYPES — Espejo de Prisma schema
+// TYPES
 // ========================================
 
 interface Message {
@@ -24,11 +25,22 @@ interface SessionInfo {
   _count?: { messages: number };
 }
 
+interface UserInfo {
+  id: string;
+  email: string;
+  name: string;
+}
+
 // ========================================
-// MAIN APP — ATLAS COGNITIVE COACH
+// MAIN APP -- ATLAS COGNITIVE COACH
 // ========================================
 
 export default function AtlasApp() {
+  // ---- Auth State ----
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+
   // ---- Session & Tenant State ----
   const [tenantId, setTenantId] = useState<string>('');
   const [sessionId, setSessionId] = useState<string>('');
@@ -51,12 +63,34 @@ export default function AtlasApp() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // ---- INITIALIZATION ----
+  // ---- AUTH: Check saved session ----
   useEffect(() => {
-    const saved = localStorage.getItem('atlas_tenant_id');
-    if (saved) {
-      setTenantId(saved);
-      fetchSessions(saved);
+    const token = localStorage.getItem('atlas_token');
+    const savedTenantId = localStorage.getItem('atlas_tenant_id');
+    const savedUser = localStorage.getItem('atlas_user');
+
+    if (token && savedTenantId) {
+      // Validate token
+      fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => {
+          if (res.ok) return res.json();
+          throw new Error('Token invalid');
+        })
+        .then((data) => {
+          if (data.authenticated) {
+            setIsAuthenticated(true);
+            setTenantId(savedTenantId);
+            if (savedUser) {
+              try { setUserInfo(JSON.parse(savedUser)); } catch {}
+            }
+            fetchSessions(savedTenantId);
+          } else {
+            logout();
+          }
+        })
+        .catch(() => logout());
     }
   }, []);
 
@@ -66,6 +100,28 @@ export default function AtlasApp() {
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // ---- AUTH: Logout ----
+  const logout = () => {
+    localStorage.removeItem('atlas_token');
+    localStorage.removeItem('atlas_tenant_id');
+    localStorage.removeItem('atlas_user');
+    setIsAuthenticated(false);
+    setTenantId('');
+    setSessionId('');
+    setSessions([]);
+    setMessages([]);
+    setUserInfo(null);
+    setAuthMode('login');
+  };
+
+  // ---- AUTH: On success ----
+  const handleAuthSuccess = (data: { token: string; tenantId: string; user: UserInfo }) => {
+    setIsAuthenticated(true);
+    setTenantId(data.tenantId);
+    setUserInfo(data.user);
+    fetchSessions(data.tenantId);
   };
 
   // ========================================
@@ -87,18 +143,18 @@ export default function AtlasApp() {
       setMessages([]);
       setShowSessions(false);
 
-      // ---- MENSAJE DE INICIALIZACIÓN ----
-      // Si es usuario nuevo (sin context_summary): bienvenida estándar
-      // Si es usuario existente: el LLM usará su nombre y contexto
+      // ---- MENSAJE DE INICIALIZACION ----
+      // Si es usuario nuevo (sin context_summary): bienvenida estandar
+      // Si es usuario existente: el LLM usara su nombre y contexto
       setTimeout(() => {
         let welcomeContent = WELCOME_MESSAGE_NEW;
 
         if (!data.isNewUser && data.userName && data.contextSummary) {
-          // Usuario recurrente — referencia directa
-          welcomeContent = `${data.userName}, otra vez aquí. Volvamos a tu problema: **${data.contextSummary.substring(0, 60)}**. ¿Hubo algún cambio o seguimos en el mismo punto?`;
+          // Usuario recurrente -- referencia directa
+          welcomeContent = `${data.userName}, otra vez aqui. Volvamos a tu problema: **${data.contextSummary.substring(0, 60)}**. ?Hubo algun cambio o seguimos en el mismo punto?`;
         } else if (!data.isNewUser && data.contextSummary) {
           // Sin nombre pero con contexto
-          welcomeContent = `Ya hemos hablado. Tu situación previa: **${data.contextSummary.substring(0, 60)}**. ¿Qué hay de nuevo?`;
+          welcomeContent = `Ya hemos hablado. Tu situacion previa: **${data.contextSummary.substring(0, 60)}**. ?Que hay de nuevo?`;
         }
 
         setMessages([
@@ -115,7 +171,7 @@ export default function AtlasApp() {
       fetchSessions(data.tenantId);
       return data;
     } catch (error) {
-      console.error('[SESIÓN] Error al crear:', error);
+      console.error('[SESION] Error al crear:', error);
       return null;
     }
   }, [tenantId]);
@@ -126,7 +182,7 @@ export default function AtlasApp() {
       const data = await res.json();
       setSessions(data.sessions || []);
     } catch (error) {
-      console.error('[SESIÓN] Error al listar:', error);
+      console.error('[SESION] Error al listar:', error);
     }
   };
 
@@ -145,7 +201,7 @@ export default function AtlasApp() {
       setSessionReady(true);
       setShowSessions(false);
     } catch (error) {
-      console.error('[SESIÓN] Error al cargar:', error);
+      console.error('[SESION] Error al cargar:', error);
     }
   };
 
@@ -159,25 +215,25 @@ export default function AtlasApp() {
         setSessionReady(false);
       }
     } catch (error) {
-      console.error('[SESIÓN] Error al eliminar:', error);
+      console.error('[SESION] Error al eliminar:', error);
     }
   };
 
   // ========================================
-  // SEND MESSAGE — MÓDULO DE CEREBRO
+  // SEND MESSAGE -- MODULO DE CEREBRO
   // ========================================
 
   const sendMessage = useCallback(
     async (text: string) => {
       if (!text.trim() || isLoading) return;
 
-      // Auto-crear sesión si no existe
+      // Auto-crear sesion si no existe
       let currentSessionId = sessionId;
       if (!currentSessionId) {
         const sessionData = await createNewSession();
         if (!sessionData) return;
         currentSessionId = sessionData.sessionId;
-        // Esperar a que la sesión esté lista
+        // Esperar a que la sesion este lista
         await new Promise((r) => setTimeout(r, 500));
       }
 
@@ -207,7 +263,7 @@ export default function AtlasApp() {
         const assistantMsg: Message = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: data.response || 'Error de comunicación.',
+          content: data.response || 'Error de comunicacion.',
           timestamp: new Date().toISOString(),
         };
 
@@ -221,7 +277,7 @@ export default function AtlasApp() {
           {
             id: `error-${Date.now()}`,
             role: 'assistant',
-            content: 'Error de conexión. Intenta de nuevo.',
+            content: 'Error de conexion. Intenta de nuevo.',
             timestamp: new Date().toISOString(),
           },
         ]);
@@ -234,7 +290,7 @@ export default function AtlasApp() {
   );
 
   // ========================================
-  // VOICE RECORDING — MÓDULO DE OÍDO
+  // VOICE RECORDING -- MODULO DE OIDO
   // ========================================
 
   const startRecording = async () => {
@@ -277,7 +333,7 @@ export default function AtlasApp() {
       mediaRecorder.start();
       setIsRecording(true);
     } catch (error) {
-      console.error('[OÍDO] Acceso al micrófono denegado:', error);
+      console.error('[OIDO] Acceso al microfono denegado:', error);
       setIsRecording(false);
     }
   };
@@ -307,10 +363,10 @@ export default function AtlasApp() {
         setInputValue(data.transcription.trim());
         sendMessage(data.transcription.trim());
       } else if (data.error) {
-        console.error('[OÍDO]', data.error);
+        console.error('[OIDO]', data.error);
       }
     } catch (error) {
-      console.error('[OÍDO] Error de transcripción:', error);
+      console.error('[OIDO] Error de transcripcion:', error);
     } finally {
       setIsTranscribing(false);
     }
@@ -344,8 +400,8 @@ export default function AtlasApp() {
 
   const formatMessageContent = (content: string) => {
     let formatted = content.replace(
-      /•/g,
-      '<span class="text-emerald-400 mr-1">•</span>'
+      /\u2022/g,
+      '<span class="text-emerald-400 mr-1">\u2022</span>'
     );
     formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     formatted = formatted.replace(/\n/g, '<br/>');
@@ -364,9 +420,21 @@ export default function AtlasApp() {
   };
 
   // ========================================
-  // RENDER — MOBILE FIRST UI
+  // RENDER
   // ========================================
 
+  // ---- AUTH SCREEN (not authenticated) ----
+  if (!isAuthenticated) {
+    return (
+      <AuthScreen
+        mode={authMode}
+        onSwitchMode={setAuthMode}
+        onAuthSuccess={handleAuthSuccess}
+      />
+    );
+  }
+
+  // ---- CHAT SCREEN (authenticated) ----
   return (
     <div className="flex flex-col h-dvh bg-gray-950 text-white overflow-hidden">
       {/* ===== HEADER ===== */}
@@ -384,17 +452,32 @@ export default function AtlasApp() {
               ATLAS
             </h1>
             <p className="text-[10px] text-emerald-400/70 font-medium tracking-wide uppercase">
-              Coach Cognitivo de Élite
+              Coach Cognitivo de Elite
             </p>
           </div>
         </div>
-        <button
-          onClick={createNewSession}
-          className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
-          aria-label="Nueva conversación"
-        >
-          <Plus className="w-5 h-5 text-gray-400" />
-        </button>
+        <div className="flex items-center gap-2">
+          {userInfo?.name && (
+            <span className="text-[11px] text-gray-500 hidden sm:block max-w-[120px] truncate">
+              {userInfo.name}
+            </span>
+          )}
+          <button
+            onClick={logout}
+            className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
+            aria-label="Cerrar sesion"
+            title="Cerrar sesion"
+          >
+            <LogOut className="w-4.5 h-4.5 text-gray-500 hover:text-red-400" />
+          </button>
+          <button
+            onClick={createNewSession}
+            className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
+            aria-label="Nueva conversacion"
+          >
+            <Plus className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
       </header>
 
       {/* ===== SESSIONS DRAWER ===== */}
@@ -429,7 +512,7 @@ export default function AtlasApp() {
               <div className="flex-1 overflow-y-auto p-2 space-y-1">
                 {sessions.length === 0 ? (
                   <p className="text-xs text-gray-600 text-center mt-10">
-                    Sin conversaciones aún
+                    Sin conversaciones aun
                   </p>
                 ) : (
                   sessions.map((session) => (
@@ -473,14 +556,14 @@ export default function AtlasApp() {
         {messages.length === 0 && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 flex items-center justify-center mb-5 border border-emerald-500/10">
-              <span className="text-4xl">🧭</span>
+              <span className="text-4xl">{'\uD83E\uDDED'}</span>
             </div>
             <h2 className="text-xl font-bold text-gray-200 mb-2">Atlas</h2>
             <p className="text-sm text-gray-500 max-w-[260px] leading-relaxed">
-              Consultor Estratégico y Coach Cognitivo de Élite.
+              Consultor Estrategico y Coach Cognitivo de Elite.
               <br />
               <span className="text-gray-600 text-xs mt-1 block">
-                Escribe o usa el micrófono para empezar.
+                Escribe o usa el microfono para empezar.
               </span>
             </p>
           </div>
@@ -506,7 +589,7 @@ export default function AtlasApp() {
               >
                 {msg.role === 'assistant' && (
                   <div className="flex items-center gap-1.5 mb-1.5">
-                    <span className="text-xs">🧭</span>
+                    <span className="text-xs">{'\uD83E\uDDED'}</span>
                     <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest">
                       Atlas
                     </span>
@@ -543,7 +626,7 @@ export default function AtlasApp() {
           >
             <div className="bg-gray-800/70 border border-gray-700/40 rounded-2xl rounded-bl-md px-4 py-3">
               <div className="flex items-center gap-1.5 mb-1">
-                <span className="text-xs">🧭</span>
+                <span className="text-xs">{'\uD83E\uDDED'}</span>
                 <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest">
                   Atlas
                 </span>
@@ -588,7 +671,7 @@ export default function AtlasApp() {
             <Send className="w-[18px] h-[18px] text-white" />
           </button>
 
-          {/* Microphone — GRANDE y visible */}
+          {/* Microphone -- GRANDE y visible */}
           <button
             type="button"
             onClick={toggleRecording}
@@ -599,7 +682,7 @@ export default function AtlasApp() {
                 : 'bg-gray-800 hover:bg-gray-700/80 border-2 border-emerald-500/30 hover:border-emerald-500/60'
             }`}
             aria-label={
-              isRecording ? 'Detener grabación' : 'Hablar (micrófono)'
+              isRecording ? 'Detener grabacion' : 'Hablar (microfono)'
             }
           >
             {isRecording ? (
