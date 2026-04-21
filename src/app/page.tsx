@@ -9,6 +9,22 @@ import {
   Paperclip, FileText, XCircle as XCircleIcon, Loader2,
   Copy, Share2, Bell, Star
 } from 'lucide-react';
+import {
+  trackMessageSent,
+  trackPaywallShown,
+  trackPaywallDismissed,
+  trackLogin,
+  trackSignUp,
+  trackLogout,
+  trackActionButton,
+  trackVoiceStart,
+  trackVoiceLocked,
+  trackVoiceError,
+  trackAlarmCreated,
+  trackSessionCreated,
+  identifyUser,
+  resetIdentity,
+} from '@/lib/analytics';
 import { WELCOME_MESSAGE_NEW } from '@/lib/atlas';
 import SettingsSidebar from '@/components/SettingsSidebar';
 import InstallPrompt from '@/components/InstallPrompt';
@@ -188,6 +204,12 @@ export default function AtlasApp() {
         } catch {}
         setIsAuthenticated(true);
         setTenantId(oauthTenantId);
+        trackLogin({ method: 'google_oauth' });
+        try {
+          const parsedUser = JSON.parse(decodeURIComponent(oauthUser));
+          setUserInfo(parsedUser);
+          identifyUser({ id: oauthTenantId, email: parsedUser.email || '', name: parsedUser.name || '', tenantId: oauthTenantId });
+        } catch {}
         checkPlanAfterLogin(oauthTenantId);
         fetchSessions(oauthTenantId);
         return;
@@ -214,8 +236,13 @@ export default function AtlasApp() {
             if (data.authenticated) {
               setIsAuthenticated(true);
               setTenantId(savedTenantId);
+              trackLogin({ method: 'token_restore' });
               if (savedUser) {
-                try { setUserInfo(JSON.parse(savedUser)); } catch {}
+                try {
+                  const parsed = JSON.parse(savedUser);
+                  setUserInfo(parsed);
+                  identifyUser({ id: savedTenantId, email: parsed.email || '', name: parsed.name || '', tenantId: savedTenantId });
+                } catch {}
               }
               // ---- CHECK PLAN TYPE AFTER LOGIN ----
               checkPlanAfterLogin(savedTenantId);
@@ -291,6 +318,8 @@ export default function AtlasApp() {
   // Modal content changes: guest sees "Iniciar Sesion", logged-in sees "Ver Planes".
 
   const logout = () => {
+    trackLogout();
+    resetIdentity();
     localStorage.removeItem('atlas_token');
     localStorage.removeItem('atlas_tenant_id');
     localStorage.removeItem('atlas_user');
@@ -343,6 +372,7 @@ export default function AtlasApp() {
     };
 
     recognition.onerror = (event: any) => {
+      trackVoiceError({ error: event.error || 'unknown' });
       if (event.error === 'not-allowed') {
         alert('Se requiere permiso de micrófono para usar la función de voz.');
       }
@@ -391,6 +421,7 @@ export default function AtlasApp() {
     setIsLocked(false);
     isLockedRef.current = false;
     shouldAutoSendRef.current = false;
+    trackVoiceStart();
     if (recognitionRef.current && !isListening) {
       try {
         recognitionRef.current.start();
@@ -407,6 +438,7 @@ export default function AtlasApp() {
       setIsLocked(true);
       isLockedRef.current = true;
       shouldAutoSendRef.current = false;
+      trackVoiceLocked();
     }
   }, [isListening, isLocked]);
 
@@ -455,6 +487,10 @@ export default function AtlasApp() {
         // Store actual plan name for feature gating
         const pName = sub?.planId || sub?.planName?.toLowerCase() || '';
         setUserPlanType(pName);
+        // PostHog: Identify user with plan type
+        const currentEmail = userInfo?.email || '';
+        const currentName = userInfo?.name || '';
+        identifyUser({ id: tId, email: currentEmail, name: currentName, planType: pName, tenantId: tId });
         return;
       }
 
@@ -466,7 +502,12 @@ export default function AtlasApp() {
           hoursLeft: trialData.trial.hoursLeft,
           isActive: true,
         });
-        setUserPlanType(trialData.trial.plan || 'pro');
+        const trialPlan = trialData.trial.plan || 'pro';
+        setUserPlanType(trialPlan);
+        // PostHog: Identify user with trial plan
+        const currentEmail = userInfo?.email || '';
+        const currentName = userInfo?.name || '';
+        identifyUser({ id: tId, email: currentEmail, name: currentName, planType: `trial_${trialPlan}`, tenantId: tId });
         return;
       }
 
@@ -707,6 +748,15 @@ export default function AtlasApp() {
       setInputValue('');
       setIsLoading(true);
       setIsStreaming(true); // ---- PASO 3: Activar streaming ANTES del fetch ----
+
+      // ---- POSTHOG: Track mensaje enviado ----
+      trackMessageSent({
+        hasPlan: hasActivePlan === true,
+        planType: userPlanType || undefined,
+        hasDocument: !!documentText,
+        isVoice: false, // se sobreescribe desde voice handler cuando aplica
+        messageLength: text.trim().length,
+      });
 
       try {
         const res = await fetch('/api/chat', {
@@ -1039,6 +1089,7 @@ export default function AtlasApp() {
       const plainText = toPlainText(content);
       await navigator.clipboard.writeText(plainText);
       setCopiedId(msgId);
+      trackActionButton({ action: 'copy' });
       setTimeout(() => setCopiedId(null), 1500);
     } catch (error) {
       console.error('[COPIAR] Error:', error);
@@ -1052,6 +1103,7 @@ export default function AtlasApp() {
   const shareMessage = useCallback(async (msgId: string, content: string) => {
     try {
       const plainText = toPlainText(content);
+      trackActionButton({ action: 'share' });
       const shareText = `${plainText}\n\n— Resuelto por Atlas, tu Asesor Estrategico 24/7. Pribalo en: https://atlas-9mv.pages.dev`;
 
       if (typeof navigator !== 'undefined' && navigator.share) {
@@ -1078,13 +1130,16 @@ export default function AtlasApp() {
 
   const handleAlarmClick = useCallback((content: string) => {
     if (!isAuthenticated) {
+      trackPaywallShown({ reason: 'alarm_gate', messagesSent: trialBotResponses, isAuthenticated: false });
       setShowAlarmPaywall(true);
       return;
     }
     if (userPlanType !== 'ejecutivo') {
+      trackPaywallShown({ reason: 'alarm_gate', messagesSent: trialBotResponses, isAuthenticated: true });
       setShowAlarmPaywall(true);
       return;
     }
+    trackActionButton({ action: 'alarm' });
     // Executive user — open scheduler
     setAlarmMsgContent(content);
     setShowAlarmScheduler(true);
@@ -1155,6 +1210,22 @@ export default function AtlasApp() {
 
   const remainingResponses = Math.max(0, FREE_BOT_RESPONSES - trialBotResponses);
 
+  // ---- POSTHOG: Track paywall cuando se muestra ----
+  const paywallShownRef = useRef(false);
+  useEffect(() => {
+    if (isInputBlocked && !paywallShownRef.current) {
+      paywallShownRef.current = true;
+      trackPaywallShown({
+        reason: 'trial_exceeded',
+        messagesSent: trialBotResponses,
+        isAuthenticated: !!isAuthenticated,
+      });
+    }
+    if (!isInputBlocked) {
+      paywallShownRef.current = false;
+    }
+  }, [isInputBlocked, trialBotResponses, isAuthenticated]);
+
   // ========================================
   // EXPAND MODE — Regenerate with no word limit
   // ========================================
@@ -1170,6 +1241,7 @@ export default function AtlasApp() {
       if (!sessionId || !tenantId || expandingId) return;
 
       setExpandingId(msgId);
+      trackActionButton({ action: 'expand' });
 
       try {
         const res = await fetch('/api/chat', {
@@ -1758,8 +1830,10 @@ export default function AtlasApp() {
             onClick={() => {
               const plan = (userPlanType || '').toLowerCase();
               if (plan === 'pro' || plan === 'ejecutivo' || plan === 'elite') {
+                trackActionButton({ action: 'attach' });
                 fileInputRef.current?.click();
               } else {
+                trackPaywallShown({ reason: 'pdf_gate', messagesSent: trialBotResponses, isAuthenticated: !!isAuthenticated });
                 setShowPdfPaywall(true);
               }
             }}

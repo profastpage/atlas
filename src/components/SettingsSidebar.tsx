@@ -6,6 +6,7 @@ import {
   X, LogOut, Edit3, Check,
   Crown, Zap, CheckCircle2, Bell, Star, Trash2, Clock
 } from 'lucide-react';
+import { trackPlanSelected } from '@/lib/analytics';
 
 // ========================================
 // SETTINGS SIDEBAR — Premium Brand, Dynamic Plans
@@ -460,7 +461,15 @@ export default function SettingsSidebar({
 
                             {/* CTA Button */}
                             <button
-                              onClick={() => console.log(`Plan seleccionado: ${plan.id}`)}
+                              onClick={() => {
+                                trackPlanSelected({
+                                  planId: plan.id,
+                                  planName: plan.name,
+                                  price: plan.price,
+                                  source: forcePaywall ? 'paywall' : 'settings',
+                                });
+                                console.log(`Plan seleccionado: ${plan.id}`);
+                              }}
                               className={`w-full py-2 rounded-lg text-[11px] font-semibold transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 ${
                                 plan.id === 'ejecutivo'
                                   ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/20'
