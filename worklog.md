@@ -168,3 +168,29 @@ Stage Summary:
 - Privacy-first: autocapture desactivado, solo eventos explícitos
 - Archivos nuevos: src/lib/analytics.ts, src/app/providers.tsx
 - Commit: b39f6fc
+---
+Task ID: 2
+Agent: main
+Task: Auditoría completa + push a GitHub para deploy en Cloudflare
+
+Work Log:
+- Verificado git log: 10+ commits con features implementadas localmente
+- Detectado problema: commits locales nunca subidos al remote (origin/main en 9392ff6, local en 00d2891)
+- Auditoría completa de page.tsx (2,257 líneas): todas las 7 features verificadas ✅
+  1. Web Speech API (es-419, continuous, interimResults) ✅
+  2. Slide-to-Lock mic (60px threshold, pointer capture, auto-restart) ✅
+  3. Auto-send on release (shouldAutoSendRef, sendMessage en onend) ✅
+  4. Textarea con auto-scroll (scrollTop=scrollHeight via rAF) ✅
+  5. Attach button Paperclip (gating pro/ejecutivo, showPdfPaywall) ✅
+  6. Action buttons always visible (opacity-40 hover:opacity-100) ✅
+  7. PostHog tracking (13 eventos en page.tsx) ✅
+- Auditoría de context-api.ts (305 líneas): weather, news, exchange, wikipedia, server time ✅
+- Auditoría de chat/route.ts (617 líneas): enrichContext + buildTimeInjection integrados ✅
+- Ejecutado git push origin main — deploy 9392ff6..00d2891 enviado
+- Build local exitoso
+
+Stage Summary:
+- TODAS las features estaban implementadas, el problema era solo de deploy
+- Push exitoso: Cloudflare Pages recibirá commit 00d2891 con PostHog
+- Los commits 9392ff6 y anteriores ya estaban en el remote (Cloudflare ya los tenía)
+- El usuario probablemente veía versión cacheada del navegador
