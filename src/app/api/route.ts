@@ -12,21 +12,6 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action');
 
-  // ---- DEBUG ENDPOINT (remove after verifying env vars) ----
-  if (action === 'debug-env') {
-    return NextResponse.json({
-      hasDatabaseUrl: !!process.env.DATABASE_URL,
-      hasTursoToken: !!process.env.TURSO_AUTH_TOKEN,
-      hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-      hasSupabaseKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      hasLlmModel: !!process.env.LLM_MODEL,
-      hasQwenKey: !!process.env.QWEN_API_KEY,
-      hasQwenUrl: !!process.env.QWEN_BASE_URL,
-      nodeEnv: process.env.NODE_ENV || 'not set',
-      databaseUrlPrefix: process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 30) + '...' : 'MISSING',
-    });
-  }
-
   // ---- ADMIN ENDPOINTS ----
   if (action) {
     return handleAdminAction(request, action);
