@@ -1196,14 +1196,15 @@ export default function AtlasApp() {
       <SettingsSidebar
         isOpen={showSettings}
         onClose={() => {
-          // Free users cannot close settings until they pick a plan
-          if (isAuthenticated && hasActivePlan === false) return;
+          // Free users cannot close settings AFTER exhausting 5 free responses
+          const paywallActive = trialBotResponses >= FREE_BOT_RESPONSES && hasActivePlan !== true;
+          if (isAuthenticated && paywallActive) return;
           setShowSettings(false);
         }}
         user={userInfo ? { ...userInfo, tenantId } : null}
         token={token || ''}
         onOpenAdmin={() => { setShowSettings(false); window.location.href = '/admin'; }}
-        forcePaywall={isAuthenticated && hasActivePlan === false}
+        forcePaywall={isAuthenticated && hasActivePlan !== true && trialBotResponses >= FREE_BOT_RESPONSES}
         userPlanType={userPlanType}
       />
 
