@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, Send, Plus, MessageSquare, Trash2, X, LogOut, Settings } from 'lucide-react';
+import {
+  Mic, MicOff, Send, Plus, MessageSquare, Trash2,
+  X, LogOut, Settings, Lock, UserPlus, ShieldCheck, XCircle
+} from 'lucide-react';
 import { WELCOME_MESSAGE_NEW } from '@/lib/atlas';
-import AuthScreen from '@/components/AuthScreen';
 import SettingsSidebar from '@/components/SettingsSidebar';
 import AdminPanel from '@/components/AdminPanel';
 
@@ -34,13 +36,21 @@ interface UserInfo {
 }
 
 // ========================================
+// CONSTANTS
+// ========================================
+
+const FREE_MESSAGES_LIMIT = 5;
+const GUEST_TENANT_KEY = 'atlas_guest_tenant_id';
+const GUEST_MESSAGES_KEY = 'atlas_guest_msg_count';
+
+// ========================================
 // MAIN APP -- ATLAS COGNITIVE COACH
+// Chat directo con 5 mensajes gratis
 // ========================================
 
 export default function AtlasApp() {
   // ---- Auth State ----
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
 
   // ---- Session & Tenant State ----
@@ -54,6 +64,10 @@ export default function AtlasApp() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // ---- Guest State ----
+  const [guestMessageCount, setGuestMessageCount] = useState(0);
+  const [showPaywall, setShowPaywall] = useState(false);
 
   // ---- Voice State ----
   const [isRecording, setIsRecording] = useState(false);
@@ -71,7 +85,9 @@ export default function AtlasApp() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminToken, setAdminToken] = useState('');
 
-  // ---- AUTH: Check saved session ----
+  // ========================================
+  // INIT: Determine auth state
+  // ========================================
   useEffect(() => {
     const savedToken = localStorage.getItem('atlas_token');
     const savedTenantId = localStorage.getItem('atlas_tenant_id');
@@ -79,32 +95,76 @@ export default function AtlasApp() {
 
     if (savedToken) {
       setToken(savedToken);
-    }
 
-    if (savedToken && savedTenantId) {
-      // Validate token
-      fetch('/api/auth/me', {
-        headers: { Authorization: `Bearer ${savedToken}` },
-      })
-        .then((res) => {
-          if (res.ok) return res.json();
-          throw new Error('Token invalid');
+      if (savedTenantId) {
+        // Validate token with server
+        fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${savedToken}` },
         })
-        .then((data) => {
-          if (data.authenticated) {
-            setIsAuthenticated(true);
-            setTenantId(savedTenantId);
-            if (savedUser) {
-              try { setUserInfo(JSON.parse(savedUser)); } catch {}
+          .then((res) => {
+            if (res.ok) return res.json();
+            throw new Error('Token invalid');
+          })
+          .then((data) => {
+            if (data.authenticated) {
+              setIsAuthenticated(true);
+              setTenantId(savedTenantId);
+              if (savedUser) {
+                try { setUserInfo(JSON.parse(savedUser)); } catch {}
+              }
+              fetchSessions(savedTenantId);
+            } else {
+              logout();
             }
-            fetchSessions(savedTenantId);
-          } else {
+          })
+          .catch(() => {
+            // Token invalid — become guest
             logout();
-          }
-        })
-        .catch(() => logout());
+          });
+      }
+    } else {
+      // No token — Guest mode: restore guest session or start fresh
+      const guestTenantId = localStorage.getItem(GUEST_TENANT_KEY);
+      const guestCount = parseInt(localStorage.getItem(GUEST_MESSAGES_KEY) || '0', 10);
+      setGuestMessageCount(guestCount);
+
+      if (guestTenantId) {
+        setTenantId(guestTenantId);
+      }
+
+      // Auto-init session for guest
+      initGuestSession(guestTenantId);
     }
   }, []);
+
+  const initGuestSession = async (existingTenantId?: string | null) => {
+    try {
+      const res = await fetch('/api/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: existingTenantId || undefined }),
+      });
+      const data = await res.json();
+
+      const tId = data.tenantId;
+      setTenantId(tId);
+      setSessionId(data.sessionId);
+      if (!existingTenantId) {
+        localStorage.setItem(GUEST_TENANT_KEY, tId);
+      }
+      setMessages([
+        {
+          id: `welcome-${Date.now()}`,
+          role: 'assistant',
+          content: WELCOME_MESSAGE_NEW,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      setSessionReady(true);
+    } catch (error) {
+      console.error('[GUEST] Error al iniciar sesion:', error);
+    }
+  };
 
   useEffect(() => {
     scrollToBottom();
@@ -114,7 +174,10 @@ export default function AtlasApp() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // ---- AUTH: Logout ----
+  // ========================================
+  // AUTH LOGIC
+  // ========================================
+
   const logout = () => {
     localStorage.removeItem('atlas_token');
     localStorage.removeItem('atlas_tenant_id');
@@ -125,20 +188,13 @@ export default function AtlasApp() {
     setSessions([]);
     setMessages([]);
     setUserInfo(null);
-    setAuthMode('login');
     setToken('');
+    setShowPaywall(false);
   };
 
-  // ---- AUTH: On success ----
-  const handleAuthSuccess = (data: { token: string; tenantId: string; user: UserInfo }) => {
-    setIsAuthenticated(true);
-    setTenantId(data.tenantId);
-    setUserInfo(data.user);
-    setToken(data.token);
-    localStorage.setItem('atlas_token', data.token);
-    localStorage.setItem('atlas_tenant_id', data.tenantId);
-    fetchSessions(data.tenantId);
-  };
+  // ========================================
+  // LOGIN MODAL (inline, no separate route needed in page)
+  // ========================================
 
   // ========================================
   // SESSION MANAGEMENT
@@ -159,17 +215,12 @@ export default function AtlasApp() {
       setMessages([]);
       setShowSessions(false);
 
-      // ---- MENSAJE DE INICIALIZACION ----
-      // Si es usuario nuevo (sin context_summary): bienvenida estandar
-      // Si es usuario existente: el LLM usara su nombre y contexto
       setTimeout(() => {
         let welcomeContent = WELCOME_MESSAGE_NEW;
 
         if (!data.isNewUser && data.userName && data.contextSummary) {
-          // Usuario recurrente -- referencia directa
           welcomeContent = `${data.userName}, otra vez aqui. Volvamos a tu problema: **${data.contextSummary.substring(0, 60)}**. Hubo algun cambio o seguimos en el mismo punto?`;
         } else if (!data.isNewUser && data.contextSummary) {
-          // Sin nombre pero con contexto
           welcomeContent = `Ya hemos hablado. Tu situacion previa: **${data.contextSummary.substring(0, 60)}**. Que hay de nuevo?`;
         }
 
@@ -236,12 +287,23 @@ export default function AtlasApp() {
   };
 
   // ========================================
-  // SEND MESSAGE -- MODULO DE CEREBRO
+  // SEND MESSAGE — Guest + Auth flow
   // ========================================
 
   const sendMessage = useCallback(
     async (text: string) => {
       if (!text.trim() || isLoading) return;
+
+      // ---- GUEST LIMIT CHECK ----
+      if (!isAuthenticated) {
+        const newCount = guestMessageCount + 1;
+        if (newCount > FREE_MESSAGES_LIMIT) {
+          setShowPaywall(true);
+          return;
+        }
+        setGuestMessageCount(newCount);
+        localStorage.setItem(GUEST_MESSAGES_KEY, String(newCount));
+      }
 
       // Auto-crear sesion si no existe
       let currentSessionId = sessionId;
@@ -249,7 +311,6 @@ export default function AtlasApp() {
         const sessionData = await createNewSession();
         if (!sessionData) return;
         currentSessionId = sessionData.sessionId;
-        // Esperar a que la sesion este lista
         await new Promise((r) => setTimeout(r, 500));
       }
 
@@ -285,7 +346,12 @@ export default function AtlasApp() {
 
         setMessages((prev) => [...prev, assistantMsg]);
 
-        if (tenantId) fetchSessions(tenantId);
+        // After response, check if guest hit limit
+        if (!isAuthenticated && guestMessageCount >= FREE_MESSAGES_LIMIT) {
+          setTimeout(() => setShowPaywall(true), 800);
+        }
+
+        if (tenantId && isAuthenticated) fetchSessions(tenantId);
       } catch (error) {
         console.error('[CEREBRO] Error:', error);
         setMessages((prev) => [
@@ -302,11 +368,11 @@ export default function AtlasApp() {
         inputRef.current?.focus();
       }
     },
-    [sessionId, tenantId, isLoading, createNewSession]
+    [sessionId, tenantId, isLoading, createNewSession, isAuthenticated, guestMessageCount]
   );
 
   // ========================================
-  // VOICE RECORDING -- MODULO DE OIDO
+  // VOICE RECORDING — Ear Module
   // ========================================
 
   const startRecording = async () => {
@@ -320,7 +386,6 @@ export default function AtlasApp() {
         },
       });
 
-      // Seleccionar mimeType compatible (priorizar webm/opus)
       let mimeType = 'audio/webm;codecs=opus';
       if (!MediaRecorder.isTypeSupported(mimeType)) {
         mimeType = 'audio/webm';
@@ -375,7 +440,6 @@ export default function AtlasApp() {
       const data = await res.json();
 
       if (data.transcription && data.transcription.trim()) {
-        // Mostrar texto transcrito brevemente, luego enviar
         setInputValue(data.transcription.trim());
         sendMessage(data.transcription.trim());
       } else if (data.error) {
@@ -460,22 +524,12 @@ export default function AtlasApp() {
     }
   };
 
+  const remainingMessages = Math.max(0, FREE_MESSAGES_LIMIT - guestMessageCount);
+
   // ========================================
-  // RENDER
+  // ADMIN PANEL
   // ========================================
 
-  // ---- AUTH SCREEN (not authenticated) ----
-  if (!isAuthenticated) {
-    return (
-      <AuthScreen
-        mode={authMode}
-        onSwitchMode={setAuthMode}
-        onAuthSuccess={handleAuthSuccess}
-      />
-    );
-  }
-
-  // ---- ADMIN PANEL (authenticated + admin mode) ----
   if (showAdmin) {
     return (
       <AdminPanel
@@ -485,7 +539,10 @@ export default function AtlasApp() {
     );
   }
 
-  // ---- CHAT SCREEN (authenticated) ----
+  // ========================================
+  // MAIN CHAT SCREEN (accessible for all)
+  // ========================================
+
   return (
     <div className="flex flex-col h-dvh bg-gray-950 text-white overflow-hidden">
       {/* ===== SETTINGS SIDEBAR ===== */}
@@ -517,19 +574,34 @@ export default function AtlasApp() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {userInfo?.name && (
-            <span className="text-[11px] text-gray-500 hidden sm:block max-w-[120px] truncate">
-              {userInfo.name}
-            </span>
+          {/* Guest indicator or user name */}
+          {isAuthenticated ? (
+            <>
+              {userInfo?.name && (
+                <span className="text-[11px] text-gray-500 hidden sm:block max-w-[120px] truncate">
+                  {userInfo.name}
+                </span>
+              )}
+              <button
+                onClick={logout}
+                className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
+                aria-label="Cerrar sesion"
+                title="Cerrar sesion"
+              >
+                <LogOut className="w-4 h-4 text-gray-500 hover:text-red-400" />
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setShowPaywall(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 text-[11px] font-medium hover:bg-emerald-600/30 transition-all"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              {remainingMessages > 0
+                ? `${remainingMessages} gratis`
+                : 'Inicia sesion'}
+            </button>
           )}
-          <button
-            onClick={logout}
-            className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
-            aria-label="Cerrar sesion"
-            title="Cerrar sesion"
-          >
-            <LogOut className="w-4.5 h-4.5 text-gray-500 hover:text-red-400" />
-          </button>
           <button
             onClick={createNewSession}
             className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
@@ -537,14 +609,16 @@ export default function AtlasApp() {
           >
             <Plus className="w-5 h-5 text-gray-400" />
           </button>
-          <button
-            onClick={() => setShowSettings(true)}
-            className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
-            aria-label="Configuracion"
-            title="Configuracion"
-          >
-            <Settings className="w-5 h-5 text-gray-400" />
-          </button>
+          {isAuthenticated && (
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
+              aria-label="Configuracion"
+              title="Configuracion"
+            >
+              <Settings className="w-5 h-5 text-gray-400" />
+            </button>
+          )}
         </div>
       </header>
 
@@ -713,6 +787,19 @@ export default function AtlasApp() {
 
       {/* ===== INPUT AREA ===== */}
       <div className="shrink-0 border-t border-gray-800/40 bg-gray-900/90 backdrop-blur-md px-3 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] z-10">
+        {/* Guest remaining messages bar */}
+        {!isAuthenticated && remainingMessages > 0 && (
+          <div className="text-center mb-2">
+            <span className="text-[10px] text-gray-600">
+              Tienes <span className="text-emerald-400 font-semibold">{remainingMessages}</span> mensaje{remainingMessages !== 1 ? 's' : ''} gratuito{remainingMessages !== 1 ? 's' : ''}.{' '}
+              <a href="/login" className="text-emerald-400 hover:text-emerald-300 underline">
+                Inicia sesion
+              </a>{' '}
+              para acceso ilimitado.
+            </span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="flex items-center gap-2 max-w-3xl mx-auto">
           <input
             ref={inputRef}
@@ -723,27 +810,29 @@ export default function AtlasApp() {
             placeholder={
               isTranscribing
                 ? 'Transcribiendo voz...'
+                : !isAuthenticated && remainingMessages <= 0
+                ? 'Inicia sesion para continuar...'
                 : 'Escribe o habla tu mensaje...'
             }
             className="flex-1 bg-gray-800/50 border border-gray-700/40 rounded-full px-4 py-3 text-[14px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all disabled:opacity-50"
-            disabled={isLoading || isTranscribing}
+            disabled={isLoading || isTranscribing || (!isAuthenticated && remainingMessages <= 0)}
           />
 
           {/* Send */}
           <button
             type="submit"
-            disabled={!inputValue.trim() || isLoading || isTranscribing}
+            disabled={!inputValue.trim() || isLoading || isTranscribing || (!isAuthenticated && remainingMessages <= 0)}
             className="w-11 h-11 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700/50 disabled:opacity-30 flex items-center justify-center transition-all active:scale-90 shrink-0"
             aria-label="Enviar"
           >
             <Send className="w-[18px] h-[18px] text-white" />
           </button>
 
-          {/* Microphone -- GRANDE y visible */}
+          {/* Microphone */}
           <button
             type="button"
             onClick={toggleRecording}
-            disabled={isLoading || isTranscribing}
+            disabled={isLoading || isTranscribing || (!isAuthenticated && remainingMessages <= 0)}
             className={`w-[52px] h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 ${
               isRecording
                 ? 'bg-red-500 hover:bg-red-400 shadow-xl shadow-red-500/40 animate-pulse'
@@ -790,6 +879,90 @@ export default function AtlasApp() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* ===== PAYWALL / LOGIN MODAL ===== */}
+      <AnimatePresence>
+        {showPaywall && !isAuthenticated && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50"
+              onClick={() => setShowPaywall(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-sm mx-auto"
+            >
+              <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
+                {/* Close button */}
+                <button
+                  onClick={() => setShowPaywall(false)}
+                  className="absolute top-4 right-4 p-1 rounded-full hover:bg-gray-800/60 transition-colors"
+                >
+                  <XCircle className="w-5 h-5 text-gray-500" />
+                </button>
+
+                {/* Icon */}
+                <div className="text-center mb-5">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-emerald-600/5 flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
+                    <Lock className="w-8 h-8 text-emerald-400" />
+                  </div>
+                  <h2 className="text-xl font-bold text-white">
+                    Acceso Completo
+                  </h2>
+                  <p className="text-sm text-gray-400 mt-2 leading-relaxed">
+                    Has usado tus {FREE_MESSAGES_LIMIT} mensajes gratuitos.
+                    Inicia sesion o crea una cuenta para:
+                  </p>
+                </div>
+
+                {/* Benefits */}
+                <ul className="space-y-2.5 mb-6 px-1">
+                  {[
+                    'Mensajes ilimitados con Atlas',
+                    'Historial guardado automaticamente',
+                    'Memoria contextual entre sesiones',
+                    'Acceso a multiples dispositivos',
+                  ].map((benefit) => (
+                    <li key={benefit} className="flex items-start gap-2.5">
+                      <span className="text-emerald-400 mt-0.5">{'\u2713'}</span>
+                      <span className="text-sm text-gray-300">{benefit}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                {/* Action Buttons */}
+                <div className="space-y-3">
+                  <a
+                    href="/login"
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
+                  >
+                    Iniciar Sesion
+                    <Lock className="w-4 h-4" />
+                  </a>
+                  <a
+                    href="/register"
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium border border-gray-700/50 transition-all active:scale-[0.98]"
+                  >
+                    Crear Cuenta Gratis
+                    <UserPlus className="w-4 h-4" />
+                  </a>
+                </div>
+
+                {/* Dismiss */}
+                <p className="text-center text-[10px] text-gray-600 mt-4">
+                  Puedes seguir explorando sin cuenta, pero tu historial no se guardara
+                </p>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
