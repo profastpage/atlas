@@ -9,6 +9,7 @@ import {
 import { WELCOME_MESSAGE_NEW } from '@/lib/atlas';
 import SettingsSidebar from '@/components/SettingsSidebar';
 import InstallPrompt from '@/components/InstallPrompt';
+import ExpandButton, { ExpandSpinner } from '@/components/ExpandButton';
 
 // ========================================
 // TYPES
@@ -69,6 +70,9 @@ export default function AtlasApp() {
   // ---- Guest State ----
   const [guestMessageCount, setGuestMessageCount] = useState(0);
   const [showPaywall, setShowPaywall] = useState(false);
+
+  // ---- Expand State ----
+  const [expandingId, setExpandingId] = useState<string | null>(null);
 
   // ---- Voice State ----
   const [isRecording, setIsRecording] = useState(false);
@@ -567,6 +571,106 @@ export default function AtlasApp() {
   const remainingMessages = Math.max(0, FREE_MESSAGES_LIMIT - guestMessageCount);
 
   // ========================================
+  // EXPAND MODE — Regenerate with no word limit
+  // ========================================
+
+  const isShortResponse = (content: string) => {
+    if (!content || content.startsWith('Error') || content.startsWith('Sin respuesta')) return false;
+    const words = content.split(/\s+/).filter(Boolean).length;
+    return words >= 15 && words <= 90;
+  };
+
+  const expandMessage = useCallback(
+    async (msgId: string) => {
+      if (!sessionId || !tenantId || expandingId) return;
+
+      setExpandingId(msgId);
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            tenantId,
+            expandedMode: true,
+            messageId: msgId,
+          }),
+        });
+
+        const contentType = res.headers.get('content-type') || '';
+
+        if (contentType.includes('text/event-stream')) {
+          // Streaming expanded response
+          const reader = res.body!.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let fullText = '';
+          let lastUIUpdate = 0;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data: ')) continue;
+              try {
+                const parsed = JSON.parse(trimmed.slice(6));
+                if (parsed.token) {
+                  fullText += parsed.token;
+                }
+              } catch {}
+            }
+
+            // Throttle UI updates to ~30fps
+            const now = Date.now();
+            if (now - lastUIUpdate > 30) {
+              const currentText = fullText;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === msgId ? { ...m, content: currentText } : m
+                )
+              );
+              lastUIUpdate = now;
+            }
+          }
+
+          // Final update
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msgId
+                ? { ...m, content: fullText || 'Sin respuesta.' }
+                : m
+            )
+          );
+        } else {
+          // Non-streaming fallback
+          const data = await res.json();
+          if (data.response) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msgId
+                  ? { ...m, content: data.response }
+                  : m
+              )
+            );
+          }
+        }
+      } catch (error) {
+        console.error('[EXPAND] Error:', error);
+      } finally {
+        setExpandingId(null);
+      }
+    },
+    [sessionId, tenantId, expandingId]
+  );
+
+  // ========================================
   // MAIN CHAT SCREEN (accessible for all)
   // ========================================
 
@@ -793,6 +897,20 @@ export default function AtlasApp() {
                 >
                   {formatTime(msg.timestamp)}
                 </p>
+
+                {/* Expand button for short assistant responses */}
+                {msg.role === 'assistant' &&
+                  msg.id !== streamingId &&
+                  msg.id !== expandingId &&
+                  isShortResponse(msg.content) && (
+                  <ExpandButton
+                    onExpand={() => expandMessage(msg.id)}
+                    isExpanding={false}
+                  />
+                )}
+                {msg.role === 'assistant' && msg.id === expandingId && (
+                  <ExpandSpinner />
+                )}
               </div>
             </motion.div>
           ))}

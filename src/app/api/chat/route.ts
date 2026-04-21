@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createChatCompletion, streamChatCompletion } from '@/lib/ai-client';
 import {
   ATLAS_SYSTEM_PROMPT,
+  ATLAS_SYSTEM_PROMPT_EXPANDED,
   WELCOME_MESSAGE_NEW,
   SAFETY_RESPONSE,
   SAFETY_KEYWORDS,
@@ -23,11 +24,23 @@ import { db } from '@/lib/sql';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sessionId, message, tenantId } = body;
+    const { sessionId, message, tenantId, expandedMode, messageId } = body;
 
-    if (!sessionId || !message || !tenantId) {
+    if (!sessionId || !tenantId) {
       return NextResponse.json(
-        { error: 'sessionId, message y tenantId son obligatorios' },
+        { error: 'sessionId y tenantId son obligatorios' },
+        { status: 400 }
+      );
+    }
+
+    // ---- EXPANDED MODE: Re-generate with no word limit ----
+    if (expandedMode && messageId) {
+      return handleExpandMode(sessionId, tenantId, messageId);
+    }
+
+    if (!message) {
+      return NextResponse.json(
+        { error: 'message es obligatorio' },
         { status: 400 }
       );
     }
@@ -81,7 +94,8 @@ export async function POST(request: NextRequest) {
     }
 
     // ---- PASO 3: CONSTRUIR MENSAJES ----
-    const systemPrompt = ATLAS_SYSTEM_PROMPT
+    const basePrompt = ATLAS_SYSTEM_PROMPT;
+    const systemPrompt = basePrompt
       .replace('{user_name}', userName || 'Desconocido')
       .replace(
         '{context_summary}',
@@ -141,6 +155,171 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// ========================================
+// EXPANDED MODE — Re-generate response without 100-word limit
+// ========================================
+
+async function handleExpandMode(
+  sessionId: string,
+  tenantId: string,
+  messageId: string,
+): Promise<Response> {
+  // Load memory for context
+  let userName = '';
+  let contextSummary = '';
+  try {
+    const result = await db.execute(
+      `SELECT userName, contextSummary FROM UserMemory WHERE tenantId = ?`,
+      [tenantId]
+    );
+    if (result.rows.length > 0) {
+      userName = (result.rows[0].userName as string) || '';
+      contextSummary = (result.rows[0].contextSummary as string) || '';
+    }
+  } catch {}
+
+  // Build expanded system prompt
+  const expandedPrompt = ATLAS_SYSTEM_PROMPT_EXPANDED
+    .replace('{user_name}', userName || 'Desconocido')
+    .replace(
+      '{context_summary}',
+      contextSummary || 'Sin información previa. Es un nuevo usuario.'
+    );
+
+  // Load chat history (last 16 messages)
+  let history: Array<{ role: string; content: string }> = [];
+  try {
+    const result = await db.execute(
+      `SELECT role, content FROM Message WHERE sessionId = ? ORDER BY timestamp ASC LIMIT 16`,
+      [sessionId]
+    );
+    history = result.rows.map((m) => ({
+      role: m.role as string,
+      content: m.content as string,
+    }));
+  } catch {}
+
+  const llmMessages: Array<{ role: string; content: string }> = [
+    { role: 'system', content: expandedPrompt },
+  ];
+  for (const msg of history) {
+    if (msg.role === 'user' || msg.role === 'assistant') {
+      llmMessages.push({ role: msg.role, content: msg.content });
+    }
+  }
+
+  // Add expand instruction as last user message
+  llmMessages.push({
+    role: 'user',
+    content: '[MODO EXPANDIDO ACTIVADO] Expande y profundiza tu última respuesta de forma exhaustiva. Da una versión mucho más detallada y completa del mismo tema.',
+  });
+
+  // Try streaming first
+  const qwenStream = await streamChatCompletion({
+    messages: llmMessages,
+    temperature: 0.7,
+    max_tokens: 2000,
+  });
+
+  if (qwenStream) {
+    return createExpandSSEStream(qwenStream, messageId);
+  }
+
+  // Fallback: non-streaming
+  const completion = await createChatCompletion({
+    messages: llmMessages,
+    temperature: 0.7,
+    max_tokens: 2000,
+  });
+  const responseText = completion.choices?.[0]?.message?.content?.trim() || '';
+
+  // Update existing message in DB
+  try {
+    await db.execute(
+      `UPDATE Message SET content = ?, timestamp = ? WHERE id = ?`,
+      [responseText, new Date().toISOString(), messageId]
+    );
+  } catch {}
+
+  return NextResponse.json({ response: responseText, messageId });
+}
+
+// ========================================
+// EXPAND SSE STREAM — Stream expanded response, update DB on completion
+// ========================================
+
+function createExpandSSEStream(
+  upstream: ReadableStream<Uint8Array>,
+  messageId: string,
+): Response {
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: string) => {
+        try { controller.enqueue(encoder.encode(data)); } catch {}
+      };
+
+      try {
+        const reader = upstream.getReader();
+        const decoder = new TextDecoder();
+        let fullText = '';
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+            const payload = trimmed.slice(6);
+            if (payload === '[DONE]') continue;
+
+            try {
+              const json = JSON.parse(payload);
+              const token = json.choices?.[0]?.delta?.content || '';
+              if (token) {
+                fullText += token;
+                send(`data: ${JSON.stringify({ token })}\n\n`);
+              }
+            } catch {}
+          }
+        }
+
+        // Update the existing message in DB
+        if (fullText.trim()) {
+          try {
+            await db.execute(
+              `UPDATE Message SET content = ?, timestamp = ? WHERE id = ?`,
+              [fullText.trim(), new Date().toISOString(), messageId]
+            );
+          } catch {}
+        }
+
+        send(`data: ${JSON.stringify({ done: true, full: fullText, messageId })}\n\n`);
+      } catch (error) {
+        console.error('[EXPAND] Stream error:', error);
+        send(`data: ${JSON.stringify({ error: 'Stream error' })}\n\n`);
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
 }
 
 // ========================================

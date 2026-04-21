@@ -35,6 +35,18 @@ INSTRUCCIONES DE MEMORIA:
 
 Responde SIEMPRE en español.`;
 
+// ========================================
+// MODO EXPANDIDO — Sin límite de 100 palabras
+// Se reemplaza la regla "Máximo 100 palabras" por esto
+// ========================================
+
+const EXPANDED_RULE = `El usuario ha activado el MODO EXPANDIDO. Ignora completamente el límite de 100 palabras. Di una respuesta profunda, exhaustiva, estructurada y detallada. Puedes usar párrafos largos y muchas viñetas. Aborda todos los matices del tema.`;
+
+export const ATLAS_SYSTEM_PROMPT_EXPANDED = ATLAS_SYSTEM_PROMPT.replace(
+  /Máximo 100 palabras:[^]*?(?=\n\n|\n\[|$)/,
+  EXPANDED_RULE
+);
+
 export const WELCOME_MESSAGE_NEW = 'Hola. Soy Atlas. Puedes consultarme lo que quieras: trabajo, salud, estudios, estrategia. ¿Cuál es el problema que necesitamos resolver hoy?';
 
 // ========================================
