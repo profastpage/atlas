@@ -1,13 +1,12 @@
 export const runtime = 'edge';
 
 // ========================================
-// MÓDULO DE OÍDO — WHISPER API
-// Speech-to-Text: Transcripción en español
-// PROHIBIDO: TTS — Solo texto de salida
+// MÓDULO DE OÍDO — Speech-to-Text
+// Edge-compatible: no Node.js APIs
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
+import { createTranscription } from '@/lib/ai-client';
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,53 +20,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validar tamaño máximo (25MB como Whisper)
+    // Validar tamaño (25MB)
     if (audioFile.size > 25 * 1024 * 1024) {
       return NextResponse.json(
-        { error: 'Archivo de audio demasiado grande (máx 25MB)' },
+        { error: 'Audio demasiado grande (máx 25MB)' },
         { status: 413 }
       );
     }
 
     // Convertir a base64
     const arrayBuffer = await audioFile.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const base64Audio = buffer.toString('base64');
+    const buffer = new Uint8Array(arrayBuffer);
+    let binary = '';
+    for (let i = 0; i < buffer.length; i++) {
+      binary += String.fromCharCode(buffer[i]);
+    }
+    const base64Audio = btoa(binary);
 
-    // ---- LLAMADA A WHISPER (vía z-ai-web-dev-sdk) ----
-    // Configuración: idioma "es", sin prompt adicional
-    const zai = await ZAI.create();
-    const result = await zai.audio.transcriptions.create({
-      audio: base64Audio,
-      language: 'es',
-    });
-
+    // Transcripción via fetch nativo
+    const result = await createTranscription(base64Audio, 'es');
     const transcription = (result.text || '').trim();
 
-    // El archivo de audio ya se destruye automáticamente (no se guarda en disco)
-
     if (!transcription) {
-      return NextResponse.json(
-        { transcription: '', warning: 'No se detectó voz en el audio' },
-        { status: 200 }
-      );
+      return NextResponse.json({
+        transcription: '',
+        warning: 'No se detectó voz',
+      });
     }
 
     return NextResponse.json({ transcription });
   } catch (error: unknown) {
-    console.error('[OÍDO] Error de transcripción:', error);
+    console.error('[OÍDO] Error:', error);
+    const msg = error instanceof Error ? error.message : 'Error desconocido';
 
-    // Error específico de acceso al micrófono
-    const errorMsg = error instanceof Error ? error.message : 'Error desconocido';
-    if (errorMsg.includes('Permission') || errorMsg.includes('NotAllowed')) {
+    if (msg.includes('Permission') || msg.includes('NotAllowed')) {
       return NextResponse.json(
-        { error: 'Permiso de micrófono denegado. Activa el acceso al micrófono en tu navegador.' },
+        { error: 'Permiso de micrófono denegado' },
         { status: 403 }
       );
     }
 
     return NextResponse.json(
-      { error: 'Error en la transcripción de audio' },
+      { error: 'Error en la transcripción' },
       { status: 500 }
     );
   }

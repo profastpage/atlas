@@ -3,17 +3,18 @@ export const runtime = 'edge';
 // ========================================
 // MÓDULO DE CEREBRO + MEMORIA + SEGURIDAD
 // Orquestador principal del sistema Atlas
+// Edge-compatible: no Node.js APIs
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { createChatCompletion } from '@/lib/ai-client';
 import {
   ATLAS_SYSTEM_PROMPT,
   WELCOME_MESSAGE_NEW,
   SAFETY_RESPONSE,
   SAFETY_KEYWORDS,
 } from '@/lib/atlas';
-import ZAI from 'z-ai-web-dev-sdk';
+import { db } from '@/lib/db';
 
 // ========================================
 // POST /api/chat — Flujo completo:
@@ -36,41 +37,70 @@ export async function POST(request: NextRequest) {
     }
 
     // ---- PASO 0: GUARDAR MENSAJE DEL USUARIO ----
-    await db.message.create({
-      data: { sessionId, role: 'user', content: message },
-    });
+    try {
+      await db.message.create({
+        data: { sessionId, role: 'user', content: message },
+      });
+    } catch (dbError) {
+      console.error('[CEREBRO] DB write error:', dbError);
+      // Continue anyway — don't block the AI response on DB errors
+    }
 
     // ---- PASO 1: PROTOCOLO DE SEGURIDAD CRÍTICO ----
-    const lowerMessage = message.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const lowerMessage = message
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
     for (const keyword of SAFETY_KEYWORDS) {
-      const normalizedKw = keyword.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const normalizedKw = keyword
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
       if (lowerMessage.includes(normalizedKw)) {
-        await db.message.create({
-          data: { sessionId, role: 'assistant', content: SAFETY_RESPONSE },
-        });
+        try {
+          await db.message.create({
+            data: { sessionId, role: 'assistant', content: SAFETY_RESPONSE },
+          });
+        } catch {}
         return NextResponse.json({ response: SAFETY_RESPONSE });
       }
     }
 
     // ---- PASO 2: MÓDULO DE MEMORIA (SELECT user_memory) ----
-    const userMemory = await db.userMemory.findUnique({
-      where: { tenantId },
-    });
-
-    const userName = userMemory?.userName || '';
-    const contextSummary = userMemory?.contextSummary || '';
+    let userName = '';
+    let contextSummary = '';
+    try {
+      const userMemory = await db.userMemory.findUnique({
+        where: { tenantId },
+      });
+      userName = userMemory?.userName || '';
+      contextSummary = userMemory?.contextSummary || '';
+    } catch (dbError) {
+      console.error('[CEREBRO] Memory read error:', dbError);
+    }
 
     // ---- PASO 3: MÓDULO DE CEREBRO (LLM) ----
     const systemPrompt = ATLAS_SYSTEM_PROMPT
       .replace('{user_name}', userName || 'Desconocido')
-      .replace('{context_summary}', contextSummary || 'Sin información previa. Es un nuevo usuario.');
+      .replace(
+        '{context_summary}',
+        contextSummary || 'Sin información previa. Es un nuevo usuario.'
+      );
 
     // Obtener historial reciente de la sesión (últimos 16 mensajes)
-    const history = await db.message.findMany({
-      where: { sessionId },
-      orderBy: { timestamp: 'asc' },
-      take: 16,
-    });
+    let history: Array<{ role: string; content: string }> = [];
+    try {
+      const msgs = await db.message.findMany({
+        where: { sessionId },
+        orderBy: { timestamp: 'asc' },
+        take: 16,
+      });
+      history = msgs.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+    } catch (dbError) {
+      console.error('[CEREBRO] History read error:', dbError);
+    }
 
     // Construir array de mensajes para el LLM
     const messages: Array<{ role: string; content: string }> = [
@@ -83,35 +113,49 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Llamada al modelo — Qwen-Turbo style config (max_tokens: 150, temp: 0.7)
-    const zai = await ZAI.create();
-    const completion = await zai.chat.completions.create({
+    // Llamada al LLM via fetch nativo (Edge-compatible)
+    const completion = await createChatCompletion({
       messages,
       temperature: 0.7,
       max_tokens: 150,
     });
 
-    const responseText = completion.choices[0]?.message?.content?.trim() || '';
+    const responseText =
+      completion.choices?.[0]?.message?.content?.trim() || '';
 
     // Guardar respuesta del asistente
-    await db.message.create({
-      data: { sessionId, role: 'assistant', content: responseText },
-    });
+    try {
+      await db.message.create({
+        data: { sessionId, role: 'assistant', content: responseText },
+      });
+      await db.session.update({
+        where: { id: sessionId },
+        data: { updatedAt: new Date() },
+      });
+    } catch (dbError) {
+      console.error('[CEREBRO] Save response error:', dbError);
+    }
 
-    // Actualizar timestamp de sesión
-    await db.session.update({
-      where: { id: sessionId },
-      data: { updatedAt: new Date() },
-    });
-
-    // ---- PASO 4: CICLO DE MEMORIA POST-RESPUESTA (UPSERT) ----
-    await postResponseMemoryCycle(tenantId, message, responseText, userMemory);
+    // ---- PASO 4: CICLO DE MEMORIA POST-RESPUESTA ----
+    try {
+      await postResponseMemoryCycle(
+        tenantId,
+        message,
+        responseText,
+        userName,
+        contextSummary
+      );
+    } catch (memError) {
+      console.error('[CEREBRO] Memory cycle error:', memError);
+    }
 
     return NextResponse.json({ response: responseText });
   } catch (error) {
     console.error('[CEREBRO] Error:', error);
+    const message =
+      error instanceof Error ? error.message : 'Error desconocido';
     return NextResponse.json(
-      { error: 'Error interno del servidor' },
+      { error: 'Error interno del servidor', detail: message },
       { status: 500 }
     );
   }
@@ -119,19 +163,17 @@ export async function POST(request: NextRequest) {
 
 // ========================================
 // CICLO DE MEMORIA POST-RESPUESTA
-// - Detecta nombre del usuario
-// - Detecta temas/problemas nuevos
-// - UPSERT resúmenes de 1 línea (nunca chat completo)
 // ========================================
 
 async function postResponseMemoryCycle(
   tenantId: string,
   userMessage: string,
   _assistantResponse: string,
-  existingMemory: { userName?: string; contextSummary?: string; id?: string; tenantId?: string } | null
+  existingUserName: string,
+  existingSummary: string
 ) {
-  let updatedName = existingMemory?.userName || '';
-  let updatedSummary = existingMemory?.contextSummary || '';
+  let updatedName = existingUserName;
+  let updatedSummary = existingSummary;
   let needsUpdate = false;
 
   // ---- DETECTAR NOMBRE ----
@@ -143,25 +185,49 @@ async function postResponseMemoryCycle(
     for (const pattern of namePatterns) {
       const match = userMessage.match(pattern);
       if (match && match[1] && match[1].length > 2 && match[1].length < 20) {
-        updatedName = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+        updatedName =
+          match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
         needsUpdate = true;
         break;
       }
     }
   }
 
-  // ---- DETECTAR TEMA/PROBLEMA NUEVO (1 línea) ----
-  const lower = userMessage.toLowerCase();
-
-  // Patrones de problemas/tópicos clave
+  // ---- DETECTAR TEMA/PROBLEMA NUEVO ----
   const topicPatterns = [
-    { pattern: /(?:problema|situación|tema|asunto|conflicto|dificultad)\s+(?:es|con|sobre|de)\s+(.+?)(?:\.|,|$)/i, label: 'Problema' },
-    { pattern: /(?:mi\s+)?(?:pareja|novi[oa]|espos[oa]|marido|mujer)\s+(.+?)(?:\.|,|$)/i, label: 'Relación de pareja' },
-    { pattern: /(?:trabajo|jefe|empleo|negocio|empresa)\s+(.+?)(?:\.|,|$)/i, label: 'Trabajo' },
-    { pattern: /(?:estres|ansiedad|miedo|depresión|angustia|frustración|tristeza)\s+(.+?)(?:\.|,|$)/i, label: 'Salud mental' },
-    { pattern: /(?:no\s+(?:puedo|logro|sé|puedes))\s+(.+?)(?:\.|,|$)/i, label: 'Bloqueo' },
-    { pattern: /(?:quiero|necesito|aspiro|meta)\s+(.+?)(?:\.|,|$)/i, label: 'Objetivo' },
-    { pattern: /(?:me\s+siento|estoy\s+sintiendo)\s+(.+?)(?:\.|,|$)/i, label: 'Emoción' },
+    {
+      pattern:
+        /(?:problema|situación|tema|asunto|conflicto|dificultad)\s+(?:es|con|sobre|de)\s+(.+?)(?:\.|,|$)/i,
+      label: 'Problema',
+    },
+    {
+      pattern:
+        /(?:mi\s+)?(?:pareja|novi[oa]|espos[oa]|marido|mujer)\s+(.+?)(?:\.|,|$)/i,
+      label: 'Relación de pareja',
+    },
+    {
+      pattern:
+        /(?:trabajo|jefe|empleo|negocio|empresa)\s+(.+?)(?:\.|,|$)/i,
+      label: 'Trabajo',
+    },
+    {
+      pattern:
+        /(?:estres|ansiedad|miedo|depresión|angustia|frustración|trusteza)\s+(.+?)(?:\.|,|$)/i,
+      label: 'Salud mental',
+    },
+    {
+      pattern:
+        /(?:no\s+(?:puedo|logro|sé|puedes))\s+(.+?)(?:\.|,|$)/i,
+      label: 'Bloqueo',
+    },
+    {
+      pattern: /(?:quiero|necesito|aspiro|meta)\s+(.+?)(?:\.|,|$)/i,
+      label: 'Objetivo',
+    },
+    {
+      pattern: /(?:me\s+siento|estoy\s+sintiendo)\s+(.+?)(?:\.|,|$)/i,
+      label: 'Emoción',
+    },
   ];
 
   for (const { pattern, label } of topicPatterns) {
@@ -169,17 +235,12 @@ async function postResponseMemoryCycle(
     if (match && match[1] && match[1].trim().length > 5) {
       const newTopic = `[${label}] ${match[1].trim().substring(0, 80)}`;
 
-      // Si no hay resumen previo, crear el primero
       if (!updatedSummary) {
         updatedSummary = newTopic;
       } else {
-        // Evitar duplicados: solo agregar si es un tema nuevo
         if (!updatedSummary.includes(newTopic.substring(0, 30))) {
-          // Mantener máximo 3 resúmenes de 1 línea
           const lines = updatedSummary.split(' | ');
-          if (lines.length >= 3) {
-            lines.shift(); // eliminar el más antiguo
-          }
+          if (lines.length >= 3) lines.shift();
           lines.push(newTopic);
           updatedSummary = lines.join(' | ');
         }
@@ -189,31 +250,32 @@ async function postResponseMemoryCycle(
     }
   }
 
-  // ---- UPSERT EN user_memory ----
+  // ---- UPSERT ----
   if (needsUpdate) {
-    if (existingMemory) {
-      await db.userMemory.update({
+    try {
+      const existingMemory = await db.userMemory.findUnique({
         where: { tenantId },
-        data: {
-          userName: updatedName,
-          contextSummary: updatedSummary,
-          lastTopic: topicPatterns
-            .map(({ pattern, label }) => {
-              const m = userMessage.match(pattern);
-              return m ? `[${label}]` : null;
-            })
-            .filter(Boolean)
-            .join(', ') || existingMemory.lastTopic,
-        },
       });
-    } else {
-      await db.userMemory.create({
-        data: {
-          tenantId,
-          userName: updatedName,
-          contextSummary: updatedSummary,
-        },
-      });
+
+      if (existingMemory) {
+        await db.userMemory.update({
+          where: { tenantId },
+          data: {
+            userName: updatedName,
+            contextSummary: updatedSummary,
+          },
+        });
+      } else {
+        await db.userMemory.create({
+          data: {
+            tenantId,
+            userName: updatedName,
+            contextSummary: updatedSummary,
+          },
+        });
+      }
+    } catch (upsertError) {
+      console.error('[MEMORIA] UPSERT error:', upsertError);
     }
   }
 }
@@ -228,7 +290,10 @@ export async function GET(request: NextRequest) {
     const sessionId = searchParams.get('sessionId');
 
     if (!sessionId) {
-      return NextResponse.json({ error: 'sessionId requerido' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'sessionId requerido' },
+        { status: 400 }
+      );
     }
 
     const messages = await db.message.findMany({
@@ -238,13 +303,13 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ messages });
   } catch (error) {
-    console.error('[MEMORIA] Error al cargar historial:', error);
+    console.error('[MEMORIA] Error:', error);
     return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }
 
 // ========================================
-// DELETE /api/chat — Eliminar sesión y mensajes
+// DELETE /api/chat — Eliminar sesión
 // ========================================
 
 export async function DELETE(request: NextRequest) {
@@ -253,17 +318,18 @@ export async function DELETE(request: NextRequest) {
     const sessionId = searchParams.get('sessionId');
 
     if (!sessionId) {
-      return NextResponse.json({ error: 'sessionId requerido' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'sessionId requerido' },
+        { status: 400 }
+      );
     }
 
-    // Eliminar mensajes de la sesión
     await db.message.deleteMany({ where: { sessionId } });
-    // Eliminar la sesión
     await db.session.delete({ where: { id: sessionId } });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('[MEMORIA] Error al eliminar sesión:', error);
+    console.error('[MEMORIA] Error:', error);
     return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }
