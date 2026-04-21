@@ -6,7 +6,8 @@ import {
   Mic, MicOff, Send, Plus, MessageSquare, Trash2,
   X, LogOut, LogIn, Settings, Lock, ShieldCheck, XCircle,
   Pencil, Archive, ArchiveRestore, Check, AlertTriangle,
-  Paperclip, FileText, XCircle as XCircleIcon, Loader2
+  Paperclip, FileText, XCircle as XCircleIcon, Loader2,
+  Copy
 } from 'lucide-react';
 import { WELCOME_MESSAGE_NEW } from '@/lib/atlas';
 import SettingsSidebar from '@/components/SettingsSidebar';
@@ -107,6 +108,9 @@ export default function AtlasApp() {
 
   // ---- Expand State ----
   const [expandingId, setExpandingId] = useState<string | null>(null);
+
+  // ---- Copy State ----
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // ---- Document Upload State ----
   const [documentText, setDocumentText] = useState<string | null>(null);
@@ -927,6 +931,30 @@ export default function AtlasApp() {
   };
 
   // ========================================
+  // COPY MESSAGE — Clipboard API
+  // ========================================
+
+  const copyMessage = useCallback(async (msgId: string, content: string) => {
+    try {
+      // Strip HTML tags to get plain text
+      const plainText = content
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+
+      await navigator.clipboard.writeText(plainText);
+      setCopiedId(msgId);
+      setTimeout(() => setCopiedId(null), 1500);
+    } catch (error) {
+      console.error('[COPIAR] Error:', error);
+    }
+  }, []);
+
+  // ========================================
   // FORMATTING
   // ========================================
 
@@ -1379,7 +1407,7 @@ export default function AtlasApp() {
               }`}
             >
               <div
-                className={`relative max-w-[85%] sm:max-w-[70%] px-4 py-2.5 rounded-2xl shadow-sm ${
+                className={`group relative max-w-[85%] sm:max-w-[70%] px-4 py-2.5 rounded-2xl shadow-sm ${
                   msg.role === 'user'
                     ? 'bg-emerald-600 text-white rounded-br-md'
                     : 'bg-gray-800/70 text-gray-100 rounded-bl-md border border-gray-700/40'
@@ -1421,15 +1449,35 @@ export default function AtlasApp() {
                   {formatTime(msg.timestamp)}
                 </p>
 
-                {/* Expand button for short assistant responses */}
-                {msg.role === 'assistant' &&
-                  msg.id !== streamingId &&
-                  msg.id !== expandingId &&
-                  isShortResponse(msg.content) && (
-                  <ExpandButton
-                    onExpand={() => expandMessage(msg.id)}
-                    isExpanding={false}
-                  />
+                {/* Action buttons — visible on hover (desktop) or tap (mobile via group-active) */}
+                {msg.role === 'assistant' && msg.id !== streamingId && msg.content && !msg.content.startsWith('Error') && (
+                  <div className="flex items-center justify-end gap-1 mt-1 mr-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-active:opacity-100 transition-opacity duration-150">
+                    {/* Copy button — always show for completed assistant messages */}
+                    <button
+                      onClick={() => copyMessage(msg.id, msg.content)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-gray-500 hover:text-emerald-400 hover:bg-emerald-500/5 transition-all active:scale-95 cursor-pointer select-none"
+                      title={copiedId === msg.id ? 'Copiado' : 'Copiar texto'}
+                    >
+                      {copiedId === msg.id ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400">Copiado</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Copiar</span>
+                        </>
+                      )}
+                    </button>
+                    {/* Expand button — only for short responses */}
+                    {msg.id !== expandingId && isShortResponse(msg.content) && (
+                      <ExpandButton
+                        onExpand={() => expandMessage(msg.id)}
+                        isExpanding={false}
+                      />
+                    )}
+                  </div>
                 )}
                 {msg.role === 'assistant' && msg.id === expandingId && (
                   <ExpandSpinner />
