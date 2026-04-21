@@ -56,6 +56,9 @@ async function handleAdminAction(request: NextRequest, action: string) {
       case 'settings': return handleSettings();
       // --- Alarms (Supabase) ---
       case 'list_alarms': return handleListAlarms(request);
+      // --- User city (Supabase) ---
+      case 'get_city': return handleGetCity(request);
+      case 'save_city': return handleSaveCity(request);
       default:
         return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });
     }
@@ -888,6 +891,40 @@ async function handleCancelAlarm(request: NextRequest) {
   }
 
   return NextResponse.json({ success: true });
+}
+
+// ========================================
+// USER CITY — Get / Save (Supabase profiles)
+// ========================================
+
+async function handleGetCity(request: NextRequest) {
+  if (!supabase) return NextResponse.json({ city: '' });
+  const { searchParams } = new URL(request.url);
+  const tenantId = searchParams.get('tenantId');
+  if (!tenantId) return NextResponse.json({ city: '' });
+
+  const { data } = await supabase
+    .from('profiles')
+    .select('city')
+    .eq('id', tenantId)
+    .single();
+
+  return NextResponse.json({ city: data?.city || '' });
+}
+
+async function handleSaveCity(request: NextRequest) {
+  if (!supabase) return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  const { searchParams } = new URL(request.url);
+  const tenantId = searchParams.get('tenantId');
+  const city = searchParams.get('city') || '';
+  if (!tenantId) return NextResponse.json({ error: 'tenantId requerido' }, { status: 400 });
+
+  await supabase
+    .from('profiles')
+    .update({ city })
+    .eq('id', tenantId);
+
+  return NextResponse.json({ success: true, city });
 }
 
 

@@ -17,6 +17,7 @@ import {
 } from '@/lib/atlas';
 import { db } from '@/lib/sql';
 import { getSupabaseServer } from '@/lib/supabase';
+import { enrichContext, buildContextInjection } from '@/lib/context-api';
 
 // Server-side Supabase client — reads env vars at runtime, not build time
 const supabase = getSupabaseServer();
@@ -86,7 +87,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ---- PASO 2: MEMORIA ----
+    // ---- PASO 2.5: CONTEXTO AMBIENTAL (clima + noticias) ----
+    let userCity: string | undefined;
+    try {
+      if (tenantId && supabase) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('city')
+          .eq('id', tenantId)
+          .single();
+        userCity = profile?.city || undefined;
+      }
+    } catch {}
+
+    const context = await enrichContext(message, userCity);
+    const contextInjection = buildContextInjection(context);
+
+    // ---- PASO 3: MEMORIA ----
     let userName = '';
     let contextSummary = '';
     try {
@@ -125,6 +142,11 @@ export async function POST(request: NextRequest) {
     if (documentText) {
       const docPrompt = `\n\n[CONTEXTO DE DOCUMENTO ADJUNTO]\nEl usuario ha adjuntado un documento. Aqui esta el texto extraido:\n---\n${documentText}\n---\nINSTRUCCIONES SOBRE EL DOCUMENTO:\n- Responde estrictamente basandote en este texto.\n- Si la respuesta no esta en el texto, dile 'La informacion no se encuentra en el documento'.\n- Manten tu tono de Atlas, usa vinetas y negritas.\n- Sé conciso y directo.`;
       systemPrompt += docPrompt;
+    }
+
+    // If weather/news context detected, append to system prompt
+    if (contextInjection) {
+      systemPrompt += contextInjection;
     }
 
     let history: Array<{ role: string; content: string }> = [];

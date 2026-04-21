@@ -121,7 +121,35 @@ export default function SettingsSidebar({
   const [loadingAlarms, setLoadingAlarms] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
+  // ---- City state ----
+  const [userCity, setUserCity] = useState('');
+  const [savingCity, setSavingCity] = useState(false);
+  const [citySaved, setCitySaved] = useState(false);
+
   const isEjecutivo = userPlanType === 'ejecutivo';
+
+  // ---- Fetch user city on open ----
+  useEffect(() => {
+    if (isOpen && user?.tenantId) {
+      fetch(`/api?action=get_city&tenantId=${user.tenantId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.city) setUserCity(data.city);
+        })
+        .catch(() => {});
+    }
+  }, [isOpen, user?.tenantId]);
+
+  const saveCity = useCallback(async () => {
+    if (!user?.tenantId || savingCity) return;
+    setSavingCity(true);
+    try {
+      await fetch(`/api?action=save_city&tenantId=${user.tenantId}&city=${encodeURIComponent(userCity.trim())}`);
+      setCitySaved(true);
+      setTimeout(() => setCitySaved(false), 2000);
+    } catch {}
+    setSavingCity(false);
+  }, [user?.tenantId, userCity, savingCity]);
 
   // ---- Fetch user subscription on open ----
   useEffect(() => {
@@ -308,6 +336,32 @@ export default function SettingsSidebar({
                     </p>
                   </div>
                 </div>
+              </section>
+
+              {/* ===== LOCATION ===== */}
+              <section aria-label="Ubicacion">
+                <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3 mt-5">
+                  Tu Ciudad
+                </h3>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={userCity}
+                    onChange={(e) => setUserCity(e.target.value)}
+                    onBlur={saveCity}
+                    onKeyDown={(e) => e.key === 'Enter' && saveCity()}
+                    placeholder="Ej: Lima, Cusco, Bogota..."
+                    className="flex-1 bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 transition-all"
+                  />
+                  {savingCity ? (
+                    <div className="w-5 h-5 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin shrink-0" />
+                  ) : citySaved ? (
+                    <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : null}
+                </div>
+                <p className="text-[10px] text-gray-600 mt-1.5">
+                  Para consultas de clima y contexto local
+                </p>
               </section>
 
               <div className="border-t border-gray-800/40 my-5" />
