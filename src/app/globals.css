@@ -132,3 +132,19 @@ a,
 input {
   transition: all 0.15s ease;
 }
+
+/* PWA Install Prompt slide-up animation */
+@keyframes slide-up-safe {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up-safe {
+  animation: slide-up-safe 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { WELCOME_MESSAGE_NEW } from '@/lib/atlas';
 import SettingsSidebar from '@/components/SettingsSidebar';
+import InstallPrompt from '@/components/InstallPrompt';
 
 // ========================================
 // TYPES
@@ -1001,6 +1002,9 @@ export default function AtlasApp() {
           </>
         )}
       </AnimatePresence>
+
+      {/* ===== PWA INSTALL PROMPT ===== */}
+      <InstallPrompt />
     </div>
   );
 }

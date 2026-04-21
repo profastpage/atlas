@@ -19,13 +19,28 @@ export const metadata: Metadata = {
     "Consultoría",
     "Bienestar",
   ],
-  icons: {
-    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Atlas",
   },
   openGraph: {
     title: "Atlas — Coach Estratégico",
     description: "Tu consultor estratégico 24/7. Resuelve el problema de raíz.",
     type: "website",
+  },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512x512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/icons/icon-192x192.png" },
+    ],
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
   },
 };
 
@@ -34,7 +49,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#030712",
+  themeColor: "#000000",
 };
 
 export default function RootLayout({
@@ -44,6 +59,32 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" className="dark">
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#000000" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Atlas" />
+        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+        {/* Service Worker Registration — runs only in browser */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                    .then(function(reg) {
+                      console.log('[PWA] Service Worker registered:', reg.scope);
+                    })
+                    .catch(function(err) {
+                      console.warn('[PWA] SW registration failed:', err);
+                    });
+                });
+              }
+            `,
+          }}
+        />
+      </head>
       <body
         className={`${inter.variable} antialiased bg-gray-950 text-white font-sans`}
       >
