@@ -1510,7 +1510,7 @@ export default function AtlasApp() {
               }`}
             >
               <div
-                className={`group relative max-w-[85%] sm:max-w-[70%] px-4 py-2.5 rounded-2xl shadow-sm ${
+                className={`relative max-w-[85%] sm:max-w-[70%] px-4 py-2.5 rounded-2xl shadow-sm ${
                   msg.role === 'user'
                     ? 'bg-emerald-600 text-white rounded-br-md'
                     : 'bg-gray-800/70 text-gray-100 rounded-bl-md border border-gray-700/40'
@@ -1552,9 +1552,9 @@ export default function AtlasApp() {
                   {formatTime(msg.timestamp)}
                 </p>
 
-                {/* Action buttons — always visible */}
+                {/* Action buttons — always visible, subtle until hover */}
                 {msg.role === 'assistant' && msg.id !== streamingId && msg.content && !msg.content.startsWith('Error') && (
-                  <div className="flex items-center flex-wrap gap-0.5 mt-1.5 ml-0.5">
+                  <div className="flex items-center flex-wrap gap-2 opacity-40 hover:opacity-100 transition-opacity mt-1.5 ml-0.5">
                     {/* Copy */}
                     <button
                       onClick={() => copyMessage(msg.id, msg.content)}
@@ -1682,6 +1682,44 @@ export default function AtlasApp() {
             <Send className="w-[18px] h-[18px] text-white" />
           </button>
 
+          {/* Paperclip — Document Upload (Pro/Ejecutivo only) */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.txt,application/pdf,text/plain"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const plan = (userPlanType || '').toLowerCase();
+              if (plan === 'pro' || plan === 'ejecutivo' || plan === 'elite') {
+                fileInputRef.current?.click();
+              } else {
+                setShowPdfPaywall(true);
+              }
+            }}
+            disabled={isLoading || isStreaming || isAnalyzingDocument}
+            className={`w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 disabled:opacity-30 ${
+              isAnalyzingDocument
+                ? 'bg-blue-500/15 border-2 border-blue-500/40'
+                : documentText
+                  ? 'bg-blue-500/10 border-2 border-blue-500/30'
+                  : 'bg-gray-800 hover:bg-gray-700/80 border-2 border-gray-700/30 hover:border-blue-500/40'
+            }`}
+            aria-label="Adjuntar documento (PDF/TXT)"
+            title="Adjuntar documento"
+          >
+            {isAnalyzingDocument ? (
+              <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400 animate-spin" />
+            ) : documentText ? (
+              <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
+            ) : (
+              <Paperclip className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
+            )}
+          </button>
+
           {/* Microphone — Web Speech API (press & hold) */}
           {speechSupported && (
             <button
@@ -1708,37 +1746,6 @@ export default function AtlasApp() {
               )}
             </button>
           )}
-
-          {/* Paperclip — Document Upload */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.txt,application/pdf,text/plain"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              if (isAuthenticated) {
-                fileInputRef.current?.click();
-              } else {
-                setShowPdfPaywall(true);
-              }
-            }}
-            disabled={isLoading || isStreaming || isAnalyzingDocument}
-            className="w-[52px] h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 bg-gray-800 hover:bg-gray-700/80 border-2 border-gray-700/30 hover:border-blue-500/40 disabled:opacity-30"
-            aria-label="Subir documento (PDF/TXT)"
-            title="Subir documento"
-          >
-            {isAnalyzingDocument ? (
-              <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-            ) : documentText ? (
-              <FileText className="w-5 h-5 text-blue-400" />
-            ) : (
-              <Paperclip className="w-5 h-5 text-gray-400" />
-            )}
-          </button>
         </form>
 
         {/* Listening / Document analyzing indicator */}
@@ -2045,10 +2052,10 @@ export default function AtlasApp() {
                   </button>
                 </div>
                 <h2 className="text-lg font-bold text-white mb-2">
-                  Analisis de Documentos
+                  Auditoria de Documentos
                 </h2>
                 <p className="text-sm text-gray-400 leading-relaxed mb-5">
-                  Esta funcion es exclusiva del <span className="text-blue-400 font-semibold">Plan Pro (S/ 40/mes)</span>.
+                  La auditoria de documentos es exclusiva del <span className="text-blue-400 font-semibold">Plan Pro (S/ 40)</span>.
                   Sube PDFs y documentos de texto para que Atlas los analice por ti.
                 </p>
                 <div className="space-y-2 mb-4">
@@ -2064,14 +2071,13 @@ export default function AtlasApp() {
                   ))}
                 </div>
                 <div className="space-y-2">
-                  <a
-                    href="/login"
-                    onClick={() => setShowPdfPaywall(false)}
+                  <button
+                    onClick={() => { setShowPdfPaywall(false); if (isAuthenticated) setShowSettings(true); }}
                     className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-blue-500/15"
                   >
                     <Star className="w-4 h-4" />
-                    Obtener Plan Pro
-                  </a>
+                    {isAuthenticated ? 'Ver Planes' : 'Obtener Plan Pro'}
+                  </button>
                   <button
                     onClick={() => setShowPdfPaywall(false)}
                     className="w-full py-2.5 rounded-xl text-gray-500 text-sm hover:text-gray-400 transition-colors"
