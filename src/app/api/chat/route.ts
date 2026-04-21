@@ -17,7 +17,7 @@ import {
 } from '@/lib/atlas';
 import { db } from '@/lib/sql';
 import { getSupabaseServer } from '@/lib/supabase';
-import { enrichContext, buildContextInjection } from '@/lib/context-api';
+import { enrichContext, buildContextInjection, buildTimeInjection } from '@/lib/context-api';
 
 // Server-side Supabase client — reads env vars at runtime, not build time
 const supabase = getSupabaseServer();
@@ -148,6 +148,9 @@ export async function POST(request: NextRequest) {
     if (contextInjection) {
       systemPrompt += contextInjection;
     }
+
+    // Always inject server time (zero cost, enables time-relative calculations)
+    systemPrompt += buildTimeInjection();
 
     let history: Array<{ role: string; content: string }> = [];
     try {
