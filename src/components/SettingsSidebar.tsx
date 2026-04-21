@@ -1,16 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, LogOut, Edit3, Check, ShieldCheck, ChevronRight,
-  Crown, Zap, CheckCircle2, FileText, Bell, Star
+  Crown, Zap, CheckCircle2, FileText, Bell, Star, Trash2, Clock
 } from 'lucide-react';
 
 // ========================================
 // SETTINGS SIDEBAR — Premium Brand, Dynamic Plans
 // Mobile First, Dark Theme, NO "Hecho con IA"
 // ========================================
+
+interface AlarmItem {
+  id: string;
+  content: string;
+  scheduled_for: string;
+  created_at: string;
+}
 
 interface SettingsSidebarProps {
   isOpen: boolean;
@@ -19,6 +26,7 @@ interface SettingsSidebarProps {
   token: string;
   onOpenAdmin: () => void;
   forcePaywall?: boolean;
+  userPlanType?: string;
 }
 
 interface UserPlan {
@@ -102,12 +110,20 @@ export default function SettingsSidebar({
   user,
   onOpenAdmin,
   forcePaywall = false,
+  userPlanType = '',
 }: SettingsSidebarProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
   const [userPlan, setUserPlan] = useState<UserPlan | null>(null);
   const [loadingPlan, setLoadingPlan] = useState(false);
   const isAdmin = user?.isAdmin === true;
+
+  // ---- Alarms state ----
+  const [alarms, setAlarms] = useState<AlarmItem[]>([]);
+  const [loadingAlarms, setLoadingAlarms] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  const isEjecutivo = userPlanType === 'ejecutivo';
 
   // ---- Fetch user subscription on open ----
   useEffect(() => {
@@ -127,6 +143,61 @@ export default function SettingsSidebar({
         .finally(() => setLoadingPlan(false));
     }
   }, [isOpen, user?.tenantId]);
+
+  // ---- Fetch alarms on open (executive only) ----
+  const fetchAlarms = useCallback(async () => {
+    if (!user?.tenantId) return;
+    setLoadingAlarms(true);
+    try {
+      const res = await fetch(`/api?action=list_alarms&tenantId=${user.tenantId}`);
+      const data = await res.json();
+      setAlarms(data.alarms || []);
+    } catch {
+      setAlarms([]);
+    } finally {
+      setLoadingAlarms(false);
+    }
+  }, [user?.tenantId]);
+
+  useEffect(() => {
+    if (isOpen && isEjecutivo) {
+      fetchAlarms();
+    }
+  }, [isOpen, isEjecutivo, fetchAlarms]);
+
+  const cancelAlarm = useCallback(async (alarmId: string) => {
+    if (!user?.tenantId) return;
+    setCancellingId(alarmId);
+    try {
+      const res = await fetch('/api?action=cancel_alarm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alarmId, tenantId: user.tenantId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAlarms((prev) => prev.filter((a) => a.id !== alarmId));
+      }
+    } catch {
+      // silent fail
+    } finally {
+      setCancellingId(null);
+    }
+  }, [user?.tenantId]);
+
+  const formatAlarmDate = (iso: string) => {
+    const d = new Date(iso);
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow = d.toDateString() === tomorrow.toDateString();
+
+    const time = d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+    if (isToday) return `Hoy, ${time}`;
+    if (isTomorrow) return `Manana, ${time}`;
+    return d.toLocaleDateString('es-PE', { day: 'numeric', month: 'short' }) + `, ${time}`;
+  };
 
   const startEditName = () => {
     if (user) {
@@ -366,6 +437,82 @@ export default function SettingsSidebar({
                   </>
                 )}
               </section>
+
+              {/* ===== MIS ALARMAS (Executive only) ===== */}
+              {isEjecutivo && !forcePaywall && (
+                <>
+                  <div className="border-t border-gray-800/40 my-5" />
+                  <section aria-label="Mis Alarmas">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">
+                        Mis Alarmas
+                      </h3>
+                      {alarms.length > 0 && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20 font-semibold">
+                          {alarms.length}
+                        </span>
+                      )}
+                    </div>
+
+                    {loadingAlarms ? (
+                      <div className="space-y-2">
+                        {[1, 2].map((i) => (
+                          <div key={i} className="bg-gray-800/30 rounded-xl p-3 border border-gray-700/20 animate-pulse">
+                            <div className="h-3 bg-gray-700/40 rounded w-3/4 mb-2" />
+                            <div className="h-2.5 bg-gray-700/40 rounded w-1/3" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : alarms.length === 0 ? (
+                      <div className="bg-gray-800/20 rounded-xl p-4 border border-gray-700/20 text-center">
+                        <Bell className="w-6 h-6 text-gray-600 mx-auto mb-2" />
+                        <p className="text-xs text-gray-500">
+                          Sin alarmas programadas
+                        </p>
+                        <p className="text-[10px] text-gray-600 mt-1">
+                          Programa una alarma desde cualquier respuesta del asistente
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {alarms.map((alarm) => (
+                          <div
+                            key={alarm.id}
+                            className="bg-gray-800/30 rounded-xl p-3 border border-gray-700/20 group/alarm"
+                          >
+                            <div className="flex items-start gap-2.5">
+                              <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center shrink-0 mt-0.5">
+                                <Clock className="w-3.5 h-3.5 text-amber-400" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] text-gray-300 leading-relaxed line-clamp-2">
+                                  {alarm.content}
+                                </p>
+                                <p className="text-[10px] text-amber-400/70 mt-1.5 flex items-center gap-1">
+                                  <Clock className="w-2.5 h-2.5" />
+                                  {formatAlarmDate(alarm.scheduled_for)}
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => cancelAlarm(alarm.id)}
+                                disabled={cancellingId === alarm.id}
+                                className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-all shrink-0 opacity-0 group-hover/alarm:opacity-100"
+                                title="Cancelar alarma"
+                              >
+                                {cancellingId === alarm.id ? (
+                                  <div className="w-3.5 h-3.5 border-2 border-red-400/50 border-t-red-400 rounded-full animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                </>
+              )}
 
               {/* ===== ADMIN ACCESS ===== */}
               {isAdmin && (

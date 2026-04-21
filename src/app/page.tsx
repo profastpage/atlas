@@ -1202,6 +1202,7 @@ export default function AtlasApp() {
         token={token || ''}
         onOpenAdmin={() => { setShowSettings(false); window.location.href = '/admin'; }}
         forcePaywall={isAuthenticated && hasActivePlan === false}
+        userPlanType={userPlanType}
       />
 
       {/* ===== HEADER ===== */}

@@ -51,6 +51,8 @@ async function handleAdminAction(request: NextRequest, action: string) {
       case 'plan_features': return handlePlanFeatures();
       // --- System settings (Supabase) ---
       case 'settings': return handleSettings();
+      // --- Alarms (Supabase) ---
+      case 'list_alarms': return handleListAlarms(request);
       default:
         return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });
     }
@@ -536,6 +538,7 @@ export async function POST(request: NextRequest) {
       case 'toggle_feature': return handleToggleFeature(request);
       case 'save_settings': return handleSaveSettings(request);
       case 'save_alarm': return handleSaveAlarm(request);
+      case 'cancel_alarm': return handleCancelAlarm(request);
       default:
         return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });
     }
@@ -813,4 +816,73 @@ async function handleSaveAlarm(request: NextRequest) {
   }
 
   return NextResponse.json({ success: true, scheduledFor });
+}
+
+// ========================================
+// LIST ALARMS — Pending alarms for a user
+// ========================================
+async function handleListAlarms(request: NextRequest) {
+  if (!supabase) {
+    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const tenantId = searchParams.get('tenantId');
+
+  if (!tenantId) {
+    return NextResponse.json({ error: 'tenantId requerido' }, { status: 400 });
+  }
+
+  const { data, error } = await supabase
+    .from('tasks_alarms')
+    .select('id, content, scheduled_for, status, created_at')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'pending')
+    .order('scheduled_for', { ascending: true });
+
+  if (error) {
+    console.error('[LIST_ALARMS] Supabase error:', error);
+    return NextResponse.json({ error: 'Error al obtener alarmas' }, { status: 500 });
+  }
+
+  const alarms = (data || []).map((r: any) => ({
+    id: r.id,
+    content: r.content,
+    scheduled_for: r.scheduled_for,
+    created_at: r.created_at,
+  }));
+
+  return NextResponse.json({ alarms });
+}
+
+// ========================================
+// CANCEL ALARM — Mark alarm as cancelled
+// ========================================
+async function handleCancelAlarm(request: NextRequest) {
+  if (!supabase) {
+    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  }
+
+  const body = await request.json();
+  const { alarmId, tenantId } = body;
+
+  if (!alarmId || !tenantId) {
+    return NextResponse.json(
+      { error: 'alarmId y tenantId son obligatorios' },
+      { status: 400 }
+    );
+  }
+
+  const { error } = await supabase
+    .from('tasks_alarms')
+    .update({ status: 'cancelled' })
+    .eq('id', alarmId)
+    .eq('tenant_id', tenantId);
+
+  if (error) {
+    console.error('[CANCEL_ALARM] Supabase error:', error);
+    return NextResponse.json({ error: 'Error al cancelar alarma' }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
 }
