@@ -24,7 +24,15 @@ export async function GET(request: NextRequest) {
     dbOk = true;
   } catch {}
 
-  return NextResponse.json({ status: dbOk ? 'ok' : 'degraded', service: 'Atlas Coach v1.2' });
+  return NextResponse.json({
+    status: dbOk ? 'ok' : 'degraded',
+    service: 'Atlas Coach v1.2',
+    brain: {
+      hasQwenKey: !!process.env.QWEN_API_KEY,
+      qwenUrl: process.env.QWEN_BASE_URL || 'MISSING',
+      qwenModel: process.env.QWEN_MODEL || 'MISSING',
+    },
+  });
 }
 
 async function handleAdminAction(request: NextRequest, action: string) {
