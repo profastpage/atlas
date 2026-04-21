@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
   // Cloudflare Pages SSR via @cloudflare/next-on-pages
@@ -15,14 +16,20 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "2mb",
     },
   },
+
+  // Replace cross-fetch with native globals for Cloudflare Workers
+  // cross-fetch uses XMLHttpRequest which doesn't exist in Edge Workers
+  webpack: (config) => {
+    config.resolve.alias["cross-fetch"] = path.resolve(
+      __dirname, "src/lib/native-fetch.ts"
+    );
+    return config;
+  },
 };
 
 // Dynamic config: add cloudflare runtime config for Pages
 const withCloudflare = (config: NextConfig): NextConfig => {
-  // next-on-pages handles the output configuration
   return config;
 };
 
-export default process.env.NODE_ENV === "production"
-  ? withCloudflare(nextConfig)
-  : nextConfig;
+export default nextConfig;
