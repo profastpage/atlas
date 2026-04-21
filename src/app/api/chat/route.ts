@@ -16,7 +16,10 @@ import {
   SAFETY_KEYWORDS,
 } from '@/lib/atlas';
 import { db } from '@/lib/sql';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseServer } from '@/lib/supabase';
+
+// Server-side Supabase client — reads env vars at runtime, not build time
+const supabase = getSupabaseServer();
 
 // ========================================
 // POST /api/chat — STREAMING (SSE) + JSON fallback

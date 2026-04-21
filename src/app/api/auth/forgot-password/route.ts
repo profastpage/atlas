@@ -5,10 +5,11 @@ export const runtime = 'edge';
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseServer } from '@/lib/supabase';
 import { db } from '@/lib/sql';
 
 export async function POST(request: NextRequest) {
+  const supabase = getSupabaseServer();
   if (!supabase) {
     return NextResponse.json(
       { error: 'Recuperacion no disponible: Supabase no configurado' },

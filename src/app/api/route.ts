@@ -2,7 +2,10 @@ export const runtime = 'edge';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/sql';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseServer } from '@/lib/supabase';
+
+// Server-side Supabase client — reads env vars at runtime, not build time
+const supabase = getSupabaseServer();
 
 // ========================================
 // HEALTH CHECK + ADMIN API

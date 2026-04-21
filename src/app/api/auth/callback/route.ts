@@ -5,11 +5,12 @@ export const runtime = 'edge';
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseServer } from '@/lib/supabase';
 import { db } from '@/lib/sql';
 import { generateToken, hashPassword } from '@/lib/password';
 
 export async function GET(request: NextRequest) {
+  const supabase = getSupabaseServer();
   if (!supabase) {
     return NextResponse.redirect(new URL('/login?error=oauth_unavailable', request.url));
   }
@@ -77,15 +78,13 @@ export async function GET(request: NextRequest) {
       );
 
       // Create Supabase profile
-      if (supabase) {
-        try {
-          await supabase.from('profiles').upsert(
+      try {
+        await supabase.from('profiles').upsert(
             { id: tenantId, plan_type: 'free' },
             { onConflict: 'id' }
           );
-        } catch (err) {
-          console.error('[OAUTH_CALLBACK] profile upsert:', err);
-        }
+      } catch (err) {
+        console.error('[OAUTH_CALLBACK] profile upsert:', err);
       }
     }
 
