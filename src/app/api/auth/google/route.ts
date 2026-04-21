@@ -15,15 +15,15 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const origin = new URL(request.url).origin;
+    const REDIRECT_URL = 'https://atlas-9mv.pages.dev/api/auth/callback';
 
-  try {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${origin}/api/auth/callback`,
-      },
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: REDIRECT_URL,
+        },
+      });
 
     if (error) {
       console.error('[GOOGLE_OAUTH]', error);

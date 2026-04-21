@@ -14,7 +14,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/login?error=oauth_unavailable', request.url));
   }
 
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
+  const APP_URL = 'https://atlas-9mv.pages.dev';
   const code = searchParams.get('code');
 
   if (!code) {
@@ -101,7 +102,7 @@ export async function GET(request: NextRequest) {
     // 4. Redirect to main page with auth data (URL fragment — not sent to server)
     const userData = JSON.stringify({ id: userId, email, name, avatarUrl, isAdmin });
     const encodedUser = encodeURIComponent(userData);
-    const redirectTo = `${origin}/?_auth=1&token=${encodeURIComponent(token)}&tenantId=${encodeURIComponent(tenantId)}&user=${encodedUser}`;
+    const redirectTo = `${APP_URL}/?_auth=1&token=${encodeURIComponent(token)}&tenantId=${encodeURIComponent(tenantId)}&user=${encodedUser}`;
 
     return NextResponse.redirect(redirectTo);
   } catch (error) {

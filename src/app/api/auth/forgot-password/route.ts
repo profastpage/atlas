@@ -51,9 +51,9 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Send reset email via Supabase Auth
-    const origin = new URL(request.url).origin;
+    const REDIRECT_URL = 'https://atlas-9mv.pages.dev/update-password';
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${origin}/update-password`,
+      redirectTo: REDIRECT_URL,
     });
 
     if (error) {
