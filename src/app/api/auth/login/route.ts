@@ -1,11 +1,11 @@
 export const runtime = 'edge';
 
 // ========================================
-// LOGIN — Iniciar sesión
+// LOGIN — Direct SQL via libsql
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db } from '@/lib/sql';
 import { verifyPassword, generateToken } from '@/lib/password';
 
 export async function POST(request: NextRequest) {
@@ -20,17 +20,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Buscar usuario
-    const user = await db.authUser.findUnique({
-      where: { email: email.toLowerCase().trim() },
-      include: { tenant: true },
-    });
+    const result = await db.execute(
+      `SELECT u.id, u.email, u.passwordHash, u.name, u.avatarUrl, u.googleId, u.tenantId
+       FROM AuthUser u WHERE u.email = ?`,
+      [email.toLowerCase().trim()]
+    );
 
-    if (!user) {
+    if (result.rows.length === 0) {
       return NextResponse.json(
         { error: 'Email o contraseña incorrectos' },
         { status: 401 }
       );
     }
+
+    const user = result.rows[0];
 
     // Si es cuenta de Google y no tiene password
     if (!user.passwordHash && user.googleId) {
@@ -41,7 +44,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verificar password
-    const isValid = await verifyPassword(password, user.passwordHash);
+    const isValid = await verifyPassword(password, user.passwordHash as string);
     if (!isValid) {
       return NextResponse.json(
         { error: 'Email o contraseña incorrectos' },
@@ -54,13 +57,11 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    await db.authToken.create({
-      data: {
-        userId: user.id,
-        token,
-        expiresAt,
-      },
-    });
+    const tokenId = crypto.randomUUID();
+    await db.execute(
+      `INSERT INTO AuthToken (id, userId, token, expiresAt, createdAt) VALUES (?, ?, ?, ?, ?)`,
+      [tokenId, user.id, token, expiresAt.toISOString(), new Date().toISOString()]
+    );
 
     return NextResponse.json({
       success: true,

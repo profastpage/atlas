@@ -1,11 +1,11 @@
 export const runtime = 'edge';
 
 // ========================================
-// ME — Validar token / Obtener usuario actual
+// ME — Token validation — Direct SQL via libsql
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db } from '@/lib/sql';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,33 +16,37 @@ export async function GET(request: NextRequest) {
 
     const token = authHeader.replace('Bearer ', '');
 
-    // Buscar token
-    const authToken = await db.authToken.findUnique({
-      where: { token },
-      include: { user: true },
-    });
+    // Buscar token + usuario
+    const result = await db.execute(
+      `SELECT t.id as tokenId, t.expiresAt, u.id as userId, u.email, u.name, u.avatarUrl, u.tenantId, u.googleId
+       FROM AuthToken t
+       JOIN AuthUser u ON u.id = t.userId
+       WHERE t.token = ?`,
+      [token]
+    );
 
-    if (!authToken) {
+    if (result.rows.length === 0) {
       return NextResponse.json({ error: 'Token inválido' }, { status: 401 });
     }
 
+    const row = result.rows[0];
+
     // Verificar expiración
-    if (new Date() > authToken.expiresAt) {
-      await db.authToken.delete({ where: { id: authToken.id } });
+    const expiresAt = new Date(row.expiresAt as string);
+    if (new Date() > expiresAt) {
+      await db.execute(`DELETE FROM AuthToken WHERE id = ?`, [row.tokenId]);
       return NextResponse.json({ error: 'Sesión expirada' }, { status: 401 });
     }
-
-    const user = authToken.user;
 
     return NextResponse.json({
       authenticated: true,
       user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        avatarUrl: user.avatarUrl,
-        tenantId: user.tenantId,
-        googleId: user.googleId,
+        id: row.userId,
+        email: row.email,
+        name: row.name,
+        avatarUrl: row.avatarUrl,
+        tenantId: row.tenantId,
+        googleId: row.googleId,
       },
     });
   } catch (error) {

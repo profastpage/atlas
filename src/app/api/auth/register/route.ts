@@ -1,11 +1,11 @@
 export const runtime = 'edge';
 
 // ========================================
-// REGISTER — Crear cuenta nueva
+// REGISTER — Direct SQL via libsql
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db } from '@/lib/sql';
 import { hashPassword, generateToken } from '@/lib/password';
 
 export async function POST(request: NextRequest) {
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validar password (mínimo 6 chars)
+    // Validar password
     if (password.length < 6) {
       return NextResponse.json(
         { error: 'La contraseña debe tener al menos 6 caracteres' },
@@ -36,12 +36,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verificar si el email ya existe
-    const existingUser = await db.authUser.findUnique({
-      where: { email: email.toLowerCase().trim() },
-    });
+    const emailLower = email.toLowerCase().trim();
 
-    if (existingUser) {
+    // Verificar si ya existe
+    const existing = await db.execute(
+      `SELECT id FROM AuthUser WHERE email = ?`,
+      [emailLower]
+    );
+
+    if (existing.rows.length > 0) {
       return NextResponse.json(
         { error: 'Este email ya está registrado' },
         { status: 409 }
@@ -51,52 +54,50 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await hashPassword(password);
 
-    // Crear Tenant + AuthUser + UserMemory en una transacción
-    const user = await db.authUser.create({
-      data: {
-        email: email.toLowerCase().trim(),
-        passwordHash,
-        name: (name || '').trim(),
-        tenant: {
-          create: {},
-        },
-      },
-      include: { tenant: { include: { userMemory: true } } },
-    });
+    // Crear Tenant
+    const tenantId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await db.execute(
+      `INSERT INTO Tenant (id, createdAt, updatedAt) VALUES (?, ?, ?)`,
+      [tenantId, now, now]
+    );
+
+    // Crear AuthUser
+    const userId = crypto.randomUUID();
+    await db.execute(
+      `INSERT INTO AuthUser (id, email, passwordHash, name, googleId, avatarUrl, createdAt, updatedAt, isAdmin, tenantId)
+       VALUES (?, ?, ?, ?, '', '', ?, ?, ?, ?)`,
+      [userId, emailLower, passwordHash, (name || '').trim(), now, now, 0, tenantId]
+    );
 
     // Crear UserMemory vacío
-    if (user.tenant) {
-      await db.userMemory.create({
-        data: {
-          tenantId: user.tenant.id,
-          userName: (name || '').trim(),
-        },
-      });
-    }
+    const memId = crypto.randomUUID();
+    await db.execute(
+      `INSERT INTO UserMemory (id, tenantId, userName, contextSummary, updatedAt) VALUES (?, ?, ?, ?, ?)`,
+      [memId, tenantId, (name || '').trim(), '', now]
+    );
 
     // Crear token de sesión (7 días)
     const token = generateToken();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    await db.authToken.create({
-      data: {
-        userId: user.id,
-        token,
-        expiresAt,
-      },
-    });
+    const tokenId = crypto.randomUUID();
+    await db.execute(
+      `INSERT INTO AuthToken (id, userId, token, expiresAt, createdAt) VALUES (?, ?, ?, ?, ?)`,
+      [tokenId, userId, token, expiresAt.toISOString(), now]
+    );
 
     return NextResponse.json({
       success: true,
       user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        avatarUrl: user.avatarUrl,
+        id: userId,
+        email: emailLower,
+        name: (name || '').trim(),
+        avatarUrl: '',
       },
       token,
-      tenantId: user.tenantId,
+      tenantId,
     });
   } catch (error) {
     console.error('[AUTH] Register error:', error);

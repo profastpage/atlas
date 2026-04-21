@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import { WELCOME_MESSAGE_NEW } from '@/lib/atlas';
 import SettingsSidebar from '@/components/SettingsSidebar';
-import AdminPanel from '@/components/AdminPanel';
 
 // ========================================
 // TYPES
@@ -79,11 +78,9 @@ export default function AtlasApp() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // ---- Settings & Admin State ----
+  // ---- Settings State ----
   const [token, setToken] = useState('');
   const [showSettings, setShowSettings] = useState(false);
-  const [showAdmin, setShowAdmin] = useState(false);
-  const [adminToken, setAdminToken] = useState('');
 
   // ========================================
   // INIT: Determine auth state
@@ -474,30 +471,7 @@ export default function AtlasApp() {
     }
   };
 
-  // ========================================
-  // SETTINGS / ADMIN HANDLERS
-  // ========================================
 
-  const handleOpenAdmin = () => {
-    const pwd = prompt('Clave de administrador:');
-    if (pwd) {
-      fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'admin@atlas.app', password: pwd }),
-      })
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.token) {
-            setAdminToken(d.token);
-            setShowSettings(false);
-            setShowAdmin(true);
-          } else {
-            alert('Clave incorrecta');
-          }
-        });
-    }
-  };
 
   // ========================================
   // FORMATTING
@@ -527,19 +501,6 @@ export default function AtlasApp() {
   const remainingMessages = Math.max(0, FREE_MESSAGES_LIMIT - guestMessageCount);
 
   // ========================================
-  // ADMIN PANEL
-  // ========================================
-
-  if (showAdmin) {
-    return (
-      <AdminPanel
-        adminToken={adminToken}
-        onBack={() => setShowAdmin(false)}
-      />
-    );
-  }
-
-  // ========================================
   // MAIN CHAT SCREEN (accessible for all)
   // ========================================
 
@@ -551,7 +512,7 @@ export default function AtlasApp() {
         onClose={() => setShowSettings(false)}
         user={userInfo ? { ...userInfo, tenantId } : null}
         token={token || ''}
-        onOpenAdmin={handleOpenAdmin}
+        onOpenAdmin={() => {}}
       />
 
       {/* ===== HEADER ===== */}

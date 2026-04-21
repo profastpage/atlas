@@ -2,8 +2,7 @@ export const runtime = 'edge';
 
 // ========================================
 // MÓDULO DE CEREBRO + MEMORIA + SEGURIDAD
-// Orquestador principal del sistema Atlas
-// Edge-compatible: no Node.js APIs
+// Direct SQL via libsql — Edge-compatible, ~30 KB
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -14,14 +13,10 @@ import {
   SAFETY_RESPONSE,
   SAFETY_KEYWORDS,
 } from '@/lib/atlas';
-import { db } from '@/lib/db';
+import { db } from '@/lib/sql';
 
 // ========================================
-// POST /api/chat — Flujo completo:
-// 1. Safety Check
-// 2. Módulo de Memoria (SELECT user_memory)
-// 3. Módulo de Cerebro (LLM con contexto)
-// 4. Ciclo de Memoria Post-Respuesta (UPSERT)
+// POST /api/chat
 // ========================================
 
 export async function POST(request: NextRequest) {
@@ -38,15 +33,16 @@ export async function POST(request: NextRequest) {
 
     // ---- PASO 0: GUARDAR MENSAJE DEL USUARIO ----
     try {
-      await db.message.create({
-        data: { sessionId, role: 'user', content: message },
-      });
+      const msgId = crypto.randomUUID();
+      await db.execute(
+        `INSERT INTO Message (id, sessionId, role, content, timestamp) VALUES (?, ?, ?, ?, ?)`,
+        [msgId, sessionId, 'user', message, new Date().toISOString()]
+      );
     } catch (dbError) {
       console.error('[CEREBRO] DB write error:', dbError);
-      // Continue anyway — don't block the AI response on DB errors
     }
 
-    // ---- PASO 1: PROTOCOLO DE SEGURIDAD CRÍTICO ----
+    // ---- PASO 1: PROTOCOLO DE SEGURIDAD ----
     const lowerMessage = message
       .toLowerCase()
       .normalize('NFD')
@@ -57,28 +53,33 @@ export async function POST(request: NextRequest) {
         .replace(/[\u0300-\u036f]/g, '');
       if (lowerMessage.includes(normalizedKw)) {
         try {
-          await db.message.create({
-            data: { sessionId, role: 'assistant', content: SAFETY_RESPONSE },
-          });
+          const msgId = crypto.randomUUID();
+          await db.execute(
+            `INSERT INTO Message (id, sessionId, role, content, timestamp) VALUES (?, ?, ?, ?, ?)`,
+            [msgId, sessionId, 'assistant', SAFETY_RESPONSE, new Date().toISOString()]
+          );
         } catch {}
         return NextResponse.json({ response: SAFETY_RESPONSE });
       }
     }
 
-    // ---- PASO 2: MÓDULO DE MEMORIA (SELECT user_memory) ----
+    // ---- PASO 2: MEMORIA (SELECT user_memory) ----
     let userName = '';
     let contextSummary = '';
     try {
-      const userMemory = await db.userMemory.findUnique({
-        where: { tenantId },
-      });
-      userName = userMemory?.userName || '';
-      contextSummary = userMemory?.contextSummary || '';
+      const result = await db.execute(
+        `SELECT userName, contextSummary FROM UserMemory WHERE tenantId = ?`,
+        [tenantId]
+      );
+      if (result.rows.length > 0) {
+        userName = (result.rows[0].userName as string) || '';
+        contextSummary = (result.rows[0].contextSummary as string) || '';
+      }
     } catch (dbError) {
       console.error('[CEREBRO] Memory read error:', dbError);
     }
 
-    // ---- PASO 3: MÓDULO DE CEREBRO (LLM) ----
+    // ---- PASO 3: CEREBRO (LLM) ----
     const systemPrompt = ATLAS_SYSTEM_PROMPT
       .replace('{user_name}', userName || 'Desconocido')
       .replace(
@@ -86,34 +87,30 @@ export async function POST(request: NextRequest) {
         contextSummary || 'Sin información previa. Es un nuevo usuario.'
       );
 
-    // Obtener historial reciente de la sesión (últimos 16 mensajes)
+    // Obtener historial reciente (últimos 16 mensajes)
     let history: Array<{ role: string; content: string }> = [];
     try {
-      const msgs = await db.message.findMany({
-        where: { sessionId },
-        orderBy: { timestamp: 'asc' },
-        take: 16,
-      });
-      history = msgs.map((m) => ({
-        role: m.role,
-        content: m.content,
+      const result = await db.execute(
+        `SELECT role, content FROM Message WHERE sessionId = ? ORDER BY timestamp ASC LIMIT 16`,
+        [sessionId]
+      );
+      history = result.rows.map((m) => ({
+        role: m.role as string,
+        content: m.content as string,
       }));
     } catch (dbError) {
       console.error('[CEREBRO] History read error:', dbError);
     }
 
-    // Construir array de mensajes para el LLM
     const messages: Array<{ role: string; content: string }> = [
       { role: 'system', content: systemPrompt },
     ];
-
     for (const msg of history) {
       if (msg.role === 'user' || msg.role === 'assistant') {
         messages.push({ role: msg.role, content: msg.content });
       }
     }
 
-    // Llamada al LLM via fetch nativo (Edge-compatible)
     const completion = await createChatCompletion({
       messages,
       temperature: 0.7,
@@ -125,13 +122,15 @@ export async function POST(request: NextRequest) {
 
     // Guardar respuesta del asistente
     try {
-      await db.message.create({
-        data: { sessionId, role: 'assistant', content: responseText },
-      });
-      await db.session.update({
-        where: { id: sessionId },
-        data: { updatedAt: new Date() },
-      });
+      const msgId = crypto.randomUUID();
+      await db.execute(
+        `INSERT INTO Message (id, sessionId, role, content, timestamp) VALUES (?, ?, ?, ?, ?)`,
+        [msgId, sessionId, 'assistant', responseText, new Date().toISOString()]
+      );
+      await db.execute(
+        `UPDATE Session SET updatedAt = ? WHERE id = ?`,
+        [new Date().toISOString(), sessionId]
+      );
     } catch (dbError) {
       console.error('[CEREBRO] Save response error:', dbError);
     }
@@ -152,10 +151,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ response: responseText });
   } catch (error) {
     console.error('[CEREBRO] Error:', error);
-    const message =
-      error instanceof Error ? error.message : 'Error desconocido';
+    const msg = error instanceof Error ? error.message : 'Error desconocido';
     return NextResponse.json(
-      { error: 'Error interno del servidor', detail: message },
+      { error: 'Error interno del servidor', detail: msg },
       { status: 500 }
     );
   }
@@ -253,26 +251,22 @@ async function postResponseMemoryCycle(
   // ---- UPSERT ----
   if (needsUpdate) {
     try {
-      const existingMemory = await db.userMemory.findUnique({
-        where: { tenantId },
-      });
+      const existing = await db.execute(
+        `SELECT id FROM UserMemory WHERE tenantId = ?`,
+        [tenantId]
+      );
 
-      if (existingMemory) {
-        await db.userMemory.update({
-          where: { tenantId },
-          data: {
-            userName: updatedName,
-            contextSummary: updatedSummary,
-          },
-        });
+      if (existing.rows.length > 0) {
+        await db.execute(
+          `UPDATE UserMemory SET userName = ?, contextSummary = ?, updatedAt = ? WHERE tenantId = ?`,
+          [updatedName, updatedSummary, new Date().toISOString(), tenantId]
+        );
       } else {
-        await db.userMemory.create({
-          data: {
-            tenantId,
-            userName: updatedName,
-            contextSummary: updatedSummary,
-          },
-        });
+        const id = crypto.randomUUID();
+        await db.execute(
+          `INSERT INTO UserMemory (id, tenantId, userName, contextSummary, updatedAt) VALUES (?, ?, ?, ?, ?)`,
+          [id, tenantId, updatedName, updatedSummary, new Date().toISOString()]
+        );
       }
     } catch (upsertError) {
       console.error('[MEMORIA] UPSERT error:', upsertError);
@@ -296,12 +290,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const messages = await db.message.findMany({
-      where: { sessionId },
-      orderBy: { timestamp: 'asc' },
-    });
+    const result = await db.execute(
+      `SELECT id, role, content, timestamp FROM Message WHERE sessionId = ? ORDER BY timestamp ASC`,
+      [sessionId]
+    );
 
-    return NextResponse.json({ messages });
+    return NextResponse.json({
+      messages: result.rows.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp,
+      })),
+    });
   } catch (error) {
     console.error('[MEMORIA] Error:', error);
     return NextResponse.json({ error: 'Error interno' }, { status: 500 });
@@ -324,8 +325,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    await db.message.deleteMany({ where: { sessionId } });
-    await db.session.delete({ where: { id: sessionId } });
+    await db.execute(`DELETE FROM Message WHERE sessionId = ?`, [sessionId]);
+    await db.execute(`DELETE FROM Session WHERE id = ?`, [sessionId]);
 
     return NextResponse.json({ success: true });
   } catch (error) {
