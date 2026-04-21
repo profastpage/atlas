@@ -56,8 +56,6 @@ async function handleAdminAction(request: NextRequest, action: string) {
       case 'settings': return handleSettings();
       // --- Alarms (Supabase) ---
       case 'list_alarms': return handleListAlarms(request);
-      // --- Voice usage ---
-      case 'voice_usage': return handleVoiceUsage(request);
       default:
         return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });
     }
@@ -892,39 +890,4 @@ async function handleCancelAlarm(request: NextRequest) {
   return NextResponse.json({ success: true });
 }
 
-// ========================================
-// VOICE USAGE — Get user's voice minutes used + limit
-// ========================================
-const VOICE_LIMITS_API: Record<string, number> = {
-  basico: 30,
-  pro: 60,
-  ejecutivo: 100,
-  elite: 100,
-  profesional: 60,
-  free: 0,
-};
 
-async function handleVoiceUsage(request: NextRequest) {
-  if (!supabase) {
-    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
-  }
-
-  const { searchParams } = new URL(request.url);
-  const tenantId = searchParams.get('tenantId');
-
-  if (!tenantId) {
-    return NextResponse.json({ error: 'tenantId obligatorio' }, { status: 400 });
-  }
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('plan_type, voice_minutes_used')
-    .eq('id', tenantId)
-    .single();
-
-  const planType = (profile?.plan_type || 'free').toLowerCase();
-  const limit = VOICE_LIMITS_API[planType] ?? 0;
-  const used = Number(profile?.voice_minutes_used || 0);
-
-  return NextResponse.json({ used, limit });
-}

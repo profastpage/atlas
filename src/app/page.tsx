@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Mic, MicOff, Send, Plus, MessageSquare, Trash2,
+  Mic, Send, Plus, MessageSquare, Trash2,
   X, LogOut, LogIn, Settings, Lock, ShieldCheck, XCircle,
   Pencil, Archive, ArchiveRestore, Check, AlertTriangle,
   Paperclip, FileText, XCircle as XCircleIcon, Loader2,
@@ -129,14 +129,10 @@ export default function AtlasApp() {
   const [showPdfPaywall, setShowPdfPaywall] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ---- Voice State ----
-  const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [voiceMinutes, setVoiceMinutes] = useState<number | null>(null);
-  const [voiceLimit, setVoiceLimit] = useState<number>(0);
-  const [voiceError, setVoiceError] = useState<string | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  // ---- Voice State (Web Speech API) ----
+  const [isListening, setIsListening] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(true);
+  const recognitionRef = useRef<any>(null);
 
   // ---- Refs ----
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -304,18 +300,74 @@ export default function AtlasApp() {
   };
 
   // ========================================
-  // VOICE USAGE — Fetch from Supabase
+  // WEB SPEECH API — Browser-native voice input
   // ========================================
 
-  const fetchVoiceUsage = async (tId: string) => {
-    try {
-      const res = await fetch(`/api?action=voice_usage&tenantId=${tId}`);
-      const data = await res.json();
-      if (data.used !== undefined && data.limit !== undefined) {
-        setVoiceMinutes(data.used);
-        setVoiceLimit(data.limit);
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setSpeechSupported(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'es-419';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
       }
-    } catch {}
+      // Show interim results in input in real-time
+      if (interimTranscript || finalTranscript) {
+        setInputValue(finalTranscript + interimTranscript);
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      if (event.error === 'not-allowed') {
+        alert('Se requiere permiso de micrófono para usar la función de voz.');
+      }
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+ setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+
+    return () => {
+      try { recognition.abort(); } catch {}
+    };
+  }, []);
+
+  const startListening = () => {
+    if (!recognitionRef.current || isListening || isLoading || isStreaming) return;
+    try {
+      recognitionRef.current.start();
+      setIsListening(true);
+    } catch (e) {
+      console.error('[VOICE] Error starting recognition:', e);
+    }
+  };
+
+  const stopListening = () => {
+    if (!recognitionRef.current || !isListening) return;
+    try {
+      recognitionRef.current.stop();
+    } catch (e) {
+      console.error('[VOICE] Error stopping recognition:', e);
+    }
+    setIsListening(false);
   };
 
   // ========================================
@@ -343,8 +395,6 @@ export default function AtlasApp() {
         // Store actual plan name for feature gating
         const pName = sub?.planId || sub?.planName?.toLowerCase() || '';
         setUserPlanType(pName);
-        // Fetch voice usage
-        fetchVoiceUsage(tId);
         return;
       }
 
@@ -357,7 +407,6 @@ export default function AtlasApp() {
           isActive: true,
         });
         setUserPlanType(trialData.trial.plan || 'pro');
-        fetchVoiceUsage(tId);
         return;
       }
 
@@ -755,126 +804,6 @@ export default function AtlasApp() {
     },
     [sessionId, tenantId, isLoading, isStreaming, createNewSession, isAuthenticated, documentText]
   );
-
-  // ========================================
-  // VOICE RECORDING — Ear Module
-  // ========================================
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
-      });
-
-      let mimeType = 'audio/webm;codecs=opus';
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'audio/webm';
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = 'audio/mp4';
-        }
-      }
-
-      const mediaRecorder = new MediaRecorder(stream, { mimeType });
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
-        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-
-        // Skip silence: < 1 second duration or < 5000 bytes (probably empty/noise)
-        if (audioBlob.size < 5000) return;
-
-        // Check duration via audio element
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        audio.addEventListener('loadedmetadata', async () => {
-          URL.revokeObjectURL(audioUrl);
-          if (audio.duration < 1.0) return; // Too short, skip
-          await transcribeAudio(audioBlob, extension);
-        });
-        audio.addEventListener('error', async () => {
-          URL.revokeObjectURL(audioUrl);
-          // If metadata fails but size is OK, proceed anyway
-          if (audioBlob.size >= 5000) {
-            await transcribeAudio(audioBlob, extension);
-          }
-        });
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-    } catch (error) {
-      console.error('[OIDO] Acceso al microfono denegado:', error);
-      setIsRecording(false);
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
-
-  const transcribeAudio = async (audioBlob: Blob, extension: string) => {
-    setIsTranscribing(true);
-    setVoiceError(null);
-    try {
-      const formData = new FormData();
-      formData.append('audio', audioBlob, `recording.${extension}`);
-      if (tenantId) formData.append('tenantId', tenantId);
-
-      const res = await fetch('/api/transcribe', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
-
-      if (data.voiceInfo) {
-        setVoiceMinutes(data.voiceInfo.used);
-        setVoiceLimit(data.voiceInfo.limit);
-      }
-
-      if (data.error && data.code?.startsWith('VOICE')) {
-        setVoiceError(data.error);
-        return;
-      }
-
-      if (data.transcription && data.transcription.trim()) {
-        setInputValue(data.transcription.trim());
-        sendMessage(data.transcription.trim());
-      } else if (data.error) {
-        console.error('[OIDO]', data.error);
-      }
-    } catch (error) {
-      console.error('[OIDO] Error de transcripcion:', error);
-    } finally {
-      setIsTranscribing(false);
-    }
-  };
-
-  const toggleRecording = () => {
-    if (isLoading || isTranscribing) return;
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
-  };
 
   // ---- Form Handlers ----
   const handleSubmit = (e: React.FormEvent) => {
@@ -1738,52 +1667,47 @@ export default function AtlasApp() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={
-              isTranscribing
-                ? 'Transcribiendo voz...'
-                : 'Escribe o habla tu mensaje...'
-            }
-            className="flex-1 min-w-0 bg-gray-800/50 border border-gray-700/40 rounded-full px-3.5 sm:px-4 py-2.5 sm:py-3 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all disabled:opacity-50"
-            disabled={isLoading || isStreaming || isTranscribing}
+            placeholder={'Escribe o habla tu mensaje...'}
+            className={`flex-1 min-w-0 bg-gray-800/50 border border-gray-700/40 rounded-full px-3.5 sm:px-4 py-2.5 sm:py-3 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all disabled:opacity-50 ${isListening ? 'border-red-500/50 ring-1 ring-red-500/20' : ''}`}
+            disabled={isLoading || isStreaming}
           />
 
           {/* Send */}
           <button
             type="submit"
-            disabled={!inputValue.trim() || isLoading || isStreaming || isTranscribing}
+            disabled={!inputValue.trim() || isLoading || isStreaming}
             className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700/50 disabled:opacity-30 flex items-center justify-center transition-all active:scale-90 shrink-0"
             aria-label="Enviar"
           >
             <Send className="w-[18px] h-[18px] text-white" />
           </button>
 
-          {/* Microphone + Voice Usage */}
-          <div className="flex flex-col items-center gap-0.5 shrink-0">
-            {isAuthenticated && voiceLimit > 0 && (
-              <span className="text-[8px] sm:text-[9px] text-gray-600 tabular-nums">
-                Voz: {voiceMinutes !== null ? voiceMinutes.toFixed(1) : '0.0'} / {voiceLimit} min
-              </span>
-            )}
+          {/* Microphone — Web Speech API (press & hold) */}
+          {speechSupported && (
             <button
               type="button"
-              onClick={toggleRecording}
-              disabled={isLoading || isStreaming || isTranscribing || isAnalyzingDocument}
-              className={`w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 ${
-                isRecording
-                  ? 'bg-red-500 hover:bg-red-400 shadow-xl shadow-red-500/40 animate-pulse'
+              onPointerDown={startListening}
+              onPointerUp={stopListening}
+              onPointerLeave={stopListening}
+              onContextMenu={(e) => e.preventDefault()}
+              disabled={isLoading || isStreaming || isAnalyzingDocument}
+              className={`w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 select-none touch-none ${
+                isListening
+                  ? 'bg-red-500 hover:bg-red-400 shadow-xl shadow-red-500/40'
                   : 'bg-gray-800 hover:bg-gray-700/80 border-2 border-emerald-500/30 hover:border-emerald-500/60'
               }`}
-              aria-label={
-                isRecording ? 'Detener grabacion' : 'Hablar (microfono)'
-              }
+              aria-label="Hablar (manten presionado)"
             >
-              {isRecording ? (
-                <MicOff className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
+              {isListening ? (
+                <span className="relative flex h-4 w-4 sm:h-6 sm:w-6">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                  <Mic className="relative inline-flex h-4 w-4 sm:h-6 sm:w-6 text-white" />
+                </span>
               ) : (
                 <Mic className="w-4 h-4 sm:w-6 sm:h-6 text-emerald-400" />
               )}
             </button>
-          </div>
+          )}
 
           {/* Paperclip — Document Upload */}
           <input
@@ -1802,7 +1726,7 @@ export default function AtlasApp() {
                 setShowPdfPaywall(true);
               }
             }}
-            disabled={isLoading || isStreaming || isTranscribing || isAnalyzingDocument}
+            disabled={isLoading || isStreaming || isAnalyzingDocument}
             className="w-[52px] h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 bg-gray-800 hover:bg-gray-700/80 border-2 border-gray-700/30 hover:border-blue-500/40 disabled:opacity-30"
             aria-label="Subir documento (PDF/TXT)"
             title="Subir documento"
@@ -1817,9 +1741,9 @@ export default function AtlasApp() {
           </button>
         </form>
 
-        {/* Recording / Transcribing / Document analyzing indicator */}
+        {/* Listening / Document analyzing indicator */}
         <AnimatePresence>
-          {(isRecording || isTranscribing || isAnalyzingDocument) && (
+          {(isListening || isAnalyzingDocument) && (
             <motion.div
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1828,23 +1752,17 @@ export default function AtlasApp() {
             >
               <span
                 className={`w-2 h-2 rounded-full animate-pulse ${
-                  isRecording ? 'bg-red-500' : 'bg-blue-400'
+                  isListening ? 'bg-red-500' : 'bg-blue-400'
                 }`}
               />
               <span
                 className={`text-[11px] font-medium ${
-                  isRecording
-                    ? 'text-red-400'
-                    : isTranscribing
-                      ? 'text-emerald-400/70'
-                      : 'text-blue-400'
+                  isListening ? 'text-red-400' : 'text-blue-400'
                 }`}
               >
-                {isRecording
-                  ? 'Grabando... toca para enviar'
-                  : isTranscribing
-                    ? 'Transcribiendo voz...'
-                    : 'Atlas esta analizando el documento...'}
+                {isListening
+                  ? 'Escuchando... suelta para enviar'
+                  : 'Atlas esta analizando el documento...'}
               </span>
             </motion.div>
           )}
@@ -1928,39 +1846,6 @@ export default function AtlasApp() {
             </div>
           </div>
         </>
-      )}
-
-      {/* ===== VOICE LIMIT TOAST ===== */}
-      {voiceError && (
-        <div className="fixed inset-x-4 bottom-24 z-[60] max-w-sm mx-auto">
-          <div className="bg-gray-800 border border-amber-500/30 rounded-xl p-3.5 shadow-2xl shadow-black/40">
-            <div className="flex items-start gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center shrink-0 mt-0.5">
-                <AlertTriangle className="w-4 h-4 text-amber-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-amber-300 mb-1">
-                  Minutos de voz agotados
-                </p>
-                <p className="text-[11px] text-gray-400 leading-relaxed">
-                  {voiceError}
-                </p>
-                <button
-                  onClick={() => { setVoiceError(null); setShowSettings(true); }}
-                  className="mt-2 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
-                >
-                  Ver planes
-                </button>
-              </div>
-              <button
-                onClick={() => setVoiceError(null)}
-                className="p-1 text-gray-500 hover:text-gray-300 transition-colors shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* ===== PLAN CHECK LOADING ===== */}

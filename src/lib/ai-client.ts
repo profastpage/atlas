@@ -112,51 +112,7 @@ export async function streamChatCompletion(body: {
 }
 
 // ========================================
-// AUDIO TRANSCRIPTION (ASR) — Z.ai proxy only
-// Qwen/OpenRouter does not have audio transcription.
-// This uses Z.ai exclusively for speech-to-text, NOT for chat.
+// AUDIO TRANSCRIPTION
+// Now uses Web Speech API (browser-native, free).
+// createTranscription is no longer needed server-side.
 // ========================================
-
-const ZAI_STT_URL = process.env.ZAI_BASE_URL || 'http://172.25.136.193:8080/v1';
-const ZAI_STT_KEY = process.env.ZAI_API_KEY || 'Z.ai';
-const ZAI_CHAT_ID = process.env.ZAI_CHAT_ID || '';
-const ZAI_USER_ID = process.env.ZAI_USER_ID || '';
-const ZAI_TOKEN = process.env.ZAI_TOKEN || '';
-
-export async function createTranscription(
-  audioBase64: string,
-  language: string = 'es'
-) {
-  const url = `${ZAI_STT_URL}/audio/transcriptions`;
-
-  const formData = new FormData();
-  const byteChars = atob(audioBase64);
-  const byteArray = new Uint8Array(byteChars.length);
-  for (let i = 0; i < byteChars.length; i++) {
-    byteArray[i] = byteChars.charCodeAt(i);
-  }
-  const blob = new Blob([byteArray], { type: 'audio/webm' });
-  formData.append('file', blob, 'audio.webm');
-  formData.append('language', language);
-
-  const headers: Record<string, string> = {
-    'Authorization': `Bearer ${ZAI_STT_KEY}`,
-    'X-Z-AI-From': 'Z',
-  };
-  if (ZAI_CHAT_ID) headers['X-Chat-Id'] = ZAI_CHAT_ID;
-  if (ZAI_USER_ID) headers['X-User-Id'] = ZAI_USER_ID;
-  if (ZAI_TOKEN) headers['X-Token'] = ZAI_TOKEN;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`ASR API ${response.status}: ${errorBody}`);
-  }
-
-  return await response.json();
-}
