@@ -46,7 +46,7 @@ const PLANS = [
     color: 'emerald',
     features: [
       'Chat de voz y texto 24/7',
-      'Contexto Permanente',
+      'Memoria a largo plazo',
       'Modo Expandido',
     ],
   },
@@ -58,8 +58,8 @@ const PLANS = [
     color: 'blue',
     features: [
       'Todo lo del Básico',
-      'Auditoría Inteligente de Documentos',
-      'Check-in motivacional diario',
+      'Auditoría inteligente de documentos',
+      'Toque de atención diario',
     ],
   },
   {
@@ -70,7 +70,7 @@ const PLANS = [
     color: 'amber',
     features: [
       'Todo lo del Pro',
-      'Sistema de Accountability y Acción',
+      'Sistema Anti-Postergación y Alarmas',
       'Prioridad de servidores',
     ],
   },
