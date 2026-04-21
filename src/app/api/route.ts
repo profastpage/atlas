@@ -18,7 +18,31 @@ export async function GET(request: NextRequest) {
   }
 
   // ---- HEALTH CHECK ----
-  return NextResponse.json({ status: 'ok', service: 'Atlas Coach v1.2' });
+  const envCheck = {
+    DATABASE_URL: !!process.env.DATABASE_URL,
+    TURSO_AUTH_TOKEN: !!process.env.TURSO_AUTH_TOKEN,
+    QWEN_API_KEY: !!process.env.QWEN_API_KEY,
+    QWEN_BASE_URL: !!process.env.QWEN_BASE_URL,
+    QWEN_MODEL: !!process.env.QWEN_MODEL,
+    NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  };
+
+  let dbOk = false;
+  let dbError = '';
+  try {
+    await db.execute('SELECT 1 as ok');
+    dbOk = true;
+  } catch (e: any) {
+    dbError = e?.message || 'Unknown error';
+  }
+
+  return NextResponse.json({
+    status: dbOk ? 'ok' : 'degraded',
+    service: 'Atlas Coach v1.2',
+    env: envCheck,
+    db: { connected: dbOk, error: dbError || undefined },
+  });
 }
 
 async function handleAdminAction(request: NextRequest, action: string) {
