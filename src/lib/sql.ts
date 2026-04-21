@@ -3,15 +3,26 @@
 // Cloudflare Workers lack XMLHttpRequest which Next.js checks at load time
 // ========================================
 if (typeof globalThis.XMLHttpRequest === 'undefined') {
-  (globalThis as any).XMLHttpRequest = class XMLHttpRequestStub {
-    open() {}
-    send() {}
-    setRequestHeader() {}
+  // Provide minimal stub so Next.js framework code doesn't crash
+  const noop = () => {};
+  const XHRStub: any = class XMLHttpRequest {
+    OPENED = 1; UNSENT = 0; LOADING = 1; DONE = 4;
+    static UNSENT = 0; static OPENED = 1; static LOADING = 1; static DONE = 4;
+    readyState = 0; status = 0; timeout = 0; responseURL = ''; responseText = '';
+    responseType = ''; withCredentials = false; onreadystatechange = noop;
+    onload = noop; onerror = noop; onabort = noop; onprogress = noop;
+    ontimeout = noop; upload = noop; send() { this.readyState = 1; this.status = 200; }
+    open() { this.readyState = 1; }
     abort() {}
-    getAllResponseHeaders() { return ''; }
+    setRequestHeader() {}
     getResponseHeader() { return null; }
+    getAllResponseHeaders() { return ''; }
     overrideMimeType() {}
   };
+  try {
+    // @ts-ignore
+    globalThis.XMLHttpRequest = XHRStub;
+  } catch {}
 }
 
 // ========================================
