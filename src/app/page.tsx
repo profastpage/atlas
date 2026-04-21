@@ -580,17 +580,9 @@ export default function AtlasApp() {
 
         const contentType = res.headers.get('content-type') || '';
 
-        // ---- Handle 403 PLAN_REQUIRED from backend ----
-        if (res.status === 403) {
-          const errData = await res.json().catch(() => ({}));
-          if (errData.error === 'PLAN_REQUIRED') {
-            openPlanGate();
-            setMessages((prev) => prev.slice(0, -1));
-            setIsLoading(false);
-            setIsStreaming(false);
-            return;
-          }
-        }
+        // ---- PLAN GATE: Backend no longer sends 403 PLAN_REQUIRED ----
+        // Paywall is purely frontend-driven via trialBotResponses counter.
+        // First 5 messages always work. After 5, input is blocked + modal shown.
 
         if (contentType.includes('text/event-stream')) {
           // ====== STREAMING MODE — Real-time tokens ======
@@ -1106,7 +1098,8 @@ export default function AtlasApp() {
   };
 
   // ---- INPUT BLOCKED: Unified paywall active ----
-  const isInputBlocked = !isStreaming && trialBotResponses >= FREE_BOT_RESPONSES && hasActivePlan !== true;
+  // Only block after 5 responses AND no active plan confirmed AND not checking
+  const isInputBlocked = !isStreaming && trialBotResponses >= FREE_BOT_RESPONSES && hasActivePlan !== true && !checkingPlan;
 
   const remainingResponses = Math.max(0, FREE_BOT_RESPONSES - trialBotResponses);
 
