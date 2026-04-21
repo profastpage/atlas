@@ -146,3 +146,25 @@ Stage Summary:
 - Full trial system operational: admin grants trial → user gets temporary premium access → auto-expires
 - No cron job needed: timestamp comparison handles expiration naturally
 - Graceful degradation: if Supabase is down, all requests pass through (existing behavior)
+---
+Task ID: 1
+Agent: main
+Task: Integrar PostHog Analytics en Atlas Coach
+
+Work Log:
+- Instalado posthog-js como dependencia del proyecto
+- Creado src/lib/analytics.ts con funciones completas de tracking (trackMessageSent, trackPlanSelected, trackPaywallShown, trackLogin, trackLogout, trackActionButton, trackVoiceStart, trackVoiceLocked, trackVoiceError, trackAlarmCreated, identifyUser, resetIdentity)
+- Creado src/app/providers.tsx como PostHogProvider wrapper con pageview tracking por pathname
+- Modificado src/app/layout.tsx para envolver children con PostHogProvider
+- Modificado src/app/page.tsx con tracking en: sendMessage, logout, login (OAuth + token restore), checkPlanAfterLogin (identify), mic (start, lock, error), copy, share, attach, expand, alarm, paywall (trial, pdf, alarm gates)
+- Modificado src/components/SettingsSidebar.tsx con trackPlanSelected en botón "Elegir Plan"
+- Agregadas env vars NEXT_PUBLIC_POSTHOG_KEY y NEXT_PUBLIC_POSTHOG_HOST a .env.local
+- Fix: useSearchParams() wrapped in Suspense boundary (removido hook, pageviews via pathname en provider)
+- Build exitoso (commit b39f6fc)
+
+Stage Summary:
+- PostHog completamente integrado con 12+ eventos de tracking
+- Sin clave API configurada aún: analytics se desactiva silenciosamente
+- Privacy-first: autocapture desactivado, solo eventos explícitos
+- Archivos nuevos: src/lib/analytics.ts, src/app/providers.tsx
+- Commit: b39f6fc
