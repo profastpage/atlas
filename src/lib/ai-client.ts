@@ -3,6 +3,10 @@
 // Direct fetch calls — no Node.js APIs (fs, path, os)
 // Works on Cloudflare Workers, Vercel Edge, Browser
 // ========================================
+//
+// Model selection via env vars:
+//   LLM_MODEL — model name (default: glm-4-flash)
+//   LLM_MAX_TOKENS — max response tokens (default: 150)
 
 const ZAI_CONFIG = {
   baseUrl: process.env.ZAI_BASE_URL || 'http://172.25.136.193:8080/v1',
@@ -10,6 +14,8 @@ const ZAI_CONFIG = {
   chatId: process.env.ZAI_CHAT_ID || '',
   userId: process.env.ZAI_USER_ID || '',
   token: process.env.ZAI_TOKEN || '',
+  defaultModel: process.env.LLM_MODEL || 'glm-4-flash',
+  defaultMaxTokens: parseInt(process.env.LLM_MAX_TOKENS || '150', 10),
 };
 
 function getHeaders(): Record<string, string> {
@@ -33,10 +39,14 @@ export async function createChatCompletion(body: {
   temperature?: number;
   max_tokens?: number;
   stream?: boolean;
+  model?: string;
+  thinking?: { type: string };
 }) {
   const url = `${ZAI_CONFIG.baseUrl}/chat/completions`;
   const requestBody = {
     ...body,
+    model: body.model || ZAI_CONFIG.defaultModel,
+    max_tokens: body.max_tokens || ZAI_CONFIG.defaultMaxTokens,
     thinking: body.thinking || { type: 'disabled' },
   };
 
