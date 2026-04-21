@@ -512,7 +512,7 @@ export default function AtlasApp() {
         onClose={() => setShowSettings(false)}
         user={userInfo ? { ...userInfo, tenantId } : null}
         token={token || ''}
-        onOpenAdmin={() => {}}
+        onOpenAdmin={() => { setShowSettings(false); window.location.href = '/admin'; }}
       />
 
       {/* ===== HEADER ===== */}

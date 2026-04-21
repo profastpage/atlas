@@ -3,11 +3,11 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, User, LogOut, Edit3, Check, Loader2, ShieldCheck, ChevronRight
+  X, User, LogOut, Edit3, Check, ShieldCheck, ChevronRight, Crown, Zap
 } from 'lucide-react';
 
 // ========================================
-// SETTINGS SIDEBAR — Simplified (no API deps)
+// SETTINGS SIDEBAR — with Subscription + Admin
 // Mobile First, Dark Theme
 // ========================================
 
@@ -17,6 +17,14 @@ interface SettingsSidebarProps {
   user: { id: string; email: string; name: string; tenantId: string } | null;
   token: string;
   onOpenAdmin: () => void;
+}
+
+interface PlanInfo {
+  id: string;
+  name: string;
+  price: number;
+  maxMessages: number;
+  features: string[];
 }
 
 function getInitial(name: string): string {
@@ -31,6 +39,8 @@ export default function SettingsSidebar({
 }: SettingsSidebarProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
+  const [plans, setPlans] = useState<PlanInfo[]>([]);
+  const [showPlans, setShowPlans] = useState(false);
   const isAdmin = user?.email?.toLowerCase().includes('admin') ?? false;
 
   const startEditName = () => {
@@ -42,6 +52,21 @@ export default function SettingsSidebar({
 
   const saveEditName = () => {
     setIsEditingName(false);
+  };
+
+  const loadPlans = async () => {
+    if (plans.length > 0) {
+      setShowPlans(!showPlans);
+      return;
+    }
+    try {
+      const res = await fetch('/api?action=plans');
+      const data = await res.json();
+      setPlans(data.plans || []);
+      setShowPlans(true);
+    } catch {
+      console.error('[PLANS] Error loading plans');
+    }
   };
 
   return (
@@ -64,7 +89,7 @@ export default function SettingsSidebar({
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed top-0 right-0 bottom-0 z-[70] w-full sm:w-80 bg-gray-900 rounded-l-2xl shadow-2xl shadow-black/40 flex flex-col"
+            className="fixed top-0 right-0 bottom-0 z-[70] w-full sm:w-80 bg-gray-900 rounded-l-2xl shadow-2xl shadow-black/40 flex flex-col overflow-hidden"
             role="dialog"
             aria-modal="true"
           >
@@ -127,22 +152,59 @@ export default function SettingsSidebar({
 
               <div className="border-t border-gray-800/40 my-5" />
 
-              {/* Plan Info (static) */}
+              {/* Plan Section */}
               <section aria-label="Plan">
-                <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
-                  Tu Plan
-                </h3>
+                <button
+                  onClick={loadPlans}
+                  className="w-full flex items-center justify-between mb-3"
+                >
+                  <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">
+                    Tu Plan
+                  </h3>
+                  <ChevronRight className={`w-3.5 h-3.5 text-gray-600 transition-transform ${showPlans ? 'rotate-90' : ''}`} />
+                </button>
                 <div className="bg-gray-800/40 rounded-xl p-4 border border-gray-700/30">
                   <div className="flex items-center gap-2 mb-2">
+                    <Crown className="w-4 h-4 text-amber-400" />
                     <span className="text-sm font-semibold text-emerald-400">Plan Gratuito</span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/20 text-emerald-400">
                       Activo
                     </span>
                   </div>
                   <p className="text-xs text-gray-400">
-                    Acceso completo al chat con Atlas. 5 mensajes como invitado, ilimitados con cuenta.
+                    5 mensajes como invitado, ilimitados con cuenta registrada.
                   </p>
                 </div>
+
+                {/* Plans List (expandable) */}
+                <AnimatePresence>
+                  {showPlans && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-3 space-y-2">
+                        {plans.map((plan) => (
+                          <div key={plan.id} className="bg-gray-800/30 rounded-lg p-3 border border-gray-800/40">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold text-gray-300">{plan.name}</span>
+                              <span className="text-xs font-bold text-white">S/ {plan.price}<span className="text-[9px] text-gray-500 font-normal">/mes</span></span>
+                            </div>
+                            <p className="text-[10px] text-gray-500 mt-1">
+                              {plan.maxMessages === -1 ? 'Mensajes ilimitados' : `${plan.maxMessages} mensajes/mes`}
+                            </p>
+                            <button className="mt-2 w-full py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 text-[11px] font-medium hover:bg-emerald-600/30 transition-all flex items-center justify-center gap-1">
+                              <Zap className="w-3 h-3" /> Upgrade
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </section>
 
               {/* Admin Access */}
@@ -165,7 +227,7 @@ export default function SettingsSidebar({
                           Panel de Administracion
                         </p>
                         <p className="text-[11px] text-amber-400/60">
-                          Acceso elevado requerido
+                          Metricas, usuarios, planes
                         </p>
                       </div>
                       <ChevronRight className="w-4 h-4 text-amber-400/40 group-hover:text-amber-400 shrink-0" />
