@@ -124,3 +124,25 @@ Stage Summary:
 - Paywall no longer interrupts streaming: deferred via pendingPaywall + streamingId watcher
 - Network errors handled gracefully: subtle amber indicator instead of broken text
 - All changes compile cleanly
+
+---
+Task ID: 5
+Agent: main
+Task: Sistema de Pruebas Premium desde Admin Panel
+
+Work Log:
+- **SQL Supabase**: Generated CREATE TABLE profiles with trial_plan (TEXT nullable) and trial_ends_at (TIMESTAMPTZ nullable), plus RLS policies
+- **Admin API**: Added POST /api?action=grant_trial endpoint with validation (valid plans: pro/executive), calculates trial_ends_at from durationHours
+- **Admin API**: Added GET /api?action=trial_status endpoint, checks trial_plan + trial_ends_at vs current time, returns hoursLeft
+- **Admin Panel UI**: Added Gift icon button per user card, opens trial modal with plan selector (Pro/Ejecutivo) and duration (24h/48h/7d)
+- **Backend Plan Gate (route.ts)**: Replaced single plan_type check with triple validation: paid plan → active trial → block
+- **Frontend Plan Gate (page.tsx)**: checkPlanAfterLogin now fetches subscription + trial_status in parallel
+- **Trial Badge**: Shows "Prueba Pro — 24h restantes" amber badge in chat header when trial is active
+- **Auto-refresh**: useEffect polls trial_status every 10 minutes, triggers plan gate reload if trial expires mid-session
+- Build verified: next build --webpack compiles cleanly
+- Pushed to Cloudflare Pages: commit 4447a24
+
+Stage Summary:
+- Full trial system operational: admin grants trial → user gets temporary premium access → auto-expires
+- No cron job needed: timestamp comparison handles expiration naturally
+- Graceful degradation: if Supabase is down, all requests pass through (existing behavior)
