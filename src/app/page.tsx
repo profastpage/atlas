@@ -238,9 +238,10 @@ export default function AtlasApp() {
   // AUTH LOGIC
   // ========================================
 
-  // ---- Paywall is now a PURE RENDER CONDITION ----
-  // No useEffect. No pendingPaywall. No deferred state.
-  // The modal renders IFF: !isStreaming && !isAuthenticated && trialBotResponses >= FREE_BOT_RESPONSES
+  // ---- UNIFIED PAYWALL ----
+  // Shows at 5 responses for EVERYONE (guest + logged-in).
+  // Only way to dismiss: Supabase confirms plan_type valid (hasActivePlan === true).
+  // Modal content changes: guest sees "Iniciar Sesion", logged-in sees "Ver Planes".
 
   const logout = () => {
     localStorage.removeItem('atlas_token');
@@ -489,9 +490,10 @@ export default function AtlasApp() {
 
   const sendMessage = useCallback(
     async (text: string) => {
-      // ---- HARD PAYWALL: Authenticated but no plan ----
-      if (isAuthenticated && hasActivePlan === false) {
-        openPlanGate();
+      // ---- UNIFIED PAYWALL GATE ----
+      // Block if 5+ responses reached and no confirmed paid plan
+      if (trialBotResponses >= FREE_BOT_RESPONSES && hasActivePlan !== true) {
+        if (isAuthenticated) openPlanGate();
         return;
       }
 
@@ -1072,8 +1074,8 @@ export default function AtlasApp() {
     }
   };
 
-  // ---- INPUT BLOCKED: Paywall active for authenticated free user ----
-  const isInputBlocked = isAuthenticated && hasActivePlan === false;
+  // ---- INPUT BLOCKED: Unified paywall active ----
+  const isInputBlocked = !isStreaming && trialBotResponses >= FREE_BOT_RESPONSES && hasActivePlan !== true;
 
   const remainingResponses = Math.max(0, FREE_BOT_RESPONSES - trialBotResponses);
 
@@ -1791,81 +1793,77 @@ export default function AtlasApp() {
       </div>
 
       {/* ====================================================================
-          MODAL PAYWALL — MAQUINA DE ESTADOS INFALIBLE
-          REGLA UNICA: !isStreaming && !isAuthenticated && trialBotResponses >= 5
-          - El usuario puede escribir 100 veces. El contador NO sube por user messages.
-          - El contador SOLO sube cuando se agrega role: 'assistant'.
-          - El modal NUNCA aparece si isStreaming === true.
+          UNIFIED PAYWALL — 5 responses block EVERYONE without paid plan
+          REGLA: !isStreaming && trialBotResponses >= 5 && hasActivePlan !== true
+          - Guest: "Iniciar Sesion" CTA
+          - Logged-in no plan: "Ver Planes" CTA
+          - Logged-in with plan: paywall NEVER shows (hasActivePlan === true)
+          - During plan check: loading overlay handles it (checkingPlan === true)
           ==================================================================== */}
-      {!isStreaming && !isAuthenticated && trialBotResponses >= FREE_BOT_RESPONSES && (
+      {!isStreaming && trialBotResponses >= FREE_BOT_RESPONSES && hasActivePlan !== true && !checkingPlan && (
         <>
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50" />
           <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-sm mx-auto">
             <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
               {/* Icon */}
               <div className="text-center mb-5">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-emerald-600/5 flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
-                  <Lock className="w-8 h-8 text-emerald-400" />
+                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border ${
+                  isAuthenticated
+                    ? 'bg-gradient-to-br from-amber-500/20 to-amber-600/5 border-amber-500/20'
+                    : 'bg-gradient-to-br from-emerald-500/20 to-emerald-600/5 border-emerald-500/20'
+                }`}>
+                  {isAuthenticated ? (
+                    <AlertTriangle className="w-8 h-8 text-amber-400" />
+                  ) : (
+                    <Lock className="w-8 h-8 text-emerald-400" />
+                  )}
                 </div>
                 <h2 className="text-xl font-bold text-white">
-                  Has utilizado tus {FREE_BOT_RESPONSES} mensajes de prueba
+                  {isAuthenticated
+                    ? 'Selecciona un plan para continuar'
+                    : `Has utilizado tus ${FREE_BOT_RESPONSES} mensajes de prueba`
+                  }
                 </h2>
                 <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-                  Inicia sesion para continuar con tu Asesor Estrategico de Elite.
+                  {isAuthenticated
+                    ? 'El chat esta bloqueado hasta que actives un plan de suscripcion.'
+                    : 'Inicia sesion para continuar con tu Asesor Estrategico de Elite.'
+                  }
                 </p>
               </div>
 
               {/* Action Button */}
               <div className="space-y-3">
-                <a
-                  href="/login"
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
-                >
-                  Iniciar Sesion
-                  <LogIn className="w-4 h-4" />
-                </a>
+                {isAuthenticated ? (
+                  <>
+                    <button
+                      onClick={() => setShowSettings(true)}
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-gray-950 text-sm font-bold transition-all active:scale-[0.98] shadow-lg shadow-amber-500/20"
+                    >
+                      <Settings className="w-4 h-4" />
+                      Ver Planes
+                    </button>
+                    <button
+                      onClick={logout}
+                      className="w-full py-2.5 rounded-xl text-gray-500 text-sm hover:text-gray-300 transition-colors"
+                    >
+                      Cerrar Sesion
+                    </button>
+                  </>
+                ) : (
+                  <a
+                    href="/login"
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
+                  >
+                    Iniciar Sesion
+                    <LogIn className="w-4 h-4" />
+                  </a>
+                )}
               </div>
             </div>
           </div>
         </>
       )}
-
-      {/* ===== POST-LOGIN PLAN GATE OVERLAY ===== */}
-      <AnimatePresence>
-        {isAuthenticated && hasActivePlan === false && !checkingPlan && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[55] bg-gray-950/80 backdrop-blur-sm flex items-center justify-center"
-          >
-            <div className="text-center max-w-xs px-6">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-600/5 flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
-                <AlertTriangle className="w-8 h-8 text-amber-400" />
-              </div>
-              <h2 className="text-lg font-bold text-white mb-2">
-                Selecciona un plan para continuar
-              </h2>
-              <p className="text-sm text-gray-400 mb-5">
-                El chat esta bloqueado hasta que actives un plan de suscripcion.
-              </p>
-              <button
-                onClick={() => setShowSettings(true)}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-gray-950 text-sm font-bold transition-all active:scale-[0.98] shadow-lg shadow-amber-500/20"
-              >
-                <Settings className="w-4 h-4" />
-                Ver Planes
-              </button>
-              <button
-                onClick={logout}
-                className="w-full mt-3 py-2.5 rounded-xl text-gray-500 text-sm hover:text-gray-300 transition-colors"
-              >
-                Cerrar Sesion
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ===== PLAN CHECK LOADING ===== */}
       {isAuthenticated && checkingPlan && (
