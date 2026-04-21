@@ -17,6 +17,25 @@ Work Log:
 - Final bundle: 2.85 MiB (under 3 MiB Cloudflare limit, 152KB headroom)
 - Git commit 97907dc pushed to origin/main
 
+---
+Task ID: 2
+Agent: main
+Task: Brand/Copy Upgrade — Eliminate "Asistente" positioning, elevate pricing feature names
+
+Work Log:
+- Searched entire codebase for all "Asistente" occurrences (manifest, layout, scripts, components)
+- Updated `public/manifest.json`: "Asistente de Elite" → "Asesor de Élite"
+- Updated `src/app/layout.tsx`: keywords "Asistente" → "Asesor", OG/Twitter descriptions "Asistencia" → "Asesoría"
+- Updated `scripts/turso-setup.mjs`: app_description → "Asesor estratégico de élite en coaching y consultoría", welcome_message → "tu asesor estratégico de élite"
+- Updated `scripts/turso-setup.mjs`: Profesional plan features: "Memoria contextual avanzada" → "Contexto Permanente" + "Auditoría Inteligente de Documentos"
+- Updated `src/components/SettingsSidebar.tsx` pricing features:
+  * Básico: "Memoria a largo plazo" → "Contexto Permanente"
+  * Pro: "Análisis profundo de PDFs y documentos" → "Auditoría Inteligente de Documentos"
+  * Ejecutivo: "Sistema de Alarmas y Recordatorios push" → "Sistema de Accountability y Acción"
+- Updated `src/components/InstallPrompt.tsx`: "Alarmas en tiempo real y acceso rapido" → "Accountability en tiempo real y acceso rápido"
+- Updated `src/app/page.tsx` signup benefits: "Memoria contextual entre sesiones" → "Contexto Permanente entre sesiones"
+- Final verification: zero "Asistente" references remaining in src/, public/, scripts/
+
 Stage Summary:
 - All FASE 2 features re-implemented in lightweight form
 - Bundle size maintained under 3 MiB Cloudflare Pages limit

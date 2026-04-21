@@ -93,7 +93,7 @@ export default function InstallPrompt() {
               Instala Atlas para una experiencia premium
             </p>
             <p className="text-[10px] text-gray-500 mt-0.5">
-              Alarmas en tiempo real y acceso rapido
+              Accountability en tiempo real y acceso rápido
             </p>
           </div>
 

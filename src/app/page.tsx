@@ -1499,7 +1499,7 @@ export default function AtlasApp() {
                   {[
                     'Mensajes ilimitados con Atlas',
                     'Historial guardado automaticamente',
-                    'Memoria contextual entre sesiones',
+                    'Contexto Permanente entre sesiones',
                     'Acceso a multiples dispositivos',
                   ].map((benefit) => (
                     <li key={benefit} className="flex items-start gap-2.5">

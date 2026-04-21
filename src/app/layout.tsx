@@ -12,14 +12,14 @@ const SITE_URL = 'https://atlas-9mv.pages.dev';
 export const metadata: Metadata = {
   title: "Atlas - Consultor Estratégico de Élite 24/7",
   description:
-    "Tu asistente de inteligencia artificial privado. Resuelve problemas de trabajo, estudios, emociones y estrategia con respuestas directas y sin relleno. Disponible las 24 horas.",
+    "Tu asesor de inteligencia artificial privado. Resuelve problemas de trabajo, estudios, emociones y estrategia con respuestas directas y sin relleno. Disponible las 24 horas.",
   keywords: [
     "Atlas",
     "Consultor Estratégico",
     "Coach",
     "IA",
     "Inteligencia Artificial",
-    "Asistente",
+    "Asesor",
     "Productividad",
     "Estrategia",
   ],
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Atlas – Tu Consultor Estratégico 24/7",
     description:
-      "Resuelve el problema de raíz. Sin relleno, sin listas aburridas. Asistencia en cualquier nicho: trabajo, estudios, salud y productividad.",
+      "Resuelve el problema de raíz. Sin relleno, sin listas aburridas. Asesoría en cualquier nicho: trabajo, estudios, salud y productividad.",
     type: "website",
     url: SITE_URL,
     siteName: "Atlas",
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Atlas – Tu Consultor Estratégico 24/7",
     description:
-      "Resuelve el problema de raíz. Sin relleno, sin listas aburridas. Asistencia en cualquier nicho.",
+      "Resuelve el problema de raíz. Sin relleno, sin listas aburridas. Asesoría en cualquier nicho.",
     images: [`${SITE_URL}/og-image.png`],
   },
   icons: {

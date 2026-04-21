@@ -103,7 +103,7 @@ async function run() {
   // Seed subscription plans
   const plans = [
     { id: 'plan_basico', name: 'Basico', price: 20, maxMessages: 200, features: JSON.stringify(['Chat con Atlas', 'Historial de sesiones', '200 mensajes/mes']), sortOrder: 1 },
-    { id: 'plan_profesional', name: 'Profesional', price: 40, maxMessages: 1000, features: JSON.stringify(['Todo lo de Basico', 'Memoria contextual avanzada', '1000 mensajes/mes', 'Soporte prioritario']), sortOrder: 2 },
+    { id: 'plan_profesional', name: 'Profesional', price: 40, maxMessages: 1000, features: JSON.stringify(['Todo lo de Basico', 'Contexto Permanente', 'Auditoría Inteligente de Documentos', '1000 mensajes/mes', 'Soporte prioritario']), sortOrder: 2 },
     { id: 'plan_elite', name: 'Elite', price: 60, maxMessages: -1, features: JSON.stringify(['Todo lo de Profesional', 'Mensajes ilimitados', 'Acceso anticipado', 'API access', 'Soporte dedicado']), sortOrder: 3 },
   ];
 
@@ -136,12 +136,12 @@ async function run() {
   // Seed app config
   const configs = [
     { key: 'app_name', value: 'Atlas IA' },
-    { key: 'app_description', value: 'Asistente inteligente de salud mental' },
+    { key: 'app_description', value: 'Asesor estratégico de élite en coaching y consultoría' },
     { key: 'maintenance_mode', value: 'false' },
     { key: 'max_free_messages', value: '50' },
     { key: 'stripe_public_key', value: '' },
     { key: 'stripe_secret_key', value: '' },
-    { key: 'welcome_message', value: 'Hola! Soy Atlas, tu asistente de bienestar. En que puedo ayudarte hoy?' },
+    { key: 'welcome_message', value: 'Hola! Soy Atlas, tu asesor estratégico de élite. ¿En qué puedo ayudarte hoy?' },
   ];
 
   for (const c of configs) {
