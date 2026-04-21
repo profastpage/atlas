@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mic, MicOff, Send, Plus, MessageSquare, Trash2,
   X, LogOut, LogIn, Settings, Lock, UserPlus, ShieldCheck, XCircle,
-  Pencil, Archive, ArchiveRestore, Check, AlertTriangle
+  Pencil, Archive, ArchiveRestore, Check, AlertTriangle,
+  Paperclip, FileText, XCircle as XCircleIcon, Loader2
 } from 'lucide-react';
 import { WELCOME_MESSAGE_NEW } from '@/lib/atlas';
 import SettingsSidebar from '@/components/SettingsSidebar';
@@ -79,6 +80,13 @@ export default function AtlasApp() {
 
   // ---- Expand State ----
   const [expandingId, setExpandingId] = useState<string | null>(null);
+
+  // ---- Document Upload State ----
+  const [documentText, setDocumentText] = useState<string | null>(null);
+  const [documentName, setDocumentName] = useState<string>('');
+  const [isAnalyzingDocument, setIsAnalyzingDocument] = useState(false);
+  const [showPdfPaywall, setShowPdfPaywall] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ---- Voice State ----
   const [isRecording, setIsRecording] = useState(false);
@@ -379,6 +387,17 @@ export default function AtlasApp() {
     async (text: string) => {
       if (!text.trim() || isLoading || !!streamingId) return;
 
+      // ---- CHECK PLAN FOR DOCUMENT UPLOADS ----
+      if (documentText && isAuthenticated) {
+        const isPro = await checkUserPlan();
+        if (!isPro) {
+          setDocumentText(null);
+          setDocumentName('');
+          setShowPdfPaywall(true);
+          return;
+        }
+      }
+
       // ---- GUEST LIMIT CHECK ----
       if (!isAuthenticated) {
         const newCount = guestMessageCount + 1;
@@ -418,6 +437,7 @@ export default function AtlasApp() {
             sessionId: currentSessionId,
             message: text.trim(),
             tenantId,
+            ...(documentText ? { documentText } : {}),
           }),
         });
 
@@ -497,6 +517,12 @@ export default function AtlasApp() {
         // After response, check if guest hit limit
         if (!isAuthenticated && guestMessageCount >= FREE_MESSAGES_LIMIT) {
           setTimeout(() => setShowPaywall(true), 800);
+        }
+
+        // Clear document after sending
+        if (documentText) {
+          setDocumentText(null);
+          setDocumentName('');
         }
 
         if (tenantId && isAuthenticated) fetchSessions(tenantId);
@@ -636,6 +662,130 @@ export default function AtlasApp() {
       }
     }
   }, [showSessions]);
+
+  // ========================================
+  // DOCUMENT UPLOAD — PDF/TXT for Pro plan
+  // ========================================
+
+  const checkUserPlan = async (): Promise<boolean> => {
+    if (!isAuthenticated || !tenantId) return false;
+    try {
+      const res = await fetch(`/api?action=subscription&tenantId=${tenantId}`);
+      const data = await res.json();
+      const sub = data.subscription;
+      const planId = sub?.planId || sub?.planName?.toLowerCase() || '';
+      return planId.includes('pro') || planId.includes('elite') || planId.includes('ejecutivo') || sub?.status === 'active';
+    } catch {
+      return false;
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset file input so same file can be re-selected
+    e.target.value = '';
+
+    // Check plan
+    const isPro = await checkUserPlan();
+    if (!isPro) {
+      setShowPdfPaywall(true);
+      return;
+    }
+
+    setIsAnalyzingDocument(true);
+    setDocumentName(file.name);
+
+    try {
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      let text = '';
+      let charCount = 0;
+      let tokenEstimate = 0;
+
+      if (isPdf) {
+        const { extractPdfText, validateDocumentSize } = await import('@/lib/pdf-extractor');
+        const result = await extractPdfText(file);
+        text = result.text;
+        charCount = result.charCount;
+        tokenEstimate = result.tokenEstimate;
+
+        const validation = validateDocumentSize(charCount, tokenEstimate);
+        if (!validation.valid) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `error-${Date.now()}`,
+              role: 'assistant',
+              content: validation.error || 'Documento demasiado largo.',
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+          setIsAnalyzingDocument(false);
+          setDocumentName('');
+          return;
+        }
+      } else {
+        const { extractTxtTextAsync, validateDocumentSize } = await import('@/lib/pdf-extractor');
+        const result = await extractTxtTextAsync(file);
+        text = result.text;
+        charCount = result.charCount;
+        tokenEstimate = result.tokenEstimate;
+
+        const validation = validateDocumentSize(charCount, tokenEstimate);
+        if (!validation.valid) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `error-${Date.now()}`,
+              role: 'assistant',
+              content: validation.error || 'Documento demasiado largo.',
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+          setIsAnalyzingDocument(false);
+          setDocumentName('');
+          return;
+        }
+      }
+
+      if (!text || text.trim().length < 10) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            role: 'assistant',
+            content: 'No se pudo extraer texto del documento. Asegurate de que el archivo contenga texto seleccionable.',
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        setIsAnalyzingDocument(false);
+        setDocumentName('');
+        return;
+      }
+
+      setDocumentText(text);
+      inputRef.current?.focus();
+    } catch (error) {
+      console.error('[DOC] Error al procesar:', error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `error-${Date.now()}`,
+          role: 'assistant',
+          content: 'Error al procesar el documento. Intenta con otro archivo.',
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    } finally {
+      setIsAnalyzingDocument(false);
+    }
+  };
+
+  const clearDocument = () => {
+    setDocumentText(null);
+    setDocumentName('');
+  };
 
   // ========================================
   // FORMATTING
@@ -1194,7 +1344,7 @@ export default function AtlasApp() {
           <button
             type="button"
             onClick={toggleRecording}
-            disabled={isLoading || !!streamingId || isTranscribing || (!isAuthenticated && remainingMessages <= 0)}
+            disabled={isLoading || !!streamingId || isTranscribing || isAnalyzingDocument || (!isAuthenticated && remainingMessages <= 0)}
             className={`w-[52px] h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 ${
               isRecording
                 ? 'bg-red-500 hover:bg-red-400 shadow-xl shadow-red-500/40 animate-pulse'
@@ -1210,11 +1360,42 @@ export default function AtlasApp() {
               <Mic className="w-6 h-6 text-emerald-400" />
             )}
           </button>
+
+          {/* Paperclip — Document Upload */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.txt,application/pdf,text/plain"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (isAuthenticated) {
+                fileInputRef.current?.click();
+              } else {
+                setShowPdfPaywall(true);
+              }
+            }}
+            disabled={isLoading || !!streamingId || isTranscribing || isAnalyzingDocument || (!isAuthenticated && remainingMessages <= 0)}
+            className="w-[52px] h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 bg-gray-800 hover:bg-gray-700/80 border-2 border-gray-700/30 hover:border-blue-500/40 disabled:opacity-30"
+            aria-label="Subir documento (PDF/TXT)"
+            title="Subir documento"
+          >
+            {isAnalyzingDocument ? (
+              <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+            ) : documentText ? (
+              <FileText className="w-5 h-5 text-blue-400" />
+            ) : (
+              <Paperclip className="w-5 h-5 text-gray-400" />
+            )}
+          </button>
         </form>
 
-        {/* Recording / Transcribing indicator */}
+        {/* Recording / Transcribing / Document analyzing indicator */}
         <AnimatePresence>
-          {(isRecording || isTranscribing) && (
+          {(isRecording || isTranscribing || isAnalyzingDocument) && (
             <motion.div
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1223,20 +1404,50 @@ export default function AtlasApp() {
             >
               <span
                 className={`w-2 h-2 rounded-full animate-pulse ${
-                  isRecording ? 'bg-red-500' : 'bg-emerald-400'
+                  isRecording ? 'bg-red-500' : 'bg-blue-400'
                 }`}
               />
               <span
                 className={`text-[11px] font-medium ${
                   isRecording
                     ? 'text-red-400'
-                    : 'text-emerald-400/70'
+                    : isTranscribing
+                      ? 'text-emerald-400/70'
+                      : 'text-blue-400'
                 }`}
               >
                 {isRecording
                   ? 'Grabando... toca para enviar'
-                  : 'Transcribiendo voz...'}
+                  : isTranscribing
+                    ? 'Transcribiendo voz...'
+                    : 'Atlas esta analizando el documento...'}
               </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Document attached chip */}
+        <AnimatePresence>
+          {documentText && documentName && !isAnalyzingDocument && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 max-w-[400px]"
+            >
+              <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              <span className="text-[11px] text-blue-300 truncate flex-1">
+                {documentName}
+              </span>
+              <span className="text-[9px] text-blue-400/60 shrink-0">
+                Listo
+              </span>
+              <button
+                onClick={clearDocument}
+                className="p-0.5 rounded hover:bg-blue-500/20 transition-colors shrink-0"
+              >
+                <X className="w-3 h-3 text-blue-400/60 hover:text-blue-300" />
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -1320,6 +1531,77 @@ export default function AtlasApp() {
                 <p className="text-center text-[10px] text-gray-600 mt-4">
                   Puedes seguir explorando sin cuenta, pero tu historial no se guardara
                 </p>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ===== PDF PAYWALL MODAL ===== */}
+      <AnimatePresence>
+        {showPdfPaywall && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50"
+              onClick={() => setShowPdfPaywall(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-sm mx-auto"
+            >
+              <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-blue-500/15 flex items-center justify-center">
+                    <FileText className="w-6 h-6 text-blue-400" />
+                  </div>
+                  <button
+                    onClick={() => setShowPdfPaywall(false)}
+                    className="p-1.5 rounded-full hover:bg-gray-800/60 transition-colors"
+                  >
+                    <XCircleIcon className="w-5 h-5 text-gray-500" />
+                  </button>
+                </div>
+                <h2 className="text-lg font-bold text-white mb-2">
+                  Analisis de Documentos
+                </h2>
+                <p className="text-sm text-gray-400 leading-relaxed mb-5">
+                  Esta funcion es exclusiva del <span className="text-blue-400 font-semibold">Plan Pro (S/ 40/mes)</span>.
+                  Sube PDFs y documentos de texto para que Atlas los analice por ti.
+                </p>
+                <div className="space-y-2 mb-4">
+                  {[
+                    'Extrae informacion clave de cualquier PDF',
+                    'Analisis profundo de documentos de texto',
+                    'Preguntas basadas en el contenido',
+                  ].map((feat) => (
+                    <li key={feat} className="flex items-start gap-2 text-sm text-gray-400">
+                      <span className="text-blue-400 mt-0.5">{'\u2022'}</span>
+                      {feat}
+                    </li>
+                  ))}
+                </div>
+                <div className="space-y-2">
+                  <a
+                    href="/login"
+                    onClick={() => setShowPdfPaywall(false)}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-blue-500/15"
+                  >
+                    <Star className="w-4 h-4" />
+                    Obtener Plan Pro
+                  </a>
+                  <button
+                    onClick={() => setShowPdfPaywall(false)}
+                    className="w-full py-2.5 rounded-xl text-gray-500 text-sm hover:text-gray-400 transition-colors"
+                  >
+                    Despues
+                  </button>
+                </div>
               </div>
             </motion.div>
           </>

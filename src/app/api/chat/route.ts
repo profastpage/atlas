@@ -24,7 +24,7 @@ import { db } from '@/lib/sql';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sessionId, message, tenantId, expandedMode, messageId } = body;
+    const { sessionId, message, tenantId, expandedMode, messageId, documentText } = body;
 
     if (!sessionId || !tenantId) {
       return NextResponse.json(
@@ -93,14 +93,30 @@ export async function POST(request: NextRequest) {
       console.error('[CEREBRO] Memory read error:', dbError);
     }
 
+    // ---- PASO 2.5: VALIDATE DOCUMENT SIZE ----
+    if (documentText) {
+      const tokenEstimate = Math.ceil(documentText.length / 4);
+      if (tokenEstimate > 80000) {
+        return NextResponse.json({
+          error: `El documento excede el limite de 80,000 tokens (aprox 60 paginas, tiene ~${tokenEstimate.toLocaleString()}). Por favor sube un resumen o la parte especifica.`,
+        }, { status: 413 });
+      }
+    }
+
     // ---- PASO 3: CONSTRUIR MENSAJES ----
     const basePrompt = ATLAS_SYSTEM_PROMPT;
-    const systemPrompt = basePrompt
+    let systemPrompt = basePrompt
       .replace('{user_name}', userName || 'Desconocido')
       .replace(
         '{context_summary}',
         contextSummary || 'Sin información previa. Es un nuevo usuario.'
       );
+
+    // If document attached, append document context to system prompt
+    if (documentText) {
+      const docPrompt = `\n\n[CONTEXTO DE DOCUMENTO ADJUNTO]\nEl usuario ha adjuntado un documento. Aqui esta el texto extraido:\n---\n${documentText}\n---\nINSTRUCCIONES SOBRE EL DOCUMENTO:\n- Responde estrictamente basandote en este texto.\n- Si la respuesta no esta en el texto, dile 'La informacion no se encuentra en el documento'.\n- Manten tu tono de Atlas, usa vinetas y negritas.\n- Sé conciso y directo.`;
+      systemPrompt += docPrompt;
+    }
 
     let history: Array<{ role: string; content: string }> = [];
     try {
