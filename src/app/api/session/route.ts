@@ -1,3 +1,5 @@
+export const runtime = 'edge';
+
 // ========================================
 // MÓDULO DE SESIÓN — Gestión Multi-Tenant
 // Crea Tenant + UserMemory + Session

@@ -1,3 +1,5 @@
+export const runtime = 'edge';
+
 // ========================================
 // MÓDULO DE OÍDO — WHISPER API
 // Speech-to-Text: Transcripción en español

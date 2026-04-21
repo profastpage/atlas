@@ -1,3 +1,5 @@
+export const runtime = 'edge';
+
 // ========================================
 // MÓDULO DE CEREBRO + MEMORIA + SEGURIDAD
 // Orquestador principal del sistema Atlas
