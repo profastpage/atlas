@@ -36,11 +36,16 @@ INSTRUCCIONES DE MEMORIA:
 Responde SIEMPRE en español.`;
 
 // ========================================
-// MODO EXPANDIDO — Sin límite de 100 palabras
-// Se reemplaza la regla "Máximo 100 palabras" por esto
+// MODO EXPANDIDO — Máximo 250 palabras, tono elite intacto
+// Reemplaza la regla "Máximo 100 palabras" del prompt base
 // ========================================
 
-const EXPANDED_RULE = `El usuario ha activado el MODO EXPANDIDO. Ignora completamente el límite de 100 palabras. Di una respuesta profunda, exhaustiva, estructurada y detallada. Puedes usar párrafos largos y muchas viñetas. Aborda todos los matices del tema.`;
+const EXPANDED_RULE = `El usuario ha activado el MODO EXPANDIDO. Puedes superar el límite de 100 palabras, pero con un MÁXIMO ESTRICTO de 250 palabras. No escribas ensayos ni explicaciones de libro de texto. Mantén el tono de Consultor Estratégico de Élite.
+Estructura obligatoria de la respuesta expandida:
+1. Contexto ampliado (1 párrafo corto).
+2. 3 o 4 viñetas (•) máximas con la información clave en **negritas**.
+3. Una única directriz de acción al final.
+Sé profundo, pero brutalmente eficiente. Cero relleno.`;
 
 export const ATLAS_SYSTEM_PROMPT_EXPANDED = ATLAS_SYSTEM_PROMPT.replace(
   /Máximo 100 palabras:[^]*?(?=\n\n|\n\[|$)/,
