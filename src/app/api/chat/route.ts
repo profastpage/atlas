@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
       return createSSEStream(qwenStream, sessionId, tenantId, message, userName, contextSummary);
     }
 
-    // ---- FALLBACK: NON-STREAMING (Z.ai or Qwen error) ----
+    // ---- FALLBACK: NON-STREAMING (Qwen only, no GLM) ----
     const completion = await createChatCompletion({
       messages: llmMessages,
       temperature: 0.7,
@@ -290,7 +290,7 @@ async function handleExpandMode(
     return createExpandSSEStream(qwenStream, messageId);
   }
 
-  // Fallback: non-streaming
+  // Fallback: non-streaming Qwen only
   const completion = await createChatCompletion({
     messages: llmMessages,
     temperature: 0.7,

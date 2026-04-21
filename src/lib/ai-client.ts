@@ -1,22 +1,14 @@
 // ========================================
-// EDGE-COMPATIBLE AI CLIENT — QWEN BRAIN
-// Primary: Qwen via OpenRouter
-// Fallback: Z.ai internal proxy (GLM)
+// EDGE-COMPATIBLE AI CLIENT — QWEN ONLY
+// NO fallback. Qwen-Turbo is the ONLY model.
 // Direct fetch calls — no Node.js APIs
 // ========================================
 //
 // Env vars:
-//   QWEN_API_KEY      — OpenRouter API key (primary brain)
-//   QWEN_BASE_URL     — OpenRouter base URL
+//   QWEN_API_KEY      — OpenRouter API key
+//   QWEN_BASE_URL     — OpenRouter base URL (default: https://openrouter.ai/api/v1)
 //   QWEN_MODEL        — Qwen model name (default: qwen/qwen-turbo)
-//   ZAI_BASE_URL      — Z.ai internal proxy URL (fallback)
-//   ZAI_API_KEY       — Z.ai API key (fallback)
-//   LLM_MODEL         — Fallback model (default: glm-4-flash)
 //   LLM_MAX_TOKENS    — Max response tokens (default: 150)
-
-// ========================================
-// QWEN / OPENROUTER — PRIMARY BRAIN
-// ========================================
 
 const QWEN_CONFIG = {
   baseUrl: process.env.QWEN_BASE_URL || 'https://openrouter.ai/api/v1',
@@ -30,32 +22,7 @@ function hasQwen(): boolean {
 }
 
 // ========================================
-// Z.AI PROXY — FALLBACK BRAIN
-// ========================================
-
-const ZAI_CONFIG = {
-  baseUrl: process.env.ZAI_BASE_URL || 'http://172.25.136.193:8080/v1',
-  apiKey: process.env.ZAI_API_KEY || 'Z.ai',
-  chatId: process.env.ZAI_CHAT_ID || '',
-  userId: process.env.ZAI_USER_ID || '',
-  token: process.env.ZAI_TOKEN || '',
-  defaultModel: process.env.LLM_MODEL || 'glm-4-flash',
-};
-
-function getZaiHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${ZAI_CONFIG.apiKey}`,
-    'X-Z-AI-From': 'Z',
-  };
-  if (ZAI_CONFIG.chatId) headers['X-Chat-Id'] = ZAI_CONFIG.chatId;
-  if (ZAI_CONFIG.userId) headers['X-User-Id'] = ZAI_CONFIG.userId;
-  if (ZAI_CONFIG.token) headers['X-Token'] = ZAI_CONFIG.token;
-  return headers;
-}
-
-// ========================================
-// CHAT COMPLETIONS (LLM) — QWEN PRIMARY, Z.AI FALLBACK
+// CHAT COMPLETIONS — QWEN ONLY, NO FALLBACK
 // ========================================
 
 export async function createChatCompletion(body: {
@@ -66,35 +33,12 @@ export async function createChatCompletion(body: {
   model?: string;
   thinking?: { type: string };
 }) {
-  const maxTokens = body.max_tokens || QWEN_CONFIG.maxTokens;
-
-  // ---- TRY QWEN (OpenRouter) FIRST ----
-  if (hasQwen()) {
-    try {
-      return await callQwen(body, maxTokens);
-    } catch (error) {
-      console.error('[BRAIN] Qwen error, falling back to Z.ai:', error instanceof Error ? error.message : error);
-    }
+  if (!hasQwen()) {
+    throw new Error('[BRAIN] Qwen API key no configurada. No se permite fallback a otros modelos.');
   }
 
-  // ---- FALLBACK: Z.AI PROXY ----
-  return callZai(body, maxTokens);
-}
-
-async function callQwen(body: {
-  messages: Array<{ role: string; content: string }>;
-  temperature?: number;
-  max_tokens?: number;
-  model?: string;
-  thinking?: { type: string };
-}, maxTokens: number) {
+  const maxTokens = body.max_tokens || QWEN_CONFIG.maxTokens;
   const url = `${QWEN_CONFIG.baseUrl}/chat/completions`;
-  const requestBody = {
-    model: body.model || QWEN_CONFIG.model,
-    messages: body.messages,
-    temperature: body.temperature ?? 0.7,
-    max_tokens: maxTokens,
-  };
 
   console.log('[BRAIN] Using Qwen:', QWEN_CONFIG.model);
 
@@ -106,7 +50,12 @@ async function callQwen(body: {
       'HTTP-Referer': 'https://atlas-9mv.pages.dev',
       'X-Title': 'Atlas Coach',
     },
-    body: JSON.stringify(requestBody),
+    body: JSON.stringify({
+      model: body.model || QWEN_CONFIG.model,
+      messages: body.messages,
+      temperature: body.temperature ?? 0.7,
+      max_tokens: maxTokens,
+    }),
   });
 
   if (!response.ok) {
@@ -117,39 +66,8 @@ async function callQwen(body: {
   return await response.json();
 }
 
-async function callZai(body: {
-  messages: Array<{ role: string; content: string }>;
-  temperature?: number;
-  max_tokens?: number;
-  model?: string;
-  thinking?: { type: string };
-}, maxTokens: number) {
-  const url = `${ZAI_CONFIG.baseUrl}/chat/completions`;
-  const requestBody = {
-    ...body,
-    model: body.model || ZAI_CONFIG.defaultModel,
-    max_tokens: maxTokens,
-    thinking: body.thinking || { type: 'disabled' },
-  };
-
-  console.log('[BRAIN] Using Z.ai fallback:', ZAI_CONFIG.defaultModel);
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: getZaiHeaders(),
-    body: JSON.stringify(requestBody),
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`Z.ai API ${response.status}: ${errorBody}`);
-  }
-
-  return await response.json();
-}
-
 // ========================================
-// STREAMING CHAT COMPLETIONS — SSE from OpenRouter
+// STREAMING CHAT COMPLETIONS — SSE from Qwen ONLY
 // Returns raw ReadableStream, caller handles SSE parsing
 // ========================================
 
@@ -159,26 +77,15 @@ export async function streamChatCompletion(body: {
   max_tokens?: number;
   model?: string;
 }): Promise<ReadableStream<Uint8Array> | null> {
-  const maxTokens = body.max_tokens || QWEN_CONFIG.maxTokens;
-
-  if (hasQwen()) {
-    try {
-      return await streamFromQwen(body, maxTokens);
-    } catch (error) {
-      console.error('[BRAIN] Qwen stream error, falling back:', error instanceof Error ? error.message : error);
-    }
+  if (!hasQwen()) {
+    throw new Error('[BRAIN] Qwen API key no configurada. No se permite fallback a otros modelos.');
   }
 
-  return null;
-}
-
-async function streamFromQwen(body: {
-  messages: Array<{ role: string; content: string }>;
-  temperature?: number;
-  max_tokens?: number;
-  model?: string;
-}, maxTokens: number): Promise<ReadableStream<Uint8Array>> {
+  const maxTokens = body.max_tokens || QWEN_CONFIG.maxTokens;
   const url = `${QWEN_CONFIG.baseUrl}/chat/completions`;
+
+  console.log('[BRAIN] Streaming Qwen:', QWEN_CONFIG.model);
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -201,19 +108,26 @@ async function streamFromQwen(body: {
     throw new Error(`Qwen API ${response.status}: ${errorBody}`);
   }
 
-  return response.body!;
+  return response.body;
 }
 
 // ========================================
-// AUDIO TRANSCRIPTION (ASR)
+// AUDIO TRANSCRIPTION (ASR) — Z.ai proxy only
+// Qwen/OpenRouter does not have audio transcription.
+// This uses Z.ai exclusively for speech-to-text, NOT for chat.
 // ========================================
+
+const ZAI_STT_URL = process.env.ZAI_BASE_URL || 'http://172.25.136.193:8080/v1';
+const ZAI_STT_KEY = process.env.ZAI_API_KEY || 'Z.ai';
+const ZAI_CHAT_ID = process.env.ZAI_CHAT_ID || '';
+const ZAI_USER_ID = process.env.ZAI_USER_ID || '';
+const ZAI_TOKEN = process.env.ZAI_TOKEN || '';
 
 export async function createTranscription(
   audioBase64: string,
   language: string = 'es'
 ) {
-  // Use Z.ai proxy for STT (Qwen/OpenRouter doesn't have audio)
-  const url = `${ZAI_CONFIG.baseUrl}/audio/transcriptions`;
+  const url = `${ZAI_STT_URL}/audio/transcriptions`;
 
   const formData = new FormData();
   const byteChars = atob(audioBase64);
@@ -225,9 +139,17 @@ export async function createTranscription(
   formData.append('file', blob, 'audio.webm');
   formData.append('language', language);
 
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${ZAI_STT_KEY}`,
+    'X-Z-AI-From': 'Z',
+  };
+  if (ZAI_CHAT_ID) headers['X-Chat-Id'] = ZAI_CHAT_ID;
+  if (ZAI_USER_ID) headers['X-User-Id'] = ZAI_USER_ID;
+  if (ZAI_TOKEN) headers['X-Token'] = ZAI_TOKEN;
+
   const response = await fetch(url, {
     method: 'POST',
-    headers: getZaiHeaders(),
+    headers,
     body: formData,
   });
 
