@@ -1,15 +1,16 @@
 // ========================================
 // LIGHTWEIGHT DATABASE CLIENT — Edge Compatible
-// Uses @libsql/client/web for Cloudflare Workers
-// NO Prisma, NO WASM, NO Node.js APIs
+// Uses @libsql/client/http for pure HTTP transport
+// NO Prisma, NO WASM, NO Node.js APIs, NO XHR
 // ========================================
 //
-// CRITICAL: We import from @libsql/client/web instead of @libsql/client
-// because the default import uses @libsql/client/node.js which pulls
-// in cross-fetch -> XMLHttpRequest -> NOT available in Edge Workers.
-// The /web export uses native fetch which IS available in Edge.
+// CRITICAL: @libsql/client/http uses native fetch() directly.
+// The /http export only supports HTTP connections (no local SQLite),
+// which is exactly what we need for Turso in Edge Workers.
+// This avoids @libsql/client/node (uses XHR) and @libsql/client/web
+// (which may still pull in polyfills).
 
-import { createClient, Client } from '@libsql/client/web';
+import { createClient, Client } from '@libsql/client/http';
 
 let _client: Client | null = null;
 
