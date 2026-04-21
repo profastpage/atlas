@@ -1,10 +1,15 @@
 // ========================================
 // LIGHTWEIGHT DATABASE CLIENT — Edge Compatible
-// Uses @libsql/client with fetch transport for Cloudflare Workers
-// No Prisma, no WASM, no Node.js APIs
+// Uses @libsql/client/web for Cloudflare Workers
+// NO Prisma, NO WASM, NO Node.js APIs
 // ========================================
+//
+// CRITICAL: We import from @libsql/client/web instead of @libsql/client
+// because the default import uses @libsql/client/node.js which pulls
+// in cross-fetch -> XMLHttpRequest -> NOT available in Edge Workers.
+// The /web export uses native fetch which IS available in Edge.
 
-import { createClient, Client } from '@libsql/client';
+import { createClient, Client } from '@libsql/client/web';
 
 let _client: Client | null = null;
 
@@ -17,15 +22,9 @@ function getClient(): Client {
       throw new Error('DATABASE_URL no configurada en Cloudflare Pages');
     }
 
-    // CRITICAL: Use 'fetch' as the transport for Edge Workers compatibility.
-    // Default libsql client uses XMLHttpRequest which is NOT available in
-    // Cloudflare Workers. The raw option disables the WASM engine for
-    // remote HTTP connections.
     _client = createClient({
       url,
       authToken: authToken || undefined,
-      // @ts-expect-error — fetch option is supported in @libsql/client for edge
-      fetch: globalThis.fetch,
     });
   }
   return _client;
