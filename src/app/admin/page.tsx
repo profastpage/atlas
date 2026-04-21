@@ -46,6 +46,13 @@ interface SessionData {
   createdAt: string;
 }
 
+interface ChatMessage {
+  id: string;
+  role: string;
+  content: string;
+  timestamp: string;
+}
+
 interface PlanFeature {
   featureKey: string;
   basico: boolean;
@@ -152,6 +159,9 @@ export default function AdminPage() {
   const [sessionsUser, setSessionsUser] = useState<UserData | null>(null);
   const [userSessions, setUserSessions] = useState<SessionData[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [selectedSession, setSelectedSession] = useState<SessionData | null>(null);
+  const [sessionMessages, setSessionMessages] = useState<ChatMessage[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<string>('free');
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -409,6 +419,8 @@ export default function AdminPage() {
   const handleLoadSessions = async (user: UserData) => {
     setSessionsUser(user);
     setUserSessions([]);
+    setSelectedSession(null);
+    setSessionMessages([]);
     setSessionsLoading(true);
     setActiveDropdown(null);
     try {
@@ -419,6 +431,25 @@ export default function AdminPage() {
     } finally {
       setSessionsLoading(false);
     }
+  };
+
+  const handleLoadMessages = async (session: SessionData) => {
+    setSelectedSession(session);
+    setSessionMessages([]);
+    setMessagesLoading(true);
+    try {
+      const data = await adminFetch(`session_messages&sessionId=${session.id}`);
+      setSessionMessages(data.messages || []);
+    } catch {
+      setSessionMessages([]);
+    } finally {
+      setMessagesLoading(false);
+    }
+  };
+
+  const handleBackToSessions = () => {
+    setSelectedSession(null);
+    setSessionMessages([]);
   };
 
   const handleToggleFeature = async (featureKey: string, plan: string, currentVal: boolean) => {
@@ -1340,9 +1371,63 @@ export default function AdminPage() {
 
                 <p className="text-xs text-gray-400 mb-3 shrink-0">
                   <span className="text-white font-medium">{sessionsUser.name || sessionsUser.email}</span>
+                  {selectedSession && (
+                    <button
+                      onClick={handleBackToSessions}
+                      className="ml-2 text-amber-400 hover:text-amber-300 underline"
+                    >
+                      ← Volver a sesiones
+                    </button>
+                  )}
                 </p>
 
-                {sessionsLoading ? (
+                {/* MESSAGES VIEW */}
+                {selectedSession ? (
+                  messagesLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                      <RefreshCw className="w-5 h-5 text-amber-400 animate-spin" />
+                    </div>
+                  ) : sessionMessages.length === 0 ? (
+                    <p className="text-xs text-gray-500 text-center py-10">Sin mensajes en esta sesion</p>
+                  ) : (
+                    <div className="overflow-y-auto flex-1 -mx-1 px-1 space-y-3 max-h-[55vh]">
+                      {sessionMessages.map((msg) => (
+                        <div
+                          key={msg.id}
+                          className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div
+                            className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
+                              msg.role === 'user'
+                                ? 'bg-blue-500/15 text-blue-100 border border-blue-500/20'
+                                : 'bg-gray-800/50 text-gray-300 border border-gray-700/30'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className={`text-[9px] font-semibold uppercase ${
+                                msg.role === 'user' ? 'text-blue-400' : 'text-emerald-400'
+                              }`}>
+                                {msg.role === 'user' ? 'Usuario' : 'Atlas'}
+                              </span>
+                              <span className="text-[9px] text-gray-600">
+                                {new Date(msg.timestamp).toLocaleString('es-PE', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  day: '2-digit',
+                                  month: 'short',
+                                })}
+                              </span>
+                            </div>
+                            <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                ) : (
+                  <>
+                  {/* SESSIONS LIST VIEW */}
+                  {sessionsLoading ? (
                   <div className="flex items-center justify-center py-10">
                     <RefreshCw className="w-5 h-5 text-amber-400 animate-spin" />
                   </div>
@@ -1351,22 +1436,26 @@ export default function AdminPage() {
                 ) : (
                   <div className="overflow-y-auto flex-1 -mx-2 px-2 space-y-1.5 max-h-64">
                     {userSessions.map((session) => (
-                      <div
+                      <button
                         key={session.id}
-                        className="flex items-start gap-3 px-3 py-2.5 rounded-lg bg-gray-800/30 border border-gray-800/30 hover:bg-gray-800/50 transition-colors"
+                        onClick={() => handleLoadMessages(session)}
+                        className="w-full flex items-start gap-3 px-3 py-2.5 rounded-lg bg-gray-800/30 border border-gray-800/30 hover:bg-gray-800/50 hover:border-gray-700/50 transition-colors text-left"
                       >
                         <MessageSquare className="w-3.5 h-3.5 text-gray-500 shrink-0 mt-0.5" />
                         <div className="min-w-0 flex-1">
                           <p className="text-xs text-gray-300 truncate">
-                            {session.title || 'Sin título'}
+                            {session.title || 'Sesion Atlas'}
                           </p>
                           <p className="text-[10px] text-gray-600 mt-0.5">
                             {formatDate(session.createdAt)}
                           </p>
                         </div>
-                      </div>
+                        <span className="text-gray-600 text-[10px] shrink-0">›</span>
+                      </button>
                     ))}
                   </div>
+                )}
+                  </>
                 )}
               </div>
             </motion.div>

@@ -42,6 +42,8 @@ async function handleAdminAction(request: NextRequest, action: string) {
       case 'users': return handleUsers();
       // --- User sessions ---
       case 'user_sessions': return handleUserSessions(request);
+      // --- Session messages (admin view, no tokens consumed) ---
+      case 'session_messages': return handleSessionMessages(request);
       // --- Subscription plans (Turso) ---
       case 'plans': return handlePlans();
       // --- App config (Turso) ---
@@ -348,6 +350,37 @@ async function handleUserSessions(request: NextRequest) {
 }
 
 // ========================================
+// SESSION MESSAGES — Admin view (read-only, no tokens)
+// ========================================
+async function handleSessionMessages(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const sessionId = searchParams.get('sessionId');
+
+  if (!sessionId) {
+    return NextResponse.json({ error: 'sessionId requerido' }, { status: 400 });
+  }
+
+  try {
+    const result = await db.execute(
+      `SELECT id, role, content, timestamp FROM Message WHERE sessionId = ? ORDER BY timestamp ASC`,
+      [sessionId]
+    );
+
+    const messages = result.rows.map((r: any) => ({
+      id: r.id,
+      role: r.role,
+      content: r.content,
+      timestamp: r.timestamp,
+    }));
+
+    return NextResponse.json({ messages });
+  } catch (err) {
+    console.error('[SESSION_MESSAGES] Error:', err);
+    return NextResponse.json({ error: 'Error al obtener mensajes' }, { status: 500 });
+  }
+}
+
+// ========================================
 // SUBSCRIPTION PLANS (Turso)
 // ========================================
 async function handlePlans() {
@@ -474,28 +507,53 @@ async function handleTrialStatus(request: NextRequest) {
 // ========================================
 async function handlePlanFeatures() {
   if (!supabase) {
-    return NextResponse.json({ features: [] });
+    return NextResponse.json({ features: getDefaultFeatures() });
   }
 
-  const { data, error } = await supabase
-    .from('plan_features')
-    .select('*')
-    .order('plan_id')
-    .order('feature_name');
+  try {
+    const { data, error } = await supabase
+      .from('plan_features')
+      .select('*')
+      .order('plan_id')
+      .order('feature_name');
 
-  if (error) {
-    console.error('[PLAN_FEATURES]', error);
-    return NextResponse.json({ error: 'Error al obtener features' }, { status: 500 });
+    if (error) {
+      console.warn('[PLAN_FEATURES] Table not found or error, using defaults:', error.message);
+      return NextResponse.json({ features: getDefaultFeatures() });
+    }
+
+    const features = (data || []).map((r: any) => ({
+      id: r.id,
+      plan_id: r.plan_id,
+      feature_name: r.feature_name,
+      is_enabled: Boolean(r.is_enabled),
+    }));
+
+    return NextResponse.json({ features });
+  } catch (err) {
+    console.warn('[PLAN_FEATURES] Error, using defaults:', err);
+    return NextResponse.json({ features: getDefaultFeatures() });
   }
+}
 
-  const features = (data || []).map((r: any) => ({
-    id: r.id,
-    plan_id: r.plan_id,
-    feature_name: r.feature_name,
-    is_enabled: Boolean(r.is_enabled),
-  }));
-
-  return NextResponse.json({ features });
+function getDefaultFeatures() {
+  return [
+    { featureKey: 'memoria_a_largo_plazo', plan_id: 'basico', is_enabled: true },
+    { featureKey: 'memoria_a_largo_plazo', plan_id: 'pro', is_enabled: true },
+    { featureKey: 'memoria_a_largo_plazo', plan_id: 'ejecutivo', is_enabled: true },
+    { featureKey: 'analisis_pdf', plan_id: 'basico', is_enabled: false },
+    { featureKey: 'analisis_pdf', plan_id: 'pro', is_enabled: true },
+    { featureKey: 'analisis_pdf', plan_id: 'ejecutivo', is_enabled: true },
+    { featureKey: 'toque_diario', plan_id: 'basico', is_enabled: false },
+    { featureKey: 'toque_diario', plan_id: 'pro', is_enabled: true },
+    { featureKey: 'toque_diario', plan_id: 'ejecutivo', is_enabled: true },
+    { featureKey: 'anti_postergacion', plan_id: 'basico', is_enabled: false },
+    { featureKey: 'anti_postergacion', plan_id: 'pro', is_enabled: false },
+    { featureKey: 'anti_postergacion', plan_id: 'ejecutivo', is_enabled: true },
+    { featureKey: 'expandido', plan_id: 'basico', is_enabled: true },
+    { featureKey: 'expandido', plan_id: 'pro', is_enabled: true },
+    { featureKey: 'expandido', plan_id: 'ejecutivo', is_enabled: true },
+  ];
 }
 
 // ========================================
@@ -611,55 +669,70 @@ async function handleChangePlan(request: NextRequest) {
     return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
   }
 
-  const body = await request.json();
-  const { tenantId, planType } = body;
+  try {
+    const body = await request.json();
+    const { tenantId, planType } = body;
 
-  if (!tenantId || !planType) {
-    return NextResponse.json(
-      { error: 'tenantId y planType son obligatorios' },
-      { status: 400 }
-    );
-  }
-
-  const validPlans = ['free', 'basico', 'pro', 'executive', 'suspended'];
-  if (!validPlans.includes(planType)) {
-    return NextResponse.json(
-      { error: `planType debe ser uno de: ${validPlans.join(', ')}` },
-      { status: 400 }
-    );
-  }
-
-  // Fetch existing profile to preserve trial and is_admin values
-  const { data: existing } = await supabase
-    .from('profiles')
-    .select('trial_plan, trial_ends_at, is_admin')
-    .eq('id', tenantId)
-    .single();
-
-  const upsertData: Record<string, unknown> = {
-    id: tenantId,
-    plan_type: planType,
-  };
-
-  // Preserve existing fields
-  if (existing) {
-    if (existing.trial_plan) upsertData.trial_plan = existing.trial_plan;
-    if (existing.trial_ends_at) upsertData.trial_ends_at = existing.trial_ends_at;
-    if (existing.is_admin !== undefined && existing.is_admin !== null) {
-      upsertData.is_admin = existing.is_admin;
+    if (!tenantId || !planType) {
+      return NextResponse.json(
+        { error: 'tenantId y planType son obligatorios' },
+        { status: 400 }
+      );
     }
+
+    const validPlans = ['free', 'basico', 'pro', 'executive', 'suspended'];
+    if (!validPlans.includes(planType)) {
+      return NextResponse.json(
+        { error: `planType debe ser uno de: ${validPlans.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
+    // Try to fetch existing profile
+    const { data: existing, error: fetchError } = await supabase
+      .from('profiles')
+      .select('trial_plan, trial_ends_at, is_admin')
+      .eq('id', tenantId)
+      .single();
+
+    if (fetchError) {
+      console.warn('[CHANGE_PLAN] Profile fetch warning (may not exist yet):', fetchError.message);
+    }
+
+    const upsertData: Record<string, unknown> = {
+      id: tenantId,
+      plan_type: planType,
+    };
+
+    // Preserve existing fields
+    if (existing) {
+      if (existing.trial_plan) upsertData.trial_plan = existing.trial_plan;
+      if (existing.trial_ends_at) upsertData.trial_ends_at = existing.trial_ends_at;
+      if (existing.is_admin !== undefined && existing.is_admin !== null) {
+        upsertData.is_admin = existing.is_admin;
+      }
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .upsert(upsertData, { onConflict: 'id' });
+
+    if (error) {
+      console.error('[CHANGE_PLAN] Supabase upsert error:', error.message, error.code, error.details);
+      return NextResponse.json(
+        { error: `Error al cambiar plan: ${error.message}` },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true, planType });
+  } catch (err) {
+    console.error('[CHANGE_PLAN] Unexpected error:', err);
+    return NextResponse.json(
+      { error: 'Error interno al cambiar plan' },
+      { status: 500 }
+    );
   }
-
-  const { error } = await supabase
-    .from('profiles')
-    .upsert(upsertData, { onConflict: 'id' });
-
-  if (error) {
-    console.error('[CHANGE_PLAN] Supabase error:', error);
-    return NextResponse.json({ error: 'Error al cambiar plan' }, { status: 500 });
-  }
-
-  return NextResponse.json({ success: true, planType });
 }
 
 // ========================================
