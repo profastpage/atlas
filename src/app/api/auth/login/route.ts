@@ -77,9 +77,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[AUTH] Login error:', error);
     const msg = error instanceof Error ? error.message : String(error);
-    // Return detailed error for debugging (remove after fixing)
     return NextResponse.json(
-      { error: 'Error al iniciar sesión', detail: msg, stack: error instanceof Error ? error.stack?.substring(0, 200) : undefined },
+      { error: 'Error al iniciar sesion', debug: msg.substring(0, 500) },
       { status: 500 }
     );
   }
