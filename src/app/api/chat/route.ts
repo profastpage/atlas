@@ -16,6 +16,7 @@ import {
   SAFETY_KEYWORDS,
 } from '@/lib/atlas';
 import { db } from '@/lib/sql';
+import { supabase } from '@/lib/supabase';
 
 // ========================================
 // POST /api/chat — STREAMING (SSE) + JSON fallback
@@ -31,6 +32,30 @@ export async function POST(request: NextRequest) {
         { error: 'sessionId y tenantId son obligatorios' },
         { status: 400 }
       );
+    }
+
+    // ---- PASO 0: PLAN GATE — Verify active subscription ----
+    // Reject authenticated users without an active plan (security hardening)
+    try {
+      if (supabase) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('plan_type')
+          .eq('id', tenantId)
+          .single();
+
+        const planType = profile?.plan_type;
+        if (planType === null || planType === undefined || planType === 'free') {
+          // User has no paid plan — block the request
+          return NextResponse.json(
+            { error: 'PLAN_REQUIRED', detail: 'Necesitas un plan activo para enviar mensajes. Selecciona un plan en Configuracion.' },
+            { status: 403 }
+          );
+        }
+      }
+    } catch (gateError) {
+      // If Supabase is down or profiles table doesn't exist, allow through (graceful degradation)
+      console.warn('[PLAN GATE] Supabase check failed, allowing request:', gateError);
     }
 
     // ---- EXPANDED MODE: Re-generate with no word limit ----

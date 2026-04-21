@@ -42,3 +42,45 @@ Stage Summary:
 - No new Edge Functions created (admin endpoints merged into existing /api route)
 - Admin Panel at /admin, Login at /login, Register at /register
 - DB fully seeded with plans and admin user
+
+---
+Task ID: 3
+Agent: main
+Task: Monetization Funnel — 3-layer paywall (Guest localStorage, Post-login Supabase gate, Backend API security)
+
+Work Log:
+- **Layer 1 (Frontend - localStorage)**: Already existed but updated modal copy
+  * Modal text: "Has utilizado tus 5 mensajes de prueba. Inicia sesion para continuar con tu Asesor Estrategico de Elite."
+  * Removed benefits list and "Crear Cuenta" button — now a single "Iniciar Sesion" CTA (no dismiss option)
+  * Counter persists across reloads via `atlas_guest_msg_count` localStorage key
+
+- **Layer 2 (Frontend - Post-login plan check)**: NEW
+  * Added `hasActivePlan` and `checkingPlan` state to `page.tsx`
+  * After token validation, calls `checkPlanAfterLogin(tenantId)` which queries `?action=subscription&tenantId=X`
+  * If `hasActivePlan === false`: Full-screen amber overlay blocks chat, shows "Selecciona un plan para continuar" + "Ver Planes" button + "Cerrar Sesion" escape hatch
+  * If `checkingPlan === true`: Loading spinner overlay "Verificando tu suscripcion..."
+  * SettingsSidebar opens with `forcePaywall={true}`: X button hidden, title becomes "Elige tu Plan", subtitle "Selecciona un plan para desbloquear el chat"
+  * `onClose` callback blocked when `forcePaywall` is true (can't dismiss the panel)
+  * `sendMessage()` and voice recording both check `hasActivePlan` before allowing
+
+- **Layer 3 (Backend - API security)**: NEW
+  * Added `import { supabase } from '@/lib/supabase'` to `src/app/api/chat/route.ts`
+  * Added PASO 0: PLAN GATE before any message processing
+  * Queries `profiles` table in Supabase for `plan_type` where `id = tenantId`
+  * Returns `403 { error: 'PLAN_REQUIRED' }` if plan_type is null, undefined, or 'free'
+  * Graceful degradation: if Supabase is down, allows request through
+  * Frontend handles 403 PLAN_REQUIRED by removing the user message bubble and opening plan gate
+
+- **SettingsSidebar changes**:
+  * Added `forcePaywall?: boolean` prop
+  * When `forcePaywall=true`: hides X close button, changes title to "Elige tu Plan", shows amber subtitle
+  * Plan cards remain functional with `console.log` placeholders (Stripe pending)
+
+- Build verified: `next build --webpack` compiles successfully, all 12 routes generated
+
+Stage Summary:
+- 3-layer monetization funnel fully implemented
+- Guest: 5 messages → hard modal → login required
+- Post-login: plan check → full-screen block → forced plan selection
+- Backend: Supabase profile check → 403 rejection for free users
+- Settings sidebar transforms into mandatory plan picker when forcePaywall=true

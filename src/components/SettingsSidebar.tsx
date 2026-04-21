@@ -18,6 +18,7 @@ interface SettingsSidebarProps {
   user: { id: string; email: string; name: string; tenantId: string } | null;
   token: string;
   onOpenAdmin: () => void;
+  forcePaywall?: boolean;
 }
 
 interface UserPlan {
@@ -100,6 +101,7 @@ export default function SettingsSidebar({
   onClose,
   user,
   onOpenAdmin,
+  forcePaywall = false,
 }: SettingsSidebarProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
@@ -173,13 +175,24 @@ export default function SettingsSidebar({
           >
             {/* Header */}
             <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
-              <h2 className="text-lg font-bold text-white">Configuracion</h2>
-              <button
-                onClick={onClose}
-                className="p-2 rounded-xl hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div>
+                <h2 className="text-lg font-bold text-white">
+                  {forcePaywall ? 'Elige tu Plan' : 'Configuracion'}
+                </h2>
+                {forcePaywall && (
+                  <p className="text-[11px] text-amber-400/80 mt-0.5">
+                    Selecciona un plan para desbloquear el chat
+                  </p>
+                )}
+              </div>
+              {!forcePaywall && (
+                <button
+                  onClick={onClose}
+                  className="p-2 rounded-xl hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
             </div>
 
             {/* Scrollable Content */}

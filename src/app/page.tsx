@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mic, MicOff, Send, Plus, MessageSquare, Trash2,
-  X, LogOut, LogIn, Settings, Lock, UserPlus, ShieldCheck, XCircle,
+  X, LogOut, LogIn, Settings, Lock, ShieldCheck, XCircle,
   Pencil, Archive, ArchiveRestore, Check, AlertTriangle,
   Paperclip, FileText, XCircle as XCircleIcon, Loader2
 } from 'lucide-react';
@@ -78,6 +78,10 @@ export default function AtlasApp() {
   const [guestMessageCount, setGuestMessageCount] = useState(0);
   const [showPaywall, setShowPaywall] = useState(false);
 
+  // ---- Plan Gate State ----
+  const [hasActivePlan, setHasActivePlan] = useState<boolean | null>(null);
+  const [checkingPlan, setCheckingPlan] = useState(false);
+
   // ---- Expand State ----
   const [expandingId, setExpandingId] = useState<string | null>(null);
 
@@ -129,6 +133,8 @@ export default function AtlasApp() {
               if (savedUser) {
                 try { setUserInfo(JSON.parse(savedUser)); } catch {}
               }
+              // ---- CHECK PLAN TYPE AFTER LOGIN ----
+              checkPlanAfterLogin(savedTenantId);
               fetchSessions(savedTenantId);
             } else {
               logout();
@@ -207,6 +213,29 @@ export default function AtlasApp() {
     setUserInfo(null);
     setToken('');
     setShowPaywall(false);
+  };
+
+  // ========================================
+  // PLAN GATE — Post-login subscription check
+  // ========================================
+
+  const checkPlanAfterLogin = async (tId: string) => {
+    setCheckingPlan(true);
+    try {
+      const res = await fetch(`/api?action=subscription&tenantId=${tId}`);
+      const data = await res.json();
+      const sub = data.subscription;
+      const planType = sub?.status === 'active' ? 'active' : null;
+      setHasActivePlan(!!planType);
+    } catch {
+      setHasActivePlan(false);
+    } finally {
+      setCheckingPlan(false);
+    }
+  };
+
+  const openPlanGate = () => {
+    setShowSettings(true);
   };
 
   // ========================================
@@ -385,6 +414,12 @@ export default function AtlasApp() {
 
   const sendMessage = useCallback(
     async (text: string) => {
+      // ---- HARD PAYWALL: Authenticated but no plan ----
+      if (isAuthenticated && hasActivePlan === false) {
+        openPlanGate();
+        return;
+      }
+
       if (!text.trim() || isLoading || !!streamingId) return;
 
       // ---- CHECK PLAN FOR DOCUMENT UPLOADS ----
@@ -407,6 +442,10 @@ export default function AtlasApp() {
         }
         setGuestMessageCount(newCount);
         localStorage.setItem(GUEST_MESSAGES_KEY, String(newCount));
+      } else if (hasActivePlan === false) {
+        // Authenticated but no plan — block
+        openPlanGate();
+        return;
       }
 
       // Auto-crear sesion si no existe
@@ -442,6 +481,17 @@ export default function AtlasApp() {
         });
 
         const contentType = res.headers.get('content-type') || '';
+
+        // ---- Handle 403 PLAN_REQUIRED from backend ----
+        if (res.status === 403) {
+          const errData = await res.json().catch(() => ({}));
+          if (errData.error === 'PLAN_REQUIRED') {
+            openPlanGate();
+            setMessages((prev) => prev.slice(0, -1));
+            setIsLoading(false);
+            return;
+          }
+        }
 
         if (contentType.includes('text/event-stream')) {
           // ====== STREAMING MODE — Real-time tokens ======
@@ -812,6 +862,9 @@ export default function AtlasApp() {
     }
   };
 
+  // ---- INPUT BLOCKED: Paywall active for authenticated free user ----
+  const isInputBlocked = isAuthenticated && hasActivePlan === false;
+
   const remainingMessages = Math.max(0, FREE_MESSAGES_LIMIT - guestMessageCount);
 
   // ========================================
@@ -923,10 +976,15 @@ export default function AtlasApp() {
       {/* ===== SETTINGS SIDEBAR ===== */}
       <SettingsSidebar
         isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
+        onClose={() => {
+          // Free users cannot close settings until they pick a plan
+          if (isAuthenticated && hasActivePlan === false) return;
+          setShowSettings(false);
+        }}
         user={userInfo ? { ...userInfo, tenantId } : null}
         token={token || ''}
         onOpenAdmin={() => { setShowSettings(false); window.location.href = '/admin'; }}
+        forcePaywall={isAuthenticated && hasActivePlan === false}
       />
 
       {/* ===== HEADER ===== */}
@@ -1486,56 +1544,75 @@ export default function AtlasApp() {
                     <Lock className="w-8 h-8 text-emerald-400" />
                   </div>
                   <h2 className="text-xl font-bold text-white">
-                    Acceso Completo
+                    Has utilizado tus {FREE_MESSAGES_LIMIT} mensajes de prueba
                   </h2>
                   <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-                    Has usado tus {FREE_MESSAGES_LIMIT} mensajes gratuitos.
-                    Inicia sesion o crea una cuenta para:
+                    Inicia sesion para continuar con tu Asesor Estrategico de Elite.
                   </p>
                 </div>
 
-                {/* Benefits */}
-                <ul className="space-y-2.5 mb-6 px-1">
-                  {[
-                    'Mensajes ilimitados con Atlas',
-                    'Historial guardado automaticamente',
-                    'Contexto Permanente entre sesiones',
-                    'Acceso a multiples dispositivos',
-                  ].map((benefit) => (
-                    <li key={benefit} className="flex items-start gap-2.5">
-                      <span className="text-emerald-400 mt-0.5">{'\u2713'}</span>
-                      <span className="text-sm text-gray-300">{benefit}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                {/* Action Buttons */}
+                {/* Action Button */}
                 <div className="space-y-3">
                   <a
                     href="/login"
                     className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
                   >
                     Iniciar Sesion
-                    <Lock className="w-4 h-4" />
-                  </a>
-                  <a
-                    href="/register"
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium border border-gray-700/50 transition-all active:scale-[0.98]"
-                  >
-                    Crear Cuenta Gratis
-                    <UserPlus className="w-4 h-4" />
+                    <LogIn className="w-4 h-4" />
                   </a>
                 </div>
-
-                {/* Dismiss */}
-                <p className="text-center text-[10px] text-gray-600 mt-4">
-                  Puedes seguir explorando sin cuenta, pero tu historial no se guardara
-                </p>
               </div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
+
+      {/* ===== POST-LOGIN PLAN GATE OVERLAY ===== */}
+      <AnimatePresence>
+        {isAuthenticated && hasActivePlan === false && !checkingPlan && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[55] bg-gray-950/80 backdrop-blur-sm flex items-center justify-center"
+          >
+            <div className="text-center max-w-xs px-6">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-600/5 flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
+                <AlertTriangle className="w-8 h-8 text-amber-400" />
+              </div>
+              <h2 className="text-lg font-bold text-white mb-2">
+                Selecciona un plan para continuar
+              </h2>
+              <p className="text-sm text-gray-400 mb-5">
+                El chat esta bloqueado hasta que actives un plan de suscripcion.
+              </p>
+              <button
+                onClick={() => setShowSettings(true)}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-gray-950 text-sm font-bold transition-all active:scale-[0.98] shadow-lg shadow-amber-500/20"
+              >
+                <Settings className="w-4 h-4" />
+                Ver Planes
+              </button>
+              <button
+                onClick={logout}
+                className="w-full mt-3 py-2.5 rounded-xl text-gray-500 text-sm hover:text-gray-300 transition-colors"
+              >
+                Cerrar Sesion
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ===== PLAN CHECK LOADING ===== */}
+      {isAuthenticated && checkingPlan && (
+        <div className="fixed inset-0 z-[55] bg-gray-950 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-8 h-8 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm text-gray-500">Verificando tu suscripcion...</p>
+          </div>
+        </div>
+      )}
 
       {/* ===== PDF PAYWALL MODAL ===== */}
       <AnimatePresence>
