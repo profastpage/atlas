@@ -10,6 +10,7 @@
   "scope": "/",
   "lang": "es",
   "categories": ["productivity", "lifestyle", "health"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icons/icon-192x192.png",
