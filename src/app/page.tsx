@@ -497,17 +497,11 @@ export default function AtlasApp() {
       }
 
       // ---- GUEST LIMIT CHECK ----
+      // Count is incremented AFTER bot responds (see below). Here we only block if already at limit.
       if (!isAuthenticated) {
-        const newCount = guestMessageCount + 1;
-        if (newCount > FREE_MESSAGES_LIMIT) {
+        if (guestMessageCount >= FREE_MESSAGES_LIMIT) {
           setShowPaywall(true);
           return;
-        }
-        setGuestMessageCount(newCount);
-        localStorage.setItem(GUEST_MESSAGES_KEY, String(newCount));
-        // Mark paywall as pending — will show AFTER streaming finishes
-        if (newCount >= FREE_MESSAGES_LIMIT) {
-          setPendingPaywall(true);
         }
       } else if (hasActivePlan === false) {
         // Authenticated but no plan — block
@@ -625,6 +619,16 @@ export default function AtlasApp() {
             setStreamDisconnectedId(aId);
           }
           setStreamingId(null);
+
+          // ---- INCREMENT GUEST COUNTER AFTER BOT RESPONDS ----
+          if (!isAuthenticated && fullText && fullText !== 'Sin respuesta.') {
+            const newCount = guestMessageCount + 1;
+            setGuestMessageCount(newCount);
+            localStorage.setItem(GUEST_MESSAGES_KEY, String(newCount));
+            if (newCount >= FREE_MESSAGES_LIMIT) {
+              setPendingPaywall(true);
+            }
+          }
         } else {
           // ====== NON-STREAMING MODE (fallback) ======
           const data = await res.json();
@@ -635,10 +639,17 @@ export default function AtlasApp() {
             timestamp: new Date().toISOString(),
           };
           setMessages((prev) => [...prev, assistantMsg]);
-        }
 
-        // After response, check if guest hit limit (handled by useEffect on streamingId)
-        // The pendingPaywall state + useEffect above handles this correctly
+          // ---- INCREMENT GUEST COUNTER AFTER BOT RESPONDS (non-streaming) ----
+          if (!isAuthenticated && assistantMsg.content && assistantMsg.content !== 'Sin respuesta.' && assistantMsg.content !== 'Error de comunicacion.') {
+            const newCount = guestMessageCount + 1;
+            setGuestMessageCount(newCount);
+            localStorage.setItem(GUEST_MESSAGES_KEY, String(newCount));
+            if (newCount >= FREE_MESSAGES_LIMIT) {
+              setPendingPaywall(true);
+            }
+          }
+        }
 
         // Clear document after sending
         if (documentText) {
