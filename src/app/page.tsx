@@ -132,6 +132,9 @@ export default function AtlasApp() {
   // ---- Voice State ----
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [voiceMinutes, setVoiceMinutes] = useState<number | null>(null);
+  const [voiceLimit, setVoiceLimit] = useState<number>(0);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
@@ -301,6 +304,21 @@ export default function AtlasApp() {
   };
 
   // ========================================
+  // VOICE USAGE — Fetch from Supabase
+  // ========================================
+
+  const fetchVoiceUsage = async (tId: string) => {
+    try {
+      const res = await fetch(`/api?action=voice_usage&tenantId=${tId}`);
+      const data = await res.json();
+      if (data.used !== undefined && data.limit !== undefined) {
+        setVoiceMinutes(data.used);
+        setVoiceLimit(data.limit);
+      }
+    } catch {}
+  };
+
+  // ========================================
   // PLAN GATE — Post-login subscription check
   // ========================================
 
@@ -325,19 +343,21 @@ export default function AtlasApp() {
         // Store actual plan name for feature gating
         const pName = sub?.planId || sub?.planName?.toLowerCase() || '';
         setUserPlanType(pName);
+        // Fetch voice usage
+        fetchVoiceUsage(tId);
         return;
       }
 
       // CHECK 2: Has active trial?
       if (trialData.trial?.isActive) {
-        setHasActivePlan(true); // Trial counts as active access
+        setHasActivePlan(true);
         setTrialInfo({
           plan: trialData.trial.plan,
           hoursLeft: trialData.trial.hoursLeft,
           isActive: true,
         });
-        // Use trial plan name for feature gating
         setUserPlanType(trialData.trial.plan || 'pro');
+        fetchVoiceUsage(tId);
         return;
       }
 
@@ -793,9 +813,11 @@ export default function AtlasApp() {
 
   const transcribeAudio = async (audioBlob: Blob, extension: string) => {
     setIsTranscribing(true);
+    setVoiceError(null);
     try {
       const formData = new FormData();
       formData.append('audio', audioBlob, `recording.${extension}`);
+      if (tenantId) formData.append('tenantId', tenantId);
 
       const res = await fetch('/api/transcribe', {
         method: 'POST',
@@ -803,6 +825,16 @@ export default function AtlasApp() {
       });
 
       const data = await res.json();
+
+      if (data.voiceInfo) {
+        setVoiceMinutes(data.voiceInfo.used);
+        setVoiceLimit(data.voiceInfo.limit);
+      }
+
+      if (data.error && data.code?.startsWith('VOICE')) {
+        setVoiceError(data.error);
+        return;
+      }
 
       if (data.transcription && data.transcription.trim()) {
         setInputValue(data.transcription.trim());
@@ -1244,32 +1276,32 @@ export default function AtlasApp() {
       />
 
       {/* ===== HEADER ===== */}
-      <header className="flex items-center justify-between px-4 py-3 bg-gray-900/90 backdrop-blur-md border-b border-gray-800/40 z-20 shrink-0">
-        <div className="flex items-center gap-3">
+      <header className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-900/90 backdrop-blur-md border-b border-gray-800/40 z-20 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={() => setShowSessions(!showSessions)}
-            className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
+            className="p-2 rounded-full hover:bg-gray-800/60 transition-colors shrink-0"
             aria-label="Historial de sesiones"
           >
-            <MessageSquare className="w-5 h-5 text-emerald-400" />
+            <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
           </button>
-          <div>
-            <h1 className="text-[15px] font-bold text-white tracking-tight">
+          <div className="min-w-0">
+            <h1 className="text-sm sm:text-[15px] font-bold text-white tracking-tight">
               ATLAS
             </h1>
             <div className="flex items-center gap-2">
-              <p className="text-[10px] text-emerald-400/70 font-medium tracking-wide uppercase">
+              <p className="text-[9px] sm:text-[10px] text-emerald-400/70 font-medium tracking-wide uppercase truncate">
                 Coach Cognitivo de Elite
               </p>
               {trialInfo?.isActive && (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[9px] text-amber-400 font-semibold">
-                  Prueba {trialInfo.plan === 'pro' ? 'Pro' : 'Ejecutivo'} — {trialInfo.hoursLeft}h restantes
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[8px] sm:text-[9px] text-amber-400 font-semibold shrink-0">
+                  Prueba {trialInfo.plan === 'pro' ? 'Pro' : 'Ejecutivo'}
                 </span>
               )}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           {/* Guest indicator or user name */}
           {isAuthenticated ? (
             <>
@@ -1289,21 +1321,13 @@ export default function AtlasApp() {
             </>
           ) : (
             <>
-              {/* Guest free responses badge */}
-              {remainingResponses > 0 && (
-                <span className="hidden xs:flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-600/15 border border-emerald-500/20 text-emerald-400/80 text-[10px] font-medium">
-                  <ShieldCheck className="w-3 h-3" />
-                  <span className="hidden sm:inline">{remainingResponses} gratis</span>
-                </span>
-              )}
               {/* Iniciar Sesion button — always visible for guests */}
               <a
                 href="/login"
-                className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] sm:text-xs font-semibold transition-all active:scale-95 shadow-lg shadow-emerald-500/15 whitespace-nowrap"
+                className="flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] sm:text-xs font-semibold transition-all active:scale-95 shadow-lg shadow-emerald-500/15 whitespace-nowrap"
               >
-                <LogIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                <span className="hidden xs:inline">Iniciar</span>
-                <span>Sesion</span>
+                <LogIn className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span>Iniciar</span>
               </a>
             </>
           )}
@@ -1675,11 +1699,11 @@ export default function AtlasApp() {
       </div>
 
       {/* ===== INPUT AREA ===== */}
-      <div className="shrink-0 border-t border-gray-800/40 bg-gray-900/90 backdrop-blur-md px-3 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] z-10">
+      <div className="shrink-0 border-t border-gray-800/40 bg-gray-900/90 backdrop-blur-md px-2.5 sm:px-3 py-2 sm:py-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-10">
         {/* Guest remaining responses bar */}
         {!isAuthenticated && remainingResponses > 0 && (
-          <div className="text-center mb-2">
-            <span className="text-[10px] text-gray-600">
+          <div className="text-center mb-1.5 sm:mb-2">
+            <span className="text-[9px] sm:text-[10px] text-gray-600">
               Tienes <span className="text-emerald-400 font-semibold">{remainingResponses}</span> respuesta{remainingResponses !== 1 ? 's' : ''} gratuita{remainingResponses !== 1 ? 's' : ''} del asistente.{' '}
               <a href="/login" className="text-emerald-400 hover:text-emerald-300 underline">
                 Inicia sesion
@@ -1701,7 +1725,7 @@ export default function AtlasApp() {
                 ? 'Transcribiendo voz...'
                 : 'Escribe o habla tu mensaje...'
             }
-            className="flex-1 bg-gray-800/50 border border-gray-700/40 rounded-full px-4 py-3 text-[14px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all disabled:opacity-50"
+            className="flex-1 min-w-0 bg-gray-800/50 border border-gray-700/40 rounded-full px-3.5 sm:px-4 py-2.5 sm:py-3 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all disabled:opacity-50"
             disabled={isLoading || isStreaming || isTranscribing}
           />
 
@@ -1709,32 +1733,39 @@ export default function AtlasApp() {
           <button
             type="submit"
             disabled={!inputValue.trim() || isLoading || isStreaming || isTranscribing}
-            className="w-11 h-11 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700/50 disabled:opacity-30 flex items-center justify-center transition-all active:scale-90 shrink-0"
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700/50 disabled:opacity-30 flex items-center justify-center transition-all active:scale-90 shrink-0"
             aria-label="Enviar"
           >
             <Send className="w-[18px] h-[18px] text-white" />
           </button>
 
-          {/* Microphone */}
-          <button
-            type="button"
-            onClick={toggleRecording}
-            disabled={isLoading || isStreaming || isTranscribing || isAnalyzingDocument}
-            className={`w-[52px] h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 ${
-              isRecording
-                ? 'bg-red-500 hover:bg-red-400 shadow-xl shadow-red-500/40 animate-pulse'
-                : 'bg-gray-800 hover:bg-gray-700/80 border-2 border-emerald-500/30 hover:border-emerald-500/60'
-            }`}
-            aria-label={
-              isRecording ? 'Detener grabacion' : 'Hablar (microfono)'
-            }
-          >
-            {isRecording ? (
-              <MicOff className="w-6 h-6 text-white" />
-            ) : (
-              <Mic className="w-6 h-6 text-emerald-400" />
+          {/* Microphone + Voice Usage */}
+          <div className="flex flex-col items-center gap-0.5 shrink-0">
+            {isAuthenticated && voiceLimit > 0 && (
+              <span className="text-[8px] sm:text-[9px] text-gray-600 tabular-nums">
+                Voz: {voiceMinutes !== null ? voiceMinutes.toFixed(1) : '0.0'} / {voiceLimit} min
+              </span>
             )}
-          </button>
+            <button
+              type="button"
+              onClick={toggleRecording}
+              disabled={isLoading || isStreaming || isTranscribing || isAnalyzingDocument}
+              className={`w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 ${
+                isRecording
+                  ? 'bg-red-500 hover:bg-red-400 shadow-xl shadow-red-500/40 animate-pulse'
+                  : 'bg-gray-800 hover:bg-gray-700/80 border-2 border-emerald-500/30 hover:border-emerald-500/60'
+              }`}
+              aria-label={
+                isRecording ? 'Detener grabacion' : 'Hablar (microfono)'
+              }
+            >
+              {isRecording ? (
+                <MicOff className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
+              ) : (
+                <Mic className="w-4 h-4 sm:w-6 sm:h-6 text-emerald-400" />
+              )}
+            </button>
+          </div>
 
           {/* Paperclip — Document Upload */}
           <input
@@ -1879,6 +1910,39 @@ export default function AtlasApp() {
             </div>
           </div>
         </>
+      )}
+
+      {/* ===== VOICE LIMIT TOAST ===== */}
+      {voiceError && (
+        <div className="fixed inset-x-4 bottom-24 z-[60] max-w-sm mx-auto">
+          <div className="bg-gray-800 border border-amber-500/30 rounded-xl p-3.5 shadow-2xl shadow-black/40">
+            <div className="flex items-start gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center shrink-0 mt-0.5">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-amber-300 mb-1">
+                  Minutos de voz agotados
+                </p>
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  {voiceError}
+                </p>
+                <button
+                  onClick={() => { setVoiceError(null); setShowSettings(true); }}
+                  className="mt-2 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
+                >
+                  Ver planes
+                </button>
+              </div>
+              <button
+                onClick={() => setVoiceError(null)}
+                className="p-1 text-gray-500 hover:text-gray-300 transition-colors shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ===== PLAN CHECK LOADING ===== */}
