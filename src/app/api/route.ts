@@ -535,6 +535,7 @@ export async function POST(request: NextRequest) {
       case 'suspend_user': return handleSuspendUser(request);
       case 'toggle_feature': return handleToggleFeature(request);
       case 'save_settings': return handleSaveSettings(request);
+      case 'save_alarm': return handleSaveAlarm(request);
       default:
         return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });
     }
@@ -777,4 +778,39 @@ async function handleSaveSettings(request: NextRequest) {
   }
 
   return NextResponse.json({ success: true });
+}
+
+// ========================================
+// SAVE ALARM — Executive users schedule reminders
+// ========================================
+async function handleSaveAlarm(request: NextRequest) {
+  if (!supabase) {
+    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  }
+
+  const body = await request.json();
+  const { tenantId, content, scheduledFor } = body;
+
+  if (!tenantId || !content || !scheduledFor) {
+    return NextResponse.json(
+      { error: 'tenantId, content y scheduledFor son obligatorios' },
+      { status: 400 }
+    );
+  }
+
+  const { error } = await supabase
+    .from('tasks_alarms')
+    .insert({
+      tenant_id: tenantId,
+      content,
+      scheduled_for: scheduledFor,
+      status: 'pending',
+    });
+
+  if (error) {
+    console.error('[SAVE_ALARM] Supabase error:', error);
+    return NextResponse.json({ error: 'Error al guardar alarma' }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true, scheduledFor });
 }

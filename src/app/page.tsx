@@ -7,7 +7,7 @@ import {
   X, LogOut, LogIn, Settings, Lock, ShieldCheck, XCircle,
   Pencil, Archive, ArchiveRestore, Check, AlertTriangle,
   Paperclip, FileText, XCircle as XCircleIcon, Loader2,
-  Copy
+  Copy, Share2, Bell, Star
 } from 'lucide-react';
 import { WELCOME_MESSAGE_NEW } from '@/lib/atlas';
 import SettingsSidebar from '@/components/SettingsSidebar';
@@ -84,8 +84,17 @@ export default function AtlasApp() {
 
   // ---- Plan Gate State ----
   const [hasActivePlan, setHasActivePlan] = useState<boolean | null>(null);
+  const [userPlanType, setUserPlanType] = useState<string>('');
   const [checkingPlan, setCheckingPlan] = useState(false);
   const [trialInfo, setTrialInfo] = useState<{ plan: string; hoursLeft: number; isActive: boolean } | null>(null);
+
+  // ---- Alarm State ----
+  const [showAlarmScheduler, setShowAlarmScheduler] = useState(false);
+  const [showAlarmPaywall, setShowAlarmPaywall] = useState(false);
+  const [alarmMsgContent, setAlarmMsgContent] = useState('');
+  const [alarmTime, setAlarmTime] = useState('');
+  const [alarmSaving, setAlarmSaving] = useState(false);
+  const [sharedId, setSharedId] = useState<string | null>(null);
 
   // ---- Auto-refresh trial badge every 10 minutes ----
   useEffect(() => {
@@ -276,6 +285,9 @@ export default function AtlasApp() {
       if (planType) {
         setHasActivePlan(true);
         setTrialInfo(null);
+        // Store actual plan name for feature gating
+        const pName = sub?.planId || sub?.planName?.toLowerCase() || '';
+        setUserPlanType(pName);
         return;
       }
 
@@ -287,6 +299,8 @@ export default function AtlasApp() {
           hoursLeft: trialData.trial.hoursLeft,
           isActive: true,
         });
+        // Use trial plan name for feature gating
+        setUserPlanType(trialData.trial.plan || 'pro');
         return;
       }
 
@@ -934,18 +948,23 @@ export default function AtlasApp() {
   // COPY MESSAGE — Clipboard API
   // ========================================
 
+  // ---- Helper: Strip HTML to plain text ----
+  const toPlainText = (html: string) =>
+    html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+
+  // ---- Helper: Count words ----
+  const wordCount = (text: string) => text.split(/\s+/).filter(Boolean).length;
+
   const copyMessage = useCallback(async (msgId: string, content: string) => {
     try {
-      // Strip HTML tags to get plain text
-      const plainText = content
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<[^>]+>/g, '')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'");
-
+      const plainText = toPlainText(content);
       await navigator.clipboard.writeText(plainText);
       setCopiedId(msgId);
       setTimeout(() => setCopiedId(null), 1500);
@@ -953,6 +972,85 @@ export default function AtlasApp() {
       console.error('[COPIAR] Error:', error);
     }
   }, []);
+
+  // ========================================
+  // SHARE MESSAGE — Web Share API + fallback
+  // ========================================
+
+  const shareMessage = useCallback(async (msgId: string, content: string) => {
+    try {
+      const plainText = toPlainText(content);
+      const shareText = `${plainText}\n\n— Resuelto por Atlas, tu Asesor Estrategico 24/7. Pribalo en: https://atlas-9mv.pages.dev`;
+
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({
+          title: 'Consejo de Atlas',
+          text: shareText,
+        });
+      } else {
+        // Fallback: copy to clipboard with toast
+        await navigator.clipboard.writeText(shareText);
+        setSharedId(msgId);
+        setTimeout(() => setSharedId(null), 2000);
+      }
+    } catch (error) {
+      // User cancelled share dialog — ignore
+      if ((error as DOMException)?.name === 'AbortError') return;
+      console.error('[COMPARTIR] Error:', error);
+    }
+  }, []);
+
+  // ========================================
+  // ALARM SCHEDULING — Executive plan feature
+  // ========================================
+
+  const handleAlarmClick = useCallback((content: string) => {
+    if (!isAuthenticated) {
+      setShowAlarmPaywall(true);
+      return;
+    }
+    if (userPlanType !== 'ejecutivo') {
+      setShowAlarmPaywall(true);
+      return;
+    }
+    // Executive user — open scheduler
+    setAlarmMsgContent(content);
+    setShowAlarmScheduler(true);
+  }, [isAuthenticated, userPlanType]);
+
+  const saveAlarm = useCallback(async () => {
+    if (!alarmTime || !tenantId) return;
+    setAlarmSaving(true);
+    try {
+      const plainText = toPlainText(alarmMsgContent);
+      // Truncate for storage
+      const truncated = plainText.length > 500 ? plainText.substring(0, 500) + '...' : plainText;
+      const scheduledFor = new Date(alarmTime).toISOString();
+
+      const res = await fetch('/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save_alarm',
+          tenantId,
+          content: truncated,
+          scheduledFor,
+        }),
+      });
+
+      if (res.ok) {
+        setShowAlarmScheduler(false);
+        setAlarmTime('');
+        setAlarmMsgContent('');
+      } else {
+        console.error('[ALARMA] Error al guardar:', await res.text());
+      }
+    } catch (error) {
+      console.error('[ALARMA] Error:', error);
+    } finally {
+      setAlarmSaving(false);
+    }
+  }, [alarmTime, alarmMsgContent, tenantId]);
 
   // ========================================
   // FORMATTING
@@ -1449,28 +1547,57 @@ export default function AtlasApp() {
                   {formatTime(msg.timestamp)}
                 </p>
 
-                {/* Action buttons — visible on hover (desktop) or tap (mobile via group-active) */}
+                {/* Action buttons — visible on hover (desktop) or tap (mobile) */}
                 {msg.role === 'assistant' && msg.id !== streamingId && msg.content && !msg.content.startsWith('Error') && (
-                  <div className="flex items-center justify-end gap-1 mt-1 mr-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-active:opacity-100 transition-opacity duration-150">
-                    {/* Copy button — always show for completed assistant messages */}
+                  <div className="flex items-center flex-wrap gap-0.5 mt-1.5 ml-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-active:opacity-100 transition-opacity duration-150">
+                    {/* Copy */}
                     <button
                       onClick={() => copyMessage(msg.id, msg.content)}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-gray-500 hover:text-emerald-400 hover:bg-emerald-500/5 transition-all active:scale-95 cursor-pointer select-none"
+                      className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-500 hover:text-emerald-400 hover:bg-emerald-500/5 transition-all active:scale-95 cursor-pointer select-none"
                       title={copiedId === msg.id ? 'Copiado' : 'Copiar texto'}
                     >
                       {copiedId === msg.id ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                      <span className="hidden sm:inline">
+                        {copiedId === msg.id ? 'Copiado' : 'Copiar'}
+                      </span>
+                    </button>
+
+                    {/* Share */}
+                    <button
+                      onClick={() => shareMessage(msg.id, msg.content)}
+                      className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-500 hover:text-blue-400 hover:bg-blue-500/5 transition-all active:scale-95 cursor-pointer select-none"
+                      title="Compartir consejo"
+                    >
+                      {sharedId === msg.id ? (
                         <>
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="text-emerald-400">Copiado</span>
+                          <Check className="w-3.5 h-3.5 text-blue-400" />
+                          <span className="text-blue-400 hidden sm:inline">Enlace copiado</span>
                         </>
                       ) : (
                         <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Copiar</span>
+                          <Share2 className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Compartir</span>
                         </>
                       )}
                     </button>
-                    {/* Expand button — only for short responses */}
+
+                    {/* Alarm — only for substantive messages (50+ words) */}
+                    {wordCount(msg.content) > 50 && (
+                      <button
+                        onClick={() => handleAlarmClick(msg.content)}
+                        className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-500 hover:text-amber-400 hover:bg-amber-500/5 transition-all active:scale-95 cursor-pointer select-none"
+                        title="Programar alarma"
+                      >
+                        <Bell className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Alarma</span>
+                      </button>
+                    )}
+
+                    {/* Expand — only for short responses (15-90 words) */}
                     {msg.id !== expandingId && isShortResponse(msg.content) && (
                       <ExpandButton
                         onExpand={() => expandMessage(msg.id)}
@@ -1771,6 +1898,162 @@ export default function AtlasApp() {
           </div>
         </div>
       )}
+
+      {/* ===== ALARM PAYWALL MODAL — Executive plan required ===== */}
+      <AnimatePresence>
+        {showAlarmPaywall && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50"
+              onClick={() => setShowAlarmPaywall(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-sm mx-auto"
+            >
+              <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-amber-500/15 flex items-center justify-center">
+                    <Bell className="w-6 h-6 text-amber-400" />
+                  </div>
+                  <button
+                    onClick={() => setShowAlarmPaywall(false)}
+                    className="p-1.5 rounded-full hover:bg-gray-800/60 transition-colors"
+                  >
+                    <X className="w-5 h-5 text-gray-500" />
+                  </button>
+                </div>
+                <h2 className="text-lg font-bold text-white mb-2">
+                  Alarmas Inteligentes
+                </h2>
+                <p className="text-sm text-gray-400 leading-relaxed mb-5">
+                  Esta funcion es exclusiva del <span className="text-amber-400 font-semibold">Plan Ejecutivo (S/ 60/mes)</span>.
+                  Programa recordatorios con los consejos de Atlas para que no olvides tus objetivos.
+                </p>
+                <div className="space-y-2 mb-4">
+                  {[
+                    'Programa alarmas con los consejos de Atlas',
+                    'Recibe recordatorios de tus metas clave',
+                    'Nunca olvides una accion importante',
+                  ].map((feat) => (
+                    <li key={feat} className="flex items-start gap-2 text-sm text-gray-400">
+                      <span className="text-amber-400 mt-0.5">{'\u2022'}</span>
+                      {feat}
+                    </li>
+                  ))}
+                </div>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => { setShowAlarmPaywall(false); setShowSettings(true); }}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-gray-950 text-sm font-bold transition-all active:scale-[0.98] shadow-lg shadow-amber-500/20"
+                  >
+                    <Star className="w-4 h-4" />
+                    Obtener Plan Ejecutivo
+                  </button>
+                  <button
+                    onClick={() => setShowAlarmPaywall(false)}
+                    className="w-full py-2.5 rounded-xl text-gray-500 text-sm hover:text-gray-400 transition-colors"
+                  >
+                    Despues
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ===== ALARM SCHEDULER MODAL — Executive users ===== */}
+      <AnimatePresence>
+        {showAlarmScheduler && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50"
+              onClick={() => { setShowAlarmScheduler(false); setAlarmTime(''); }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-sm mx-auto"
+            >
+              <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-amber-500/15 flex items-center justify-center">
+                    <Bell className="w-6 h-6 text-amber-400" />
+                  </div>
+                  <button
+                    onClick={() => { setShowAlarmScheduler(false); setAlarmTime(''); }}
+                    className="p-1.5 rounded-full hover:bg-gray-800/60 transition-colors"
+                  >
+                    <X className="w-5 h-5 text-gray-500" />
+                  </button>
+                </div>
+                <h2 className="text-lg font-bold text-white mb-1">
+                  Programar Alarma
+                </h2>
+                <p className="text-sm text-gray-400 leading-relaxed mb-4">
+                  Elige la fecha y hora para que Atlas te recuerde este consejo.
+                </p>
+
+                {/* Preview of the message */}
+                <div className="bg-gray-800/50 rounded-xl p-3 mb-4 max-h-24 overflow-y-auto">
+                  <p className="text-xs text-gray-400 line-clamp-3">
+                    {toPlainText(alarmMsgContent).substring(0, 200)}
+                    {toPlainText(alarmMsgContent).length > 200 ? '...' : ''}
+                  </p>
+                </div>
+
+                {/* Date/time picker */}
+                <div className="mb-5">
+                  <label className="block text-xs text-gray-500 font-medium mb-1.5">
+                    Fecha y hora de la alarma
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={alarmTime}
+                    onChange={(e) => setAlarmTime(e.target.value)}
+                    min={new Date().toISOString().slice(0, 16)}
+                    className="w-full bg-gray-800/50 border border-gray-700/50 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/30 transition-all [color-scheme:dark]"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <button
+                    onClick={saveAlarm}
+                    disabled={!alarmTime || alarmSaving}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:bg-gray-700/50 disabled:opacity-40 text-gray-950 text-sm font-bold transition-all active:scale-[0.98] shadow-lg shadow-amber-500/20"
+                  >
+                    {alarmSaving ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Bell className="w-4 h-4" />
+                    )}
+                    {alarmSaving ? 'Programando...' : 'Confirmar Alarma'}
+                  </button>
+                  <button
+                    onClick={() => { setShowAlarmScheduler(false); setAlarmTime(''); }}
+                    disabled={alarmSaving}
+                    className="w-full py-2.5 rounded-xl text-gray-500 text-sm hover:text-gray-400 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* ===== PDF PAYWALL MODAL ===== */}
       <AnimatePresence>
