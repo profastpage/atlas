@@ -1,12 +1,37 @@
 // ========================================
-// EDGE-COMPATIBLE AI CLIENT
-// Direct fetch calls — no Node.js APIs (fs, path, os)
-// Works on Cloudflare Workers, Vercel Edge, Browser
+// EDGE-COMPATIBLE AI CLIENT — QWEN BRAIN
+// Primary: Qwen via OpenRouter
+// Fallback: Z.ai internal proxy (GLM)
+// Direct fetch calls — no Node.js APIs
 // ========================================
 //
-// Model selection via env vars:
-//   LLM_MODEL — model name (default: glm-4-flash)
-//   LLM_MAX_TOKENS — max response tokens (default: 150)
+// Env vars:
+//   QWEN_API_KEY      — OpenRouter API key (primary brain)
+//   QWEN_BASE_URL     — OpenRouter base URL
+//   QWEN_MODEL        — Qwen model name (default: qwen/qwen-turbo)
+//   ZAI_BASE_URL      — Z.ai internal proxy URL (fallback)
+//   ZAI_API_KEY       — Z.ai API key (fallback)
+//   LLM_MODEL         — Fallback model (default: glm-4-flash)
+//   LLM_MAX_TOKENS    — Max response tokens (default: 150)
+
+// ========================================
+// QWEN / OPENROUTER — PRIMARY BRAIN
+// ========================================
+
+const QWEN_CONFIG = {
+  baseUrl: process.env.QWEN_BASE_URL || 'https://openrouter.ai/api/v1',
+  apiKey: process.env.QWEN_API_KEY || '',
+  model: process.env.QWEN_MODEL || 'qwen/qwen-turbo',
+  maxTokens: parseInt(process.env.LLM_MAX_TOKENS || '150', 10),
+};
+
+function hasQwen(): boolean {
+  return !!QWEN_CONFIG.apiKey;
+}
+
+// ========================================
+// Z.AI PROXY — FALLBACK BRAIN
+// ========================================
 
 const ZAI_CONFIG = {
   baseUrl: process.env.ZAI_BASE_URL || 'http://172.25.136.193:8080/v1',
@@ -15,10 +40,9 @@ const ZAI_CONFIG = {
   userId: process.env.ZAI_USER_ID || '',
   token: process.env.ZAI_TOKEN || '',
   defaultModel: process.env.LLM_MODEL || 'glm-4-flash',
-  defaultMaxTokens: parseInt(process.env.LLM_MAX_TOKENS || '150', 10),
 };
 
-function getHeaders(): Record<string, string> {
+function getZaiHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${ZAI_CONFIG.apiKey}`,
@@ -31,7 +55,7 @@ function getHeaders(): Record<string, string> {
 }
 
 // ========================================
-// CHAT COMPLETIONS (LLM)
+// CHAT COMPLETIONS (LLM) — QWEN PRIMARY, Z.AI FALLBACK
 // ========================================
 
 export async function createChatCompletion(body: {
@@ -42,23 +66,83 @@ export async function createChatCompletion(body: {
   model?: string;
   thinking?: { type: string };
 }) {
-  const url = `${ZAI_CONFIG.baseUrl}/chat/completions`;
+  const maxTokens = body.max_tokens || QWEN_CONFIG.maxTokens;
+
+  // ---- TRY QWEN (OpenRouter) FIRST ----
+  if (hasQwen()) {
+    try {
+      return await callQwen(body, maxTokens);
+    } catch (error) {
+      console.error('[BRAIN] Qwen error, falling back to Z.ai:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  // ---- FALLBACK: Z.AI PROXY ----
+  return callZai(body, maxTokens);
+}
+
+async function callQwen(body: {
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+  max_tokens?: number;
+  model?: string;
+  thinking?: { type: string };
+}, maxTokens: number) {
+  const url = `${QWEN_CONFIG.baseUrl}/chat/completions`;
   const requestBody = {
-    ...body,
-    model: body.model || ZAI_CONFIG.defaultModel,
-    max_tokens: body.max_tokens || ZAI_CONFIG.defaultMaxTokens,
-    thinking: body.thinking || { type: 'disabled' },
+    model: body.model || QWEN_CONFIG.model,
+    messages: body.messages,
+    temperature: body.temperature ?? 0.7,
+    max_tokens: maxTokens,
   };
+
+  console.log('[BRAIN] Using Qwen:', QWEN_CONFIG.model);
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: getHeaders(),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${QWEN_CONFIG.apiKey}`,
+      'HTTP-Referer': 'https://atlas-9mv.pages.dev',
+      'X-Title': 'Atlas Coach',
+    },
     body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`AI API ${response.status}: ${errorBody}`);
+    throw new Error(`Qwen API ${response.status}: ${errorBody}`);
+  }
+
+  return await response.json();
+}
+
+async function callZai(body: {
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+  max_tokens?: number;
+  model?: string;
+  thinking?: { type: string };
+}, maxTokens: number) {
+  const url = `${ZAI_CONFIG.baseUrl}/chat/completions`;
+  const requestBody = {
+    ...body,
+    model: body.model || ZAI_CONFIG.defaultModel,
+    max_tokens: maxTokens,
+    thinking: body.thinking || { type: 'disabled' },
+  };
+
+  console.log('[BRAIN] Using Z.ai fallback:', ZAI_CONFIG.defaultModel);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: getZaiHeaders(),
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Z.ai API ${response.status}: ${errorBody}`);
   }
 
   return await response.json();
@@ -72,11 +156,10 @@ export async function createTranscription(
   audioBase64: string,
   language: string = 'es'
 ) {
+  // Use Z.ai proxy for STT (Qwen/OpenRouter doesn't have audio)
   const url = `${ZAI_CONFIG.baseUrl}/audio/transcriptions`;
 
   const formData = new FormData();
-
-  // Convert base64 to Blob for FormData
   const byteChars = atob(audioBase64);
   const byteArray = new Uint8Array(byteChars.length);
   for (let i = 0; i < byteChars.length; i++) {
@@ -88,7 +171,7 @@ export async function createTranscription(
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: getHeaders(),
+    headers: getZaiHeaders(),
     body: formData,
   });
 
