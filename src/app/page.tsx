@@ -793,7 +793,25 @@ export default function AtlasApp() {
         stream.getTracks().forEach((t) => t.stop());
         const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        await transcribeAudio(audioBlob, extension);
+
+        // Skip silence: < 1 second duration or < 5000 bytes (probably empty/noise)
+        if (audioBlob.size < 5000) return;
+
+        // Check duration via audio element
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.addEventListener('loadedmetadata', async () => {
+          URL.revokeObjectURL(audioUrl);
+          if (audio.duration < 1.0) return; // Too short, skip
+          await transcribeAudio(audioBlob, extension);
+        });
+        audio.addEventListener('error', async () => {
+          URL.revokeObjectURL(audioUrl);
+          // If metadata fails but size is OK, proceed anyway
+          if (audioBlob.size >= 5000) {
+            await transcribeAudio(audioBlob, extension);
+          }
+        });
       };
 
       mediaRecorder.start();
