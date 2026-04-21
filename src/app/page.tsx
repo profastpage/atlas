@@ -131,8 +131,14 @@ export default function AtlasApp() {
 
   // ---- Voice State (Web Speech API) ----
   const [isListening, setIsListening] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
   const recognitionRef = useRef<any>(null);
+  const startYRef = useRef<number>(0);
+  const shouldAutoSendRef = useRef(false);
+  const isLockedRef = useRef(false);
+  const inputValueRef = useRef(inputValue);
+  inputValueRef.current = inputValue;
 
   // ---- Refs ----
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -312,7 +318,7 @@ export default function AtlasApp() {
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'es-419';
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
 
     recognition.onresult = (event: any) => {
@@ -329,7 +335,6 @@ export default function AtlasApp() {
       // Show interim results in input in real-time + auto-scroll
       if (interimTranscript || finalTranscript) {
         setInputValue(finalTranscript + interimTranscript);
-        // Auto-scroll textarea to bottom as text grows
         requestAnimationFrame(() => {
           const el = document.getElementById('chat-input') as HTMLTextAreaElement | null;
           if (el) el.scrollTop = el.scrollHeight;
@@ -342,10 +347,30 @@ export default function AtlasApp() {
         alert('Se requiere permiso de micrófono para usar la función de voz.');
       }
       setIsListening(false);
+      setIsLocked(false);
+      isLockedRef.current = false;
+      shouldAutoSendRef.current = false;
     };
 
     recognition.onend = () => {
- setIsListening(false);
+      // If locked mode: auto-restart so user can keep talking
+      if (isLockedRef.current) {
+        try { recognition.start(); } catch {}
+        return;
+      }
+      // If we need to auto-send (quick press release)
+      if (shouldAutoSendRef.current) {
+        shouldAutoSendRef.current = false;
+        setIsListening(false);
+        setIsLocked(false);
+        const text = inputValueRef.current.trim();
+        if (text) {
+          setInputValue('');
+          sendMessage(text);
+        }
+        return;
+      }
+      setIsListening(false);
     };
 
     recognitionRef.current = recognition;
@@ -353,27 +378,57 @@ export default function AtlasApp() {
     return () => {
       try { recognition.abort(); } catch {}
     };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep isLockedRef in sync
+  useEffect(() => { isLockedRef.current = isLocked; }, [isLocked]);
+
+  // ---- Mic: Press & Hold + Slide-to-Lock ----
+  const handleMicPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (isLoading || isStreaming || isAnalyzingDocument) return;
+    e.preventDefault();
+    startYRef.current = e.clientY;
+    setIsLocked(false);
+    isLockedRef.current = false;
+    shouldAutoSendRef.current = false;
+    if (recognitionRef.current && !isListening) {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch {}
+    }
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, [isLoading, isStreaming, isAnalyzingDocument, isListening]);
+
+  const handleMicPointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!isListening || isLocked) return;
+    const diff = startYRef.current - e.clientY;
+    if (diff > 60) {
+      setIsLocked(true);
+      isLockedRef.current = true;
+      shouldAutoSendRef.current = false;
+    }
+  }, [isListening, isLocked]);
+
+  const handleMicPointerUp = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    if (!isListening) return;
+    if (!isLocked) {
+      // Not locked: stop and auto-send
+      shouldAutoSendRef.current = true;
+      try { recognitionRef.current?.stop(); } catch {}
+      // Actual send happens in onend handler
+    }
+    // If locked: do nothing, recording continues
+  }, [isListening, isLocked]);
+
+  const handleLockedSend = useCallback(() => {
+    shouldAutoSendRef.current = true;
+    isLockedRef.current = false;
+    setIsLocked(false);
+    try { recognitionRef.current?.stop(); } catch {}
+    // Actual send happens in onend handler
   }, []);
-
-  const startListening = () => {
-    if (!recognitionRef.current || isListening || isLoading || isStreaming) return;
-    try {
-      recognitionRef.current.start();
-      setIsListening(true);
-    } catch (e) {
-      console.error('[VOICE] Error starting recognition:', e);
-    }
-  };
-
-  const stopListening = () => {
-    if (!recognitionRef.current || !isListening) return;
-    try {
-      recognitionRef.current.stop();
-    } catch (e) {
-      console.error('[VOICE] Error stopping recognition:', e);
-    }
-    setIsListening(false);
-  };
 
   // ========================================
   // PLAN GATE — Post-login subscription check
@@ -1678,15 +1733,17 @@ export default function AtlasApp() {
             disabled={isLoading || isStreaming}
           />
 
-          {/* Send */}
-          <button
-            type="submit"
-            disabled={!inputValue.trim() || isLoading || isStreaming}
-            className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700/50 disabled:opacity-30 flex items-center justify-center transition-all active:scale-90 shrink-0"
-            aria-label="Enviar"
-          >
-            <Send className="w-[18px] h-[18px] text-white" />
-          </button>
+          {/* Send — hidden when voice locked (locked send button replaces it) */}
+          {!isLocked && (
+            <button
+              type="submit"
+              disabled={!inputValue.trim() || isLoading || isStreaming || isListening}
+              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700/50 disabled:opacity-30 flex items-center justify-center transition-all active:scale-90 shrink-0"
+              aria-label="Enviar"
+            >
+              <Send className="w-[18px] h-[18px] text-white" />
+            </button>
+          )}
 
           {/* Paperclip — Document Upload (Pro/Ejecutivo only) */}
           <input
@@ -1726,35 +1783,55 @@ export default function AtlasApp() {
             )}
           </button>
 
-          {/* Microphone — Web Speech API (press & hold) */}
+          {/* Microphone — Slide-to-Lock + Auto-Send */}
           {speechSupported && (
-            <button
-              type="button"
-              onPointerDown={startListening}
-              onPointerUp={stopListening}
-              onPointerLeave={stopListening}
-              onContextMenu={(e) => e.preventDefault()}
-              disabled={isLoading || isStreaming || isAnalyzingDocument}
-              className={`w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 select-none touch-none ${
-                isListening
-                  ? 'bg-red-500 hover:bg-red-400 shadow-xl shadow-red-500/40'
-                  : 'bg-gray-800 hover:bg-gray-700/80 border-2 border-emerald-500/30 hover:border-emerald-500/60'
-              }`}
-              aria-label="Hablar (manten presionado)"
-            >
-              {isListening ? (
-                <span className="relative flex h-4 w-4 sm:h-6 sm:w-6">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                  <Mic className="relative inline-flex h-4 w-4 sm:h-6 sm:w-6 text-white" />
-                </span>
-              ) : (
-                <Mic className="w-4 h-4 sm:w-6 sm:h-6 text-emerald-400" />
-              )}
-            </button>
+            isLocked ? (
+              /* LOCKED STATE — Send button */
+              <motion.button
+                key="mic-locked"
+                type="button"
+                onClick={handleLockedSend}
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: 'spring', damping: 15, stiffness: 300 }}
+                disabled={isLoading || isStreaming}
+                className="w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full bg-emerald-600 hover:bg-emerald-500 shadow-xl shadow-emerald-500/40 flex items-center justify-center transition-all active:scale-90 shrink-0 select-none touch-none"
+                aria-label="Enviar mensaje de voz"
+              >
+                <Send className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
+              </motion.button>
+            ) : (
+              /* NORMAL STATE — Mic button (press & hold, slide up to lock) */
+              <button
+                key="mic-normal"
+                type="button"
+                onPointerDown={handleMicPointerDown}
+                onPointerMove={handleMicPointerMove}
+                onPointerUp={handleMicPointerUp}
+                onPointerCancel={handleMicPointerUp}
+                onContextMenu={(e) => e.preventDefault()}
+                disabled={isLoading || isStreaming || isAnalyzingDocument}
+                className={`w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full flex items-center justify-center transition-all duration-200 shrink-0 select-none touch-none ${
+                  isListening
+                    ? 'bg-red-500 hover:bg-red-400 shadow-xl shadow-red-500/40 scale-110'
+                    : 'bg-gray-800 hover:bg-gray-700/80 border-2 border-emerald-500/30 hover:border-emerald-500/60'
+                }`}
+                aria-label="Hablar (manten presionado, desliza arriba para bloquear)"
+              >
+                {isListening ? (
+                  <span className="relative flex h-4 w-4 sm:h-6 sm:w-6">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                    <Mic className="relative inline-flex h-4 w-4 sm:h-6 sm:w-6 text-white" />
+                  </span>
+                ) : (
+                  <Mic className="w-4 h-4 sm:w-6 sm:h-6 text-emerald-400" />
+                )}
+              </button>
+            )
           )}
         </form>
 
-        {/* Listening / Document analyzing indicator */}
+        {/* Listening / Locked / Document analyzing indicator */}
         <AnimatePresence>
           {(isListening || isAnalyzingDocument) && (
             <motion.div
@@ -1765,17 +1842,19 @@ export default function AtlasApp() {
             >
               <span
                 className={`w-2 h-2 rounded-full animate-pulse ${
-                  isListening ? 'bg-red-500' : 'bg-blue-400'
+                  isLocked ? 'bg-emerald-500' : isListening ? 'bg-red-500' : 'bg-blue-400'
                 }`}
               />
               <span
                 className={`text-[11px] font-medium ${
-                  isListening ? 'text-red-400' : 'text-blue-400'
+                  isLocked ? 'text-emerald-400' : isListening ? 'text-red-400' : 'text-blue-400'
                 }`}
               >
-                {isListening
-                  ? 'Escuchando... suelta para enviar'
-                  : 'Atlas esta analizando el documento...'}
+                {isLocked
+                  ? 'Grabacion bloqueada. Toca el boton para enviar.'
+                  : isListening
+                    ? 'Escuchando... desliza arriba para bloquear, suelta para enviar'
+                    : 'Atlas esta analizando el documento...'}
               </span>
             </motion.div>
           )}
