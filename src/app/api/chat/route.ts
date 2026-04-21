@@ -170,7 +170,7 @@ export async function POST(request: NextRequest) {
     const qwenStream = await streamChatCompletion({
       messages: llmMessages,
       temperature: 0.7,
-      max_tokens: 150,
+      max_tokens: 300,
     });
 
     if (qwenStream) {
@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
     const completion = await createChatCompletion({
       messages: llmMessages,
       temperature: 0.7,
-      max_tokens: 150,
+      max_tokens: 300,
     });
     const responseText = completion.choices?.[0]?.message?.content?.trim() || '';
 
@@ -261,7 +261,7 @@ async function handleExpandMode(
   const qwenStream = await streamChatCompletion({
     messages: llmMessages,
     temperature: 0.7,
-    max_tokens: 2000,
+    max_tokens: 700,
   });
 
   if (qwenStream) {
@@ -272,7 +272,7 @@ async function handleExpandMode(
   const completion = await createChatCompletion({
     messages: llmMessages,
     temperature: 0.7,
-    max_tokens: 2000,
+    max_tokens: 700,
   });
   const responseText = completion.choices?.[0]?.message?.content?.trim() || '';
 

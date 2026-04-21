@@ -33,7 +33,9 @@ INSTRUCCIONES DE MEMORIA:
 - Si [RESUMEN PREVIO] contiene información, haz referencia directa a su problema previo antes de continuar.
 - Si [RESUMEN PREVIO] está vacío, es un nuevo usuario.
 
-Responde SIEMPRE en español.`;
+REGLA DE FORMATO: NUNCA termines una respuesta a mitad de una oracion. Si sientes que te acercas al limite de longitud, concluye la idea actual con un punto y detente.
+
+Responde SIEMPRE en espanol.`;
 
 // ========================================
 // MODO EXPANDIDO — Máximo 250 palabras, tono elite intacto
@@ -45,7 +47,9 @@ Estructura obligatoria de la respuesta expandida:
 1. Contexto ampliado (1 párrafo corto).
 2. 3 o 4 viñetas (•) máximas con la información clave en **negritas**.
 3. Una única directriz de acción al final.
-Sé profundo, pero brutalmente eficiente. Cero relleno.`;
+Sé profundo, pero brutalmente eficiente. Cero relleno.
+
+REGLA DE FORMATO: NUNCA termines una respuesta a mitad de una oracion. Si sientes que te acercas al limite de longitud, concluye la idea actual con un punto y detente.`;
 
 export const ATLAS_SYSTEM_PROMPT_EXPANDED = ATLAS_SYSTEM_PROMPT.replace(
   /Máximo 100 palabras:[^]*?(?=\n\n|\n\[|$)/,

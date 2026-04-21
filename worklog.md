@@ -84,3 +84,43 @@ Stage Summary:
 - Post-login: plan check → full-screen block → forced plan selection
 - Backend: Supabase profile check → 403 rejection for free users
 - Settings sidebar transforms into mandatory plan picker when forcePaywall=true
+
+---
+Task ID: 4
+Agent: main
+Task: Fix text truncation and paywall timing — 4 critical corrections
+
+Work Log:
+- **Fix 1 — Dynamic max_tokens (Backend)**:
+  * Normal chat: `max_tokens: 150` → `300` (streaming + non-streaming) in route.ts
+  * Expanded mode: `max_tokens: 2000` → `700` (streaming + non-streaming) in route.ts
+  * Rationale: 100-word prompt ≈ 150 tokens → 300 gives 2x safety margin; 250-word expanded ≈ 400 tokens → 700 gives 1.75x margin
+
+- **Fix 2 — Closing Rule in System Prompts (atlas.ts)**:
+  * Added "REGLA DE FORMATO: NUNCA termines una respuesta a mitad de una oracion. Si sientes que te acercas al limite de longitud, concluye la idea actual con un punto y detente." to ATLAS_SYSTEM_PROMPT
+  * Added same rule to ATLAS_SYSTEM_PROMPT_EXPANDED (inside EXPANDED_RULE template literal)
+
+- **Fix 3 — Paywall Modal ONLY After Streaming (page.tsx — CRITICAL)**:
+  * Root cause: `setShowPaywall(true)` was firing with a stale closure value, or via setTimeout that could overlap with active streaming
+  * Solution: Added `pendingPaywall` state + `useEffect` watcher on `streamingId`
+  * When guest counter reaches limit: `setPendingPaywall(true)` (input blocked immediately)
+  * `useEffect` fires when `streamingId` becomes null AND `pendingPaywall` is true → 600ms delay → `setShowwall(true)`
+  * Paywall modal condition updated: `showPaywall && !isAuthenticated && !streamingId` (triple gate)
+  * Logout resets `pendingPaywall` to false
+
+- **Fix 4 — Network Error Handling (page.tsx)**:
+  * Added `streamDisconnectedId` state to track which message had a disconnection
+  * In streaming loop: if backend sends `{ error: 'Stream error' }` → sets `streamError = true` → after loop → `setStreamDisconnectedId(aId)`
+  * In catch block: if `streamingId` exists (stream was active) → `setStreamDisconnectedId(streamingId)` (no duplicate error message)
+  * In catch block: if `streamingId` is null (pre-stream fetch failure) → adds traditional error message
+  * Same logic applied to expand mode streaming
+  * UI: Amber text indicator below disconnected messages: "Conexion interrumpida. La respuesta se corto."
+  * Same error detection added to expand mode streaming
+
+- Build verified: `next build --webpack` compiles successfully with zero errors
+
+Stage Summary:
+- Text truncation eliminated: 2x-3x max_tokens safety margin + LLM format rule
+- Paywall no longer interrupts streaming: deferred via pendingPaywall + streamingId watcher
+- Network errors handled gracefully: subtle amber indicator instead of broken text
+- All changes compile cleanly

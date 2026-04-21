@@ -77,6 +77,8 @@ export default function AtlasApp() {
   // ---- Guest State ----
   const [guestMessageCount, setGuestMessageCount] = useState(0);
   const [showPaywall, setShowPaywall] = useState(false);
+  const [pendingPaywall, setPendingPaywall] = useState(false);
+  const [streamDisconnectedId, setStreamDisconnectedId] = useState<string | null>(null);
 
   // ---- Plan Gate State ----
   const [hasActivePlan, setHasActivePlan] = useState<boolean | null>(null);
@@ -201,6 +203,17 @@ export default function AtlasApp() {
   // AUTH LOGIC
   // ========================================
 
+  // ---- Trigger paywall ONLY after streaming completes ----
+  useEffect(() => {
+    if (!streamingId && pendingPaywall && !isAuthenticated) {
+      const timer = setTimeout(() => {
+        setShowPaywall(true);
+        setPendingPaywall(false);
+      }, 600);
+      return () => clearTimeout(timer);
+    }
+  }, [streamingId, pendingPaywall, isAuthenticated]);
+
   const logout = () => {
     localStorage.removeItem('atlas_token');
     localStorage.removeItem('atlas_tenant_id');
@@ -213,6 +226,7 @@ export default function AtlasApp() {
     setUserInfo(null);
     setToken('');
     setShowPaywall(false);
+    setPendingPaywall(false);
   };
 
   // ========================================
@@ -442,6 +456,10 @@ export default function AtlasApp() {
         }
         setGuestMessageCount(newCount);
         localStorage.setItem(GUEST_MESSAGES_KEY, String(newCount));
+        // Mark paywall as pending — will show AFTER streaming finishes
+        if (newCount >= FREE_MESSAGES_LIMIT) {
+          setPendingPaywall(true);
+        }
       } else if (hasActivePlan === false) {
         // Authenticated but no plan — block
         openPlanGate();
@@ -508,6 +526,7 @@ export default function AtlasApp() {
           let buffer = '';
           let fullText = '';
           let lastUIUpdate = 0;
+          let streamError = false;
 
           while (true) {
             const { done, value } = await reader.read();
@@ -527,7 +546,8 @@ export default function AtlasApp() {
                 } else if (parsed.token) {
                   fullText += parsed.token;
                 } else if (parsed.error) {
-                  fullText = 'Error de comunicacion.';
+                  // Backend stream error — mark as disconnected
+                  streamError = true;
                 }
               } catch {}
             }
@@ -551,6 +571,10 @@ export default function AtlasApp() {
                 : m
             )
           );
+          // Mark stream disconnection if backend sent error
+          if (streamError) {
+            setStreamDisconnectedId(aId);
+          }
           setStreamingId(null);
         } else {
           // ====== NON-STREAMING MODE (fallback) ======
@@ -564,10 +588,8 @@ export default function AtlasApp() {
           setMessages((prev) => [...prev, assistantMsg]);
         }
 
-        // After response, check if guest hit limit
-        if (!isAuthenticated && guestMessageCount >= FREE_MESSAGES_LIMIT) {
-          setTimeout(() => setShowPaywall(true), 800);
-        }
+        // After response, check if guest hit limit (handled by useEffect on streamingId)
+        // The pendingPaywall state + useEffect above handles this correctly
 
         // Clear document after sending
         if (documentText) {
@@ -578,15 +600,22 @@ export default function AtlasApp() {
         if (tenantId && isAuthenticated) fetchSessions(tenantId);
       } catch (error) {
         console.error('[CEREBRO] Error:', error);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `error-${Date.now()}`,
-            role: 'assistant',
-            content: 'Error de conexion. Intenta de nuevo.',
-            timestamp: new Date().toISOString(),
-          },
-        ]);
+        // Detect stream disconnection during active streaming
+        if (streamingId) {
+          // Mark the existing partial message as disconnected — don't add a new error message
+          setStreamDisconnectedId(streamingId);
+        } else {
+          // Non-streaming error (fetch failed before stream started)
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `error-${Date.now()}`,
+              role: 'assistant',
+              content: 'Error de conexion. Intenta de nuevo.',
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+        }
       } finally {
         setIsLoading(false);
         setStreamingId(null);
@@ -904,6 +933,7 @@ export default function AtlasApp() {
           let buffer = '';
           let fullText = '';
           let lastUIUpdate = 0;
+          let expandStreamError = false;
 
           while (true) {
             const { done, value } = await reader.read();
@@ -920,6 +950,8 @@ export default function AtlasApp() {
                 const parsed = JSON.parse(trimmed.slice(6));
                 if (parsed.token) {
                   fullText += parsed.token;
+                } else if (parsed.error) {
+                  expandStreamError = true;
                 }
               } catch {}
             }
@@ -945,6 +977,9 @@ export default function AtlasApp() {
                 : m
             )
           );
+          if (expandStreamError) {
+            setStreamDisconnectedId(msgId);
+          }
         } else {
           // Non-streaming fallback
           const data = await res.json();
@@ -960,6 +995,7 @@ export default function AtlasApp() {
         }
       } catch (error) {
         console.error('[EXPAND] Error:', error);
+        setStreamDisconnectedId(msgId);
       } finally {
         setExpandingId(null);
       }
@@ -1301,6 +1337,13 @@ export default function AtlasApp() {
                         : ''),
                   }}
                 />
+                {/* Stream disconnection error — subtle warning below text */}
+                {msg.role === 'assistant' && msg.id === streamDisconnectedId && (
+                  <p className="text-[11px] text-amber-400/80 mt-2 flex items-center gap-1">
+                    <span className="inline-block w-1 h-1 rounded-full bg-amber-400/80" />
+                    Conexion interrumpida. La respuesta se corto.
+                  </p>
+                )}
                 <p
                   className={`text-[9px] mt-1.5 ${
                     msg.role === 'user'
@@ -1511,9 +1554,9 @@ export default function AtlasApp() {
         </AnimatePresence>
       </div>
 
-      {/* ===== PAYWALL / LOGIN MODAL ===== */}
+      {/* ===== PAYWALL / LOGIN MODAL — Only shows AFTER streaming finishes ===== */}
       <AnimatePresence>
-        {showPaywall && !isAuthenticated && (
+        {showPaywall && !isAuthenticated && !streamingId && (
           <>
             <motion.div
               initial={{ opacity: 0 }}
