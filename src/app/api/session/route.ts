@@ -2,6 +2,9 @@ export const runtime = 'edge';
 
 // ========================================
 // SESSION MANAGEMENT — Direct SQL via libsql
+// POST  = Create session
+// GET   = List sessions (filter by archived)
+// PATCH = Rename / Archive / Unarchive session
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -29,7 +32,7 @@ export async function POST(request: NextRequest) {
     // Create session
     const sessionId = crypto.randomUUID();
     await db.execute(
-      `INSERT INTO Session (id, tenantId, title, isActive, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Session (id, tenantId, title, isActive, createdAt, updatedAt, is_archived) VALUES (?, ?, ?, ?, ?, ?, 0)`,
       [sessionId, tenantId, 'Sesión Atlas', 1, new Date().toISOString(), new Date().toISOString()]
     );
 
@@ -79,12 +82,15 @@ export async function POST(request: NextRequest) {
 
 // ========================================
 // GET /api/session — List sessions
+// ?tenantId=xxx&archived=true  → archivados
+// ?tenantId=xxx                → activos (default)
 // ========================================
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const tenantId = searchParams.get('tenantId');
+    const showArchived = searchParams.get('archived') === 'true';
 
     if (!tenantId) {
       return NextResponse.json(
@@ -93,20 +99,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const archivedFilter = showArchived ? '1' : '0';
+
     const result = await db.execute(
-      `SELECT s.id, s.title, s.isActive, s.createdAt, COUNT(m.id) as messageCount
+      `SELECT s.id, s.title, s.isActive, s.createdAt, s.is_archived, COUNT(m.id) as messageCount
        FROM Session s
        LEFT JOIN Message m ON m.sessionId = s.id
-       WHERE s.tenantId = ?
+       WHERE s.tenantId = ? AND s.is_archived = ?
        GROUP BY s.id
        ORDER BY s.updatedAt DESC`,
-      [tenantId]
+      [tenantId, archivedFilter]
     );
 
     const sessions = result.rows.map((row) => ({
       id: row.id,
       title: row.title,
       isActive: Boolean(row.isActive),
+      isArchived: Boolean(row.is_archived),
       createdAt: row.createdAt,
       _count: { messages: Number(row.messageCount || 0) },
     }));
@@ -114,6 +123,62 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ sessions });
   } catch (error) {
     console.error('[SESION] Error al listar:', error);
+    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
+  }
+}
+
+// ========================================
+// PATCH /api/session — Rename / Archive / Unarchive
+// Body: { action: 'rename'|'archive'|'unarchive', sessionId, title? }
+// ========================================
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const { action, sessionId, title } = await request.json();
+
+    if (!sessionId || !action) {
+      return NextResponse.json(
+        { error: 'sessionId y action son obligatorios' },
+        { status: 400 }
+      );
+    }
+
+    if (action === 'rename') {
+      if (!title || typeof title !== 'string' || title.trim().length === 0) {
+        return NextResponse.json(
+          { error: 'title es obligatorio para renombrar' },
+          { status: 400 }
+        );
+      }
+      await db.execute(
+        `UPDATE Session SET title = ?, updatedAt = ? WHERE id = ?`,
+        [title.trim(), new Date().toISOString(), sessionId]
+      );
+      return NextResponse.json({ success: true, action: 'rename', title: title.trim() });
+    }
+
+    if (action === 'archive') {
+      await db.execute(
+        `UPDATE Session SET is_archived = 1, updatedAt = ? WHERE id = ?`,
+        [new Date().toISOString(), sessionId]
+      );
+      return NextResponse.json({ success: true, action: 'archive' });
+    }
+
+    if (action === 'unarchive') {
+      await db.execute(
+        `UPDATE Session SET is_archived = 0, updatedAt = ? WHERE id = ?`,
+        [new Date().toISOString(), sessionId]
+      );
+      return NextResponse.json({ success: true, action: 'unarchive' });
+    }
+
+    return NextResponse.json(
+      { error: 'action no válida. Usa: rename, archive, unarchive' },
+      { status: 400 }
+    );
+  } catch (error) {
+    console.error('[SESION] Error al actualizar:', error);
     return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }
