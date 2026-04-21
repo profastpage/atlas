@@ -6,18 +6,30 @@
 // Env vars (set in .env.local for local, Cloudflare Pages Dashboard for production):
 //   NEXT_PUBLIC_SUPABASE_URL
 //   NEXT_PUBLIC_SUPABASE_ANON_KEY
+//
+// IMPORTANT: These vars must be set in BOTH:
+//   1. Cloudflare Pages > Settings > Environment Variables (for build time)
+//   2. Cloudflare Pages > Settings > Environment Variables (for runtime)
+// If vars are missing, supabase will be null (graceful degradation).
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+let _client: SupabaseClient | null = null;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    'Faltan variables de entorno de Supabase. ' +
-    'Agrega NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en .env.local ' +
-    '(local) o en Cloudflare Pages > Settings > Environment Variables (produccion).'
-  );
+function getClient(): SupabaseClient | null {
+  if (_client) return _client;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    console.warn('[SUPABASE] Variables de entorno no configuradas. Set NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+    return null;
+  }
+
+  _client = createClient(url, key);
+  return _client;
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Lazy singleton — safe during build even without env vars
+export const supabase = getClient();
