@@ -44,9 +44,9 @@ interface UserInfo {
 // CONSTANTS
 // ========================================
 
-const FREE_MESSAGES_LIMIT = 5;
+const FREE_BOT_RESPONSES = 5;
 const GUEST_TENANT_KEY = 'atlas_guest_tenant_id';
-const GUEST_MESSAGES_KEY = 'atlas_guest_msg_count';
+const TRIAL_BOT_KEY = 'atlas_trial_bot_count';
 
 // ========================================
 // MAIN APP -- ATLAS COGNITIVE COACH
@@ -75,11 +75,12 @@ export default function AtlasApp() {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
 
-  // ---- Guest State ----
-  const [guestMessageCount, setGuestMessageCount] = useState(0);
-  const [showPaywall, setShowPaywall] = useState(false);
-  const [pendingPaywall, setPendingPaywall] = useState(false);
+  // ---- Trial State Machine ----
+  // trialBotResponses: counts ONLY assistant messages. User messages never increment this.
+  // isStreaming: true while fetch is in-flight. Paywall NEVER shows while true.
+  const [trialBotResponses, setTrialBotResponses] = useState(0);
   const [streamDisconnectedId, setStreamDisconnectedId] = useState<string | null>(null);
 
   // ---- Plan Gate State ----
@@ -184,8 +185,8 @@ export default function AtlasApp() {
     } else {
       // No token — Guest mode: restore guest session or start fresh
       const guestTenantId = localStorage.getItem(GUEST_TENANT_KEY);
-      const guestCount = parseInt(localStorage.getItem(GUEST_MESSAGES_KEY) || '0', 10);
-      setGuestMessageCount(guestCount);
+      const savedBotCount = parseInt(localStorage.getItem(TRIAL_BOT_KEY) || '0', 10);
+      setTrialBotResponses(savedBotCount);
 
       if (guestTenantId) {
         setTenantId(guestTenantId);
@@ -237,16 +238,9 @@ export default function AtlasApp() {
   // AUTH LOGIC
   // ========================================
 
-  // ---- Trigger paywall ONLY after streaming completes ----
-  useEffect(() => {
-    if (!streamingId && pendingPaywall && !isAuthenticated) {
-      const timer = setTimeout(() => {
-        setShowPaywall(true);
-        setPendingPaywall(false);
-      }, 600);
-      return () => clearTimeout(timer);
-    }
-  }, [streamingId, pendingPaywall, isAuthenticated]);
+  // ---- Paywall is now a PURE RENDER CONDITION ----
+  // No useEffect. No pendingPaywall. No deferred state.
+  // The modal renders IFF: !isStreaming && !isAuthenticated && trialBotResponses >= FREE_BOT_RESPONSES
 
   const logout = () => {
     localStorage.removeItem('atlas_token');
@@ -259,8 +253,8 @@ export default function AtlasApp() {
     setMessages([]);
     setUserInfo(null);
     setToken('');
-    setShowPaywall(false);
-    setPendingPaywall(false);
+    setTrialBotResponses(0);
+    localStorage.removeItem(TRIAL_BOT_KEY);
   };
 
   // ========================================
@@ -501,7 +495,7 @@ export default function AtlasApp() {
         return;
       }
 
-      if (!text.trim() || isLoading || !!streamingId) return;
+      if (!text.trim() || isLoading || isStreaming) return;
 
       // ---- CHECK PLAN FOR DOCUMENT UPLOADS ----
       if (documentText && isAuthenticated) {
@@ -514,18 +508,9 @@ export default function AtlasApp() {
         }
       }
 
-      // ---- GUEST LIMIT CHECK ----
-      // Count is incremented AFTER bot responds (see below). Here we only block if already at limit.
-      if (!isAuthenticated) {
-        if (guestMessageCount >= FREE_MESSAGES_LIMIT) {
-          setShowPaywall(true);
-          return;
-        }
-      } else if (hasActivePlan === false) {
-        // Authenticated but no plan — block
-        openPlanGate();
-        return;
-      }
+      // ---- NO GUEST LIMIT CHECK HERE ----
+      // The input is ALWAYS unlocked. The paywall modal appears ONLY after
+      // trialBotResponses >= 5 && !isStreaming (pure render condition).
 
       // Auto-crear sesion si no existe
       let currentSessionId = sessionId;
@@ -546,6 +531,7 @@ export default function AtlasApp() {
       setMessages((prev) => [...prev, userMsg]);
       setInputValue('');
       setIsLoading(true);
+      setIsStreaming(true); // ---- PASO 3: Activar streaming ANTES del fetch ----
 
       try {
         const res = await fetch('/api/chat', {
@@ -568,6 +554,7 @@ export default function AtlasApp() {
             openPlanGate();
             setMessages((prev) => prev.slice(0, -1));
             setIsLoading(false);
+            setIsStreaming(false);
             return;
           }
         }
@@ -624,29 +611,34 @@ export default function AtlasApp() {
             }
           }
 
-          // Final update
+          // ---- STREAM FINISHED: set final content ----
+          const finalText = fullText || 'Sin respuesta.';
           setMessages((prev) =>
             prev.map((m) =>
               m.id === aId
-                ? { ...m, content: fullText || 'Sin respuesta.' }
+                ? { ...m, content: finalText }
                 : m
             )
           );
+
           // Mark stream disconnection if backend sent error
           if (streamError) {
             setStreamDisconnectedId(aId);
           }
           setStreamingId(null);
 
-          // ---- INCREMENT GUEST COUNTER AFTER BOT RESPONDS ----
-          if (!isAuthenticated && fullText && fullText !== 'Sin respuesta.') {
-            const newCount = guestMessageCount + 1;
-            setGuestMessageCount(newCount);
-            localStorage.setItem(GUEST_MESSAGES_KEY, String(newCount));
-            if (newCount >= FREE_MESSAGES_LIMIT) {
-              setPendingPaywall(true);
-            }
+          // ---- PASO 4: INCREMENT COUNTER ONLY ON SUCCESSFUL ASSISTANT RESPONSE ----
+          if (fullText && fullText !== 'Sin respuesta.') {
+            setTrialBotResponses((prev) => {
+              const next = prev + 1;
+              localStorage.setItem(TRIAL_BOT_KEY, String(next));
+              return next;
+            });
           }
+
+          // ---- PASO 3: Desactivar streaming DESPUES de terminar ----
+          setIsStreaming(false);
+
         } else {
           // ====== NON-STREAMING MODE (fallback) ======
           const data = await res.json();
@@ -658,15 +650,17 @@ export default function AtlasApp() {
           };
           setMessages((prev) => [...prev, assistantMsg]);
 
-          // ---- INCREMENT GUEST COUNTER AFTER BOT RESPONDS (non-streaming) ----
-          if (!isAuthenticated && assistantMsg.content && assistantMsg.content !== 'Sin respuesta.' && assistantMsg.content !== 'Error de comunicacion.') {
-            const newCount = guestMessageCount + 1;
-            setGuestMessageCount(newCount);
-            localStorage.setItem(GUEST_MESSAGES_KEY, String(newCount));
-            if (newCount >= FREE_MESSAGES_LIMIT) {
-              setPendingPaywall(true);
-            }
+          // ---- PASO 4: INCREMENT COUNTER ONLY ON SUCCESSFUL ASSISTANT RESPONSE ----
+          if (assistantMsg.content && assistantMsg.content !== 'Sin respuesta.' && assistantMsg.content !== 'Error de comunicacion.') {
+            setTrialBotResponses((prev) => {
+              const next = prev + 1;
+              localStorage.setItem(TRIAL_BOT_KEY, String(next));
+              return next;
+            });
           }
+
+          // ---- PASO 3: Desactivar streaming ----
+          setIsStreaming(false);
         }
 
         // Clear document after sending
@@ -697,10 +691,11 @@ export default function AtlasApp() {
       } finally {
         setIsLoading(false);
         setStreamingId(null);
+        setIsStreaming(false); // ---- SIEMPRE apagar isStreaming en finally ----
         inputRef.current?.focus();
       }
     },
-    [sessionId, tenantId, isLoading, streamingId, createNewSession, isAuthenticated, guestMessageCount]
+    [sessionId, tenantId, isLoading, isStreaming, createNewSession, isAuthenticated, documentText]
   );
 
   // ========================================
@@ -1080,7 +1075,7 @@ export default function AtlasApp() {
   // ---- INPUT BLOCKED: Paywall active for authenticated free user ----
   const isInputBlocked = isAuthenticated && hasActivePlan === false;
 
-  const remainingMessages = Math.max(0, FREE_MESSAGES_LIMIT - guestMessageCount);
+  const remainingResponses = Math.max(0, FREE_BOT_RESPONSES - trialBotResponses);
 
   // ========================================
   // EXPAND MODE — Regenerate with no word limit
@@ -1255,11 +1250,11 @@ export default function AtlasApp() {
             </>
           ) : (
             <>
-              {/* Guest free messages badge */}
-              {remainingMessages > 0 && (
+              {/* Guest free responses badge */}
+              {remainingResponses > 0 && (
                 <span className="hidden xs:flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-600/15 border border-emerald-500/20 text-emerald-400/80 text-[10px] font-medium">
                   <ShieldCheck className="w-3 h-3" />
-                  <span className="hidden sm:inline">{remainingMessages} gratis</span>
+                  <span className="hidden sm:inline">{remainingResponses} gratis</span>
                 </span>
               )}
               {/* Iniciar Sesion button — always visible for guests */}
@@ -1642,11 +1637,11 @@ export default function AtlasApp() {
 
       {/* ===== INPUT AREA ===== */}
       <div className="shrink-0 border-t border-gray-800/40 bg-gray-900/90 backdrop-blur-md px-3 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] z-10">
-        {/* Guest remaining messages bar */}
-        {!isAuthenticated && remainingMessages > 0 && (
+        {/* Guest remaining responses bar */}
+        {!isAuthenticated && remainingResponses > 0 && (
           <div className="text-center mb-2">
             <span className="text-[10px] text-gray-600">
-              Tienes <span className="text-emerald-400 font-semibold">{remainingMessages}</span> mensaje{remainingMessages !== 1 ? 's' : ''} gratuito{remainingMessages !== 1 ? 's' : ''}.{' '}
+              Tienes <span className="text-emerald-400 font-semibold">{remainingResponses}</span> respuesta{remainingResponses !== 1 ? 's' : ''} gratuita{remainingResponses !== 1 ? 's' : ''} del asistente.{' '}
               <a href="/login" className="text-emerald-400 hover:text-emerald-300 underline">
                 Inicia sesion
               </a>{' '}
@@ -1665,18 +1660,16 @@ export default function AtlasApp() {
             placeholder={
               isTranscribing
                 ? 'Transcribiendo voz...'
-                : !isAuthenticated && remainingMessages <= 0
-                ? 'Inicia sesion para continuar...'
                 : 'Escribe o habla tu mensaje...'
             }
             className="flex-1 bg-gray-800/50 border border-gray-700/40 rounded-full px-4 py-3 text-[14px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all disabled:opacity-50"
-            disabled={isLoading || !!streamingId || isTranscribing || (!isAuthenticated && remainingMessages <= 0)}
+            disabled={isLoading || isStreaming || isTranscribing}
           />
 
           {/* Send */}
           <button
             type="submit"
-            disabled={!inputValue.trim() || isLoading || !!streamingId || isTranscribing || (!isAuthenticated && remainingMessages <= 0)}
+            disabled={!inputValue.trim() || isLoading || isStreaming || isTranscribing}
             className="w-11 h-11 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700/50 disabled:opacity-30 flex items-center justify-center transition-all active:scale-90 shrink-0"
             aria-label="Enviar"
           >
@@ -1687,7 +1680,7 @@ export default function AtlasApp() {
           <button
             type="button"
             onClick={toggleRecording}
-            disabled={isLoading || !!streamingId || isTranscribing || isAnalyzingDocument || (!isAuthenticated && remainingMessages <= 0)}
+            disabled={isLoading || isStreaming || isTranscribing || isAnalyzingDocument}
             className={`w-[52px] h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 ${
               isRecording
                 ? 'bg-red-500 hover:bg-red-400 shadow-xl shadow-red-500/40 animate-pulse'
@@ -1721,7 +1714,7 @@ export default function AtlasApp() {
                 setShowPdfPaywall(true);
               }
             }}
-            disabled={isLoading || !!streamingId || isTranscribing || isAnalyzingDocument || (!isAuthenticated && remainingMessages <= 0)}
+            disabled={isLoading || isStreaming || isTranscribing || isAnalyzingDocument}
             className="w-[52px] h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 bg-gray-800 hover:bg-gray-700/80 border-2 border-gray-700/30 hover:border-blue-500/40 disabled:opacity-30"
             aria-label="Subir documento (PDF/TXT)"
             title="Subir documento"
@@ -1796,61 +1789,45 @@ export default function AtlasApp() {
         </AnimatePresence>
       </div>
 
-      {/* ===== PAYWALL / LOGIN MODAL — Only shows AFTER streaming finishes ===== */}
-      <AnimatePresence>
-        {showPaywall && !isAuthenticated && !streamingId && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50"
-              onClick={() => setShowPaywall(false)}
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-sm mx-auto"
-            >
-              <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
-                {/* Close button */}
-                <button
-                  onClick={() => setShowPaywall(false)}
-                  className="absolute top-4 right-4 p-1 rounded-full hover:bg-gray-800/60 transition-colors"
-                >
-                  <XCircle className="w-5 h-5 text-gray-500" />
-                </button>
-
-                {/* Icon */}
-                <div className="text-center mb-5">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-emerald-600/5 flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
-                    <Lock className="w-8 h-8 text-emerald-400" />
-                  </div>
-                  <h2 className="text-xl font-bold text-white">
-                    Has utilizado tus {FREE_MESSAGES_LIMIT} mensajes de prueba
-                  </h2>
-                  <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-                    Inicia sesion para continuar con tu Asesor Estrategico de Elite.
-                  </p>
+      {/* ====================================================================
+          MODAL PAYWALL — MAQUINA DE ESTADOS INFALIBLE
+          REGLA UNICA: !isStreaming && !isAuthenticated && trialBotResponses >= 5
+          - El usuario puede escribir 100 veces. El contador NO sube por user messages.
+          - El contador SOLO sube cuando se agrega role: 'assistant'.
+          - El modal NUNCA aparece si isStreaming === true.
+          ==================================================================== */}
+      {!isStreaming && !isAuthenticated && trialBotResponses >= FREE_BOT_RESPONSES && (
+        <>
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50" />
+          <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-sm mx-auto">
+            <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
+              {/* Icon */}
+              <div className="text-center mb-5">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-emerald-600/5 flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
+                  <Lock className="w-8 h-8 text-emerald-400" />
                 </div>
-
-                {/* Action Button */}
-                <div className="space-y-3">
-                  <a
-                    href="/login"
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
-                  >
-                    Iniciar Sesion
-                    <LogIn className="w-4 h-4" />
-                  </a>
-                </div>
+                <h2 className="text-xl font-bold text-white">
+                  Has utilizado tus {FREE_BOT_RESPONSES} mensajes de prueba
+                </h2>
+                <p className="text-sm text-gray-400 mt-2 leading-relaxed">
+                  Inicia sesion para continuar con tu Asesor Estrategico de Elite.
+                </p>
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+
+              {/* Action Button */}
+              <div className="space-y-3">
+                <a
+                  href="/login"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
+                >
+                  Iniciar Sesion
+                  <LogIn className="w-4 h-4" />
+                </a>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* ===== POST-LOGIN PLAN GATE OVERLAY ===== */}
       <AnimatePresence>
