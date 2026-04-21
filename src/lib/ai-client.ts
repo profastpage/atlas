@@ -149,6 +149,62 @@ async function callZai(body: {
 }
 
 // ========================================
+// STREAMING CHAT COMPLETIONS — SSE from OpenRouter
+// Returns raw ReadableStream, caller handles SSE parsing
+// ========================================
+
+export async function streamChatCompletion(body: {
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+  max_tokens?: number;
+  model?: string;
+}): Promise<ReadableStream<Uint8Array> | null> {
+  const maxTokens = body.max_tokens || QWEN_CONFIG.maxTokens;
+
+  if (hasQwen()) {
+    try {
+      return await streamFromQwen(body, maxTokens);
+    } catch (error) {
+      console.error('[BRAIN] Qwen stream error, falling back:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  return null;
+}
+
+async function streamFromQwen(body: {
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+  max_tokens?: number;
+  model?: string;
+}, maxTokens: number): Promise<ReadableStream<Uint8Array>> {
+  const url = `${QWEN_CONFIG.baseUrl}/chat/completions`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${QWEN_CONFIG.apiKey}`,
+      'HTTP-Referer': 'https://atlas-9mv.pages.dev',
+      'X-Title': 'Atlas Coach',
+    },
+    body: JSON.stringify({
+      model: body.model || QWEN_CONFIG.model,
+      messages: body.messages,
+      temperature: body.temperature ?? 0.7,
+      max_tokens: maxTokens,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Qwen API ${response.status}: ${errorBody}`);
+  }
+
+  return response.body!;
+}
+
+// ========================================
 // AUDIO TRANSCRIPTION (ASR)
 // ========================================
 

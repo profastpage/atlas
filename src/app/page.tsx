@@ -63,6 +63,7 @@ export default function AtlasApp() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingId, setStreamingId] = useState<string | null>(null);
 
   // ---- Guest State ----
   const [guestMessageCount, setGuestMessageCount] = useState(0);
@@ -289,7 +290,7 @@ export default function AtlasApp() {
 
   const sendMessage = useCallback(
     async (text: string) => {
-      if (!text.trim() || isLoading) return;
+      if (!text.trim() || isLoading || !!streamingId) return;
 
       // ---- GUEST LIMIT CHECK ----
       if (!isAuthenticated) {
@@ -333,15 +334,78 @@ export default function AtlasApp() {
           }),
         });
 
-        const data = await res.json();
-        const assistantMsg: Message = {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: data.response || 'Error de comunicacion.',
-          timestamp: new Date().toISOString(),
-        };
+        const contentType = res.headers.get('content-type') || '';
 
-        setMessages((prev) => [...prev, assistantMsg]);
+        if (contentType.includes('text/event-stream')) {
+          // ====== STREAMING MODE — Real-time tokens ======
+          const aId = `assistant-${Date.now()}`;
+          setMessages((prev) => [
+            ...prev,
+            { id: aId, role: 'assistant', content: '', timestamp: new Date().toISOString() },
+          ]);
+          setIsLoading(false);
+          setStreamingId(aId);
+
+          const reader = res.body!.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let fullText = '';
+          let lastUIUpdate = 0;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data: ')) continue;
+              try {
+                const parsed = JSON.parse(trimmed.slice(6));
+                if (parsed.done) {
+                  fullText = parsed.full;
+                } else if (parsed.token) {
+                  fullText += parsed.token;
+                } else if (parsed.error) {
+                  fullText = 'Error de comunicacion.';
+                }
+              } catch {}
+            }
+
+            // Throttle UI updates to ~30fps
+            const now = Date.now();
+            if (now - lastUIUpdate > 30) {
+              const currentText = fullText;
+              setMessages((prev) =>
+                prev.map((m) => (m.id === aId ? { ...m, content: currentText } : m))
+              );
+              lastUIUpdate = now;
+            }
+          }
+
+          // Final update
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === aId
+                ? { ...m, content: fullText || 'Sin respuesta.' }
+                : m
+            )
+          );
+          setStreamingId(null);
+        } else {
+          // ====== NON-STREAMING MODE (fallback) ======
+          const data = await res.json();
+          const assistantMsg: Message = {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: data.response || 'Error de comunicacion.',
+            timestamp: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, assistantMsg]);
+        }
 
         // After response, check if guest hit limit
         if (!isAuthenticated && guestMessageCount >= FREE_MESSAGES_LIMIT) {
@@ -362,10 +426,11 @@ export default function AtlasApp() {
         ]);
       } finally {
         setIsLoading(false);
+        setStreamingId(null);
         inputRef.current?.focus();
       }
     },
-    [sessionId, tenantId, isLoading, createNewSession, isAuthenticated, guestMessageCount]
+    [sessionId, tenantId, isLoading, streamingId, createNewSession, isAuthenticated, guestMessageCount]
   );
 
   // ========================================
@@ -712,7 +777,10 @@ export default function AtlasApp() {
                     msg.role === 'user' ? 'text-white' : 'text-gray-200'
                   }`}
                   dangerouslySetInnerHTML={{
-                    __html: formatMessageContent(msg.content),
+                    __html: formatMessageContent(msg.content) +
+                      (msg.id === streamingId
+                        ? '<span class="inline-block w-[3px] h-[18px] bg-emerald-400 animate-pulse ml-0.5 align-text-bottom rounded-sm"></span>'
+                        : ''),
                   }}
                 />
                 <p
@@ -730,7 +798,7 @@ export default function AtlasApp() {
         </AnimatePresence>
 
         {/* Typing indicator */}
-        {isLoading && (
+        {isLoading && !streamingId && (
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
@@ -785,13 +853,13 @@ export default function AtlasApp() {
                 : 'Escribe o habla tu mensaje...'
             }
             className="flex-1 bg-gray-800/50 border border-gray-700/40 rounded-full px-4 py-3 text-[14px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all disabled:opacity-50"
-            disabled={isLoading || isTranscribing || (!isAuthenticated && remainingMessages <= 0)}
+            disabled={isLoading || !!streamingId || isTranscribing || (!isAuthenticated && remainingMessages <= 0)}
           />
 
           {/* Send */}
           <button
             type="submit"
-            disabled={!inputValue.trim() || isLoading || isTranscribing || (!isAuthenticated && remainingMessages <= 0)}
+            disabled={!inputValue.trim() || isLoading || !!streamingId || isTranscribing || (!isAuthenticated && remainingMessages <= 0)}
             className="w-11 h-11 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700/50 disabled:opacity-30 flex items-center justify-center transition-all active:scale-90 shrink-0"
             aria-label="Enviar"
           >
@@ -802,7 +870,7 @@ export default function AtlasApp() {
           <button
             type="button"
             onClick={toggleRecording}
-            disabled={isLoading || isTranscribing || (!isAuthenticated && remainingMessages <= 0)}
+            disabled={isLoading || !!streamingId || isTranscribing || (!isAuthenticated && remainingMessages <= 0)}
             className={`w-[52px] h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 ${
               isRecording
                 ? 'bg-red-500 hover:bg-red-400 shadow-xl shadow-red-500/40 animate-pulse'
