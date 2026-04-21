@@ -77,14 +77,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[AUTH] Login error:', error);
     const msg = error instanceof Error ? error.message : String(error);
-    if (msg.includes('DATABASE_URL') || msg.includes('not configured')) {
-      return NextResponse.json(
-        { error: 'Servicio no configurado. Faltan variables de entorno en el servidor.' },
-        { status: 503 }
-      );
-    }
+    // Return detailed error for debugging (remove after fixing)
     return NextResponse.json(
-      { error: 'Error al iniciar sesión' },
+      { error: 'Error al iniciar sesión', detail: msg, stack: error instanceof Error ? error.stack?.substring(0, 200) : undefined },
       { status: 500 }
     );
   }
