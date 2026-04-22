@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, LogOut, Edit3, Check,
   Crown, Zap, CheckCircle2, Bell, Star, Trash2, Clock, Camera, Loader2, Infinity,
-  Smartphone, Download
+  Smartphone, Download, Share2, ExternalLink, CheckCircle
 } from 'lucide-react';
 import { trackPlanSelected } from '@/lib/analytics';
 import QRPaymentModal from './QRPaymentModal';
@@ -142,6 +142,8 @@ export default function SettingsSidebar({
   // ---- PWA Install state ----
   const [canInstallPWA, setCanInstallPWA] = useState(false);
   const [pwaInstalling, setPwaInstalling] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
   const deferredPromptRef = useRef<any>(null);
 
   const isEjecutivo = userPlanType === 'ejecutivo';
@@ -152,6 +154,10 @@ export default function SettingsSidebar({
     // Don't show install button if already installed as PWA
     if (localStorage.getItem('atlas_pwa_installed') === 'true') return;
     if (window.matchMedia('(display-mode: standalone)').matches) return;
+
+    // Detect iOS
+    const ua = navigator.userAgent;
+    setIsIOS(/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
 
     const handler = (e: Event) => {
       e.preventDefault();
@@ -175,22 +181,23 @@ export default function SettingsSidebar({
 
   const handleInstallPWA = useCallback(async () => {
     const prompt = deferredPromptRef.current;
-    if (!prompt) {
-      // Fallback: show the install prompt component via parent
-      window.dispatchEvent(new CustomEvent('atlas:install-pwa'));
-      return;
-    }
-    setPwaInstalling(true);
-    try {
-      await prompt.prompt();
-      const { outcome } = await prompt.userChoice;
-      if (outcome === 'accepted') {
-        localStorage.setItem('atlas_pwa_installed', 'true');
-        setCanInstallPWA(false);
-      }
+    if (prompt) {
+      // Native install prompt available (Android/Chrome)
+      setPwaInstalling(true);
+      try {
+        await prompt.prompt();
+        const { outcome } = await prompt.userChoice;
+        if (outcome === 'accepted') {
+          localStorage.setItem('atlas_pwa_installed', 'true');
+          setCanInstallPWA(false);
+        }
+      } catch {}
       deferredPromptRef.current = null;
-    } catch {}
-    setPwaInstalling(false);
+      setPwaInstalling(false);
+    } else {
+      // No native prompt — show inline platform-specific guide
+      setShowInstallGuide(true);
+    }
   }, []);
 
   // ---- QR Payment Modal state ----
@@ -590,28 +597,141 @@ export default function SettingsSidebar({
                 <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3 mt-5">
                   App Movil
                 </h3>
-                <button
-                  onClick={handleInstallPWA}
-                  disabled={pwaInstalling}
-                  className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/15 transition-all active:scale-[0.98] group/pwa"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0 group-hover/pwa:bg-emerald-500/30 transition-colors">
-                    {pwaInstalling ? (
-                      <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+
+                {!showInstallGuide ? (
+                  <button
+                    onClick={handleInstallPWA}
+                    disabled={pwaInstalling}
+                    className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/15 transition-all active:scale-[0.98] group/pwa"
+                  >
+                    <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0 group-hover/pwa:bg-emerald-500/30 transition-colors">
+                      {pwaInstalling ? (
+                        <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+                      ) : (
+                        <Download className="w-5 h-5 text-emerald-400" />
+                      )}
+                    </div>
+                    <div className="text-left flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-white">
+                        {pwaInstalling ? 'Instalando...' : 'Instalar App Atlas'}
+                      </p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {canInstallPWA ? 'Toca para instalar en tu dispositivo' : 'Acceso rapido desde tu pantalla de inicio'}
+                      </p>
+                    </div>
+                    <Smartphone className="w-4 h-4 text-gray-600 group-hover/pwa:text-emerald-400 transition-colors shrink-0" />
+                  </button>
+                ) : (
+                  /* ---- INLINE INSTALL GUIDE ---- */
+                  <div className="space-y-2">
+                    {isIOS ? (
+                      <>
+                        {/* iOS Safari guide */}
+                        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
+                          <p className="text-[12px] font-semibold text-blue-300 mb-2.5 flex items-center gap-1.5">
+                            <Smartphone className="w-3.5 h-3.5" />
+                            Instalar en iPhone / iPad
+                          </p>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-6 h-6 rounded-md bg-gray-700/50 flex items-center justify-center shrink-0">
+                                <Share2 className="w-3 h-3 text-blue-400" />
+                              </div>
+                              <p className="text-[11px] text-gray-300 flex-1">
+                                Toca el icono <span className="font-semibold text-blue-400">Compartir</span> en la barra inferior de Safari
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-6 h-6 rounded-md bg-gray-700/50 flex items-center justify-center shrink-0">
+                                <span className="text-[11px] font-bold text-emerald-400">+</span>
+                              </div>
+                              <p className="text-[11px] text-gray-300 flex-1">
+                                Selecciona <span className="font-semibold text-emerald-400">&quot;Agregar a pantalla de inicio&quot;</span>
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-6 h-6 rounded-md bg-gray-700/50 flex items-center justify-center shrink-0">
+                                <CheckCircle className="w-3 h-3 text-emerald-400" />
+                              </div>
+                              <p className="text-[11px] text-gray-300 flex-1">
+                                Toca <span className="font-semibold text-emerald-400">&quot;Agregar&quot;</span> y listo
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </>
                     ) : (
-                      <Download className="w-5 h-5 text-emerald-400" />
+                      <>
+                        {/* Android / Desktop Chrome guide */}
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">
+                          <p className="text-[12px] font-semibold text-emerald-300 mb-2.5 flex items-center gap-1.5">
+                            <Smartphone className="w-3.5 h-3.5" />
+                            Instalar en Android / Chrome
+                          </p>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-6 h-6 rounded-md bg-gray-700/50 flex items-center justify-center shrink-0">
+                                <ExternalLink className="w-3 h-3 text-emerald-400" />
+                              </div>
+                              <p className="text-[11px] text-gray-300 flex-1">
+                                Abre el menu de Chrome (tres puntos arriba a la derecha)
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-6 h-6 rounded-md bg-gray-700/50 flex items-center justify-center shrink-0">
+                                <Download className="w-3 h-3 text-emerald-400" />
+                              </div>
+                              <p className="text-[11px] text-gray-300 flex-1">
+                                Busca <span className="font-semibold text-emerald-400">&quot;Instalar app&quot;</span> o <span className="font-semibold text-emerald-400">&quot;Agregar a pantalla de inicio&quot;</span>
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-6 h-6 rounded-md bg-gray-700/50 flex items-center justify-center shrink-0">
+                                <CheckCircle className="w-3 h-3 text-emerald-400" />
+                              </div>
+                              <p className="text-[11px] text-gray-300 flex-1">
+                                Confirma tocando <span className="font-semibold text-emerald-400">&quot;Instalar&quot;</span>
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </>
                     )}
+
+                    {/* Try native prompt button (if available now) */}
+                    {canInstallPWA && (
+                      <button
+                        onClick={async () => {
+                          const prompt = deferredPromptRef.current;
+                          if (prompt) {
+                            setPwaInstalling(true);
+                            try {
+                              await prompt.prompt();
+                              const { outcome } = await prompt.userChoice;
+                              if (outcome === 'accepted') {
+                                localStorage.setItem('atlas_pwa_installed', 'true');
+                                setCanInstallPWA(false);
+                              }
+                            } catch {}
+                            deferredPromptRef.current = null;
+                            setPwaInstalling(false);
+                          }
+                        }}
+                        className="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-[0.97]"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Instalar directamente
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => setShowInstallGuide(false)}
+                      className="w-full py-2 rounded-lg text-[11px] text-gray-500 hover:text-gray-300 transition-colors"
+                    >
+                      Ocultar instrucciones
+                    </button>
                   </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white">
-                      {pwaInstalling ? 'Instalando...' : 'Instalar App Atlas'}
-                    </p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">
-                      {canInstallPWA ? 'Toca para instalar en tu dispositivo' : 'Acceso rapido desde tu pantalla de inicio'}
-                    </p>
-                  </div>
-                  <Smartphone className="w-4 h-4 text-gray-600 group-hover/pwa:text-emerald-400 transition-colors shrink-0" />
-                </button>
+                )}
               </section>
 
               <div className="border-t border-gray-800/40 my-5" />
