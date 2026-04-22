@@ -153,18 +153,18 @@ export default function AtlasApp() {
   const [alarmSaving, setAlarmSaving] = useState(false);
   const [sharedId, setSharedId] = useState<string | null>(null);
 
-  // ---- Auto-refresh subscription/trial every 5 minutes for authenticated users ----
-  // Also refresh when user returns to the app (tab focus)
+  // ---- Auto-refresh subscription/trial silently for authenticated users ----
+  // Background refresh every 5 minutes and on tab focus — SILENT, no loading screen
   useEffect(() => {
     if (!tenantId || !isAuthenticated) return;
     const refreshPlan = async () => {
       try {
-        await checkPlanAfterLogin(tenantId);
+        await checkPlanAfterLogin(tenantId, true); // silent = true
       } catch {}
     };
     // Refresh every 5 minutes
     const interval = setInterval(refreshPlan, 5 * 60 * 1000);
-    // Refresh when tab/window gets focus (user returns to app)
+    // Refresh when tab/window gets focus (user returns to app) — silent
     const onFocus = () => refreshPlan();
     window.addEventListener('focus', onFocus);
     return () => {
@@ -365,10 +365,30 @@ export default function AtlasApp() {
           headers: { Authorization: `Bearer ${savedToken}` },
         })
           .then((res) => {
-            if (res.ok) return res.json();
-            throw new Error('Token invalid');
+            // Only logout on explicit 401 (invalid/expired token)
+            // On server error (500) or network issues, keep the session alive
+            if (res.status === 401) {
+              logout();
+              return null;
+            }
+            if (!res.ok) {
+              // Server error — keep session, don't logout
+              console.warn('[AUTH] Server error on token validation, keeping session');
+              setIsAuthenticated(true);
+              setTenantId(savedTenantId);
+              if (savedUser) {
+                try {
+                  const parsed = JSON.parse(savedUser);
+                  setUserInfo(parsed);
+                } catch {}
+              }
+              fetchSessions(savedTenantId);
+              return null;
+            }
+            return res.json();
           })
           .then((data) => {
+            if (!data) return;
             if (data.authenticated) {
               setIsAuthenticated(true);
               setTenantId(savedTenantId);
@@ -383,13 +403,20 @@ export default function AtlasApp() {
               // ---- CHECK PLAN TYPE AFTER LOGIN ----
               checkPlanAfterLogin(savedTenantId);
               fetchSessions(savedTenantId);
-            } else {
-              logout();
             }
           })
-          .catch(() => {
-            // Token invalid — become guest
-            logout();
+          .catch((err) => {
+            // Network error — keep session, don't logout
+            console.warn('[AUTH] Network error on token validation, keeping session:', err.message);
+            setIsAuthenticated(true);
+            setTenantId(savedTenantId);
+            if (savedUser) {
+              try {
+                const parsed = JSON.parse(savedUser);
+                setUserInfo(parsed);
+              } catch {}
+            }
+            fetchSessions(savedTenantId);
           });
       }
     } else {
@@ -999,8 +1026,10 @@ export default function AtlasApp() {
   // PLAN GATE — Post-login subscription check
   // ========================================
 
-  const checkPlanAfterLogin = async (tId: string) => {
-    setCheckingPlan(true);
+  const checkPlanAfterLogin = async (tId: string, silent = false) => {
+    // silent = true for background refreshes (tab focus, interval)
+    // Only show loading overlay on explicit login checks
+    if (!silent) setCheckingPlan(true);
     try {
       // Fetch subscription AND trial status in parallel
       const [subRes, trialRes] = await Promise.all([
@@ -1064,7 +1093,7 @@ export default function AtlasApp() {
       setHasActivePlan(false);
       setTrialInfo(null);
     } finally {
-      setCheckingPlan(false);
+      if (!silent) setCheckingPlan(false);
     }
 
     // Fetch image quota
