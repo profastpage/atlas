@@ -115,13 +115,22 @@ export async function POST(request: NextRequest) {
       userId = crypto.randomUUID();
       tenantId = crypto.randomUUID();
 
+      // ---- CREATE TENANT FIRST (FK requirement) ----
+      // AuthUser.tenantId has a FOREIGN KEY to Tenant.id
+      // Must insert Tenant before AuthUser to avoid SQLITE_CONSTRAINT
+      const now = new Date().toISOString();
+      await db.execute(
+        `INSERT INTO Tenant (id, createdAt, updatedAt) VALUES (?, ?, ?)`,
+        [tenantId, now, now]
+      );
+
       const randomPwd = crypto.randomUUID();
       const passwordHash = await hashPassword(randomPwd);
 
       await db.execute(
         `INSERT INTO AuthUser (id, email, passwordHash, name, avatarUrl, googleId, tenantId, createdAt, updatedAt, isAdmin)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-        [userId, email, passwordHash, name, avatarUrl, googleId, tenantId, new Date().toISOString(), new Date().toISOString()]
+        [userId, email, passwordHash, name, avatarUrl, googleId, tenantId, now, now]
       );
 
       // Create UserMemory for immediate personalization
