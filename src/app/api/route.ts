@@ -417,7 +417,9 @@ async function handleConfig() {
 }
 
 // ========================================
-// USER SUBSCRIPTION INFO (Turso)
+// USER SUBSCRIPTION INFO (Turso + Supabase profiles)
+// Supabase profiles.plan_type is the SOURCE OF TRUTH for admin plan changes.
+// Turso Subscription is a fallback for payment-based subscriptions.
 // ========================================
 async function handleSubscription(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -427,6 +429,24 @@ async function handleSubscription(request: NextRequest) {
     return NextResponse.json({ error: 'tenantId requerido' }, { status: 400 });
   }
 
+  // --- CHECK 1: Supabase profiles.plan_type (admin overrides) ---
+  let supabasePlan: string | null = null;
+  const sbAdmin = getSupabaseAdmin();
+  if (sbAdmin) {
+    try {
+      const { data: profile } = await sbAdmin
+        .from('profiles')
+        .select('plan_type, trial_plan, trial_ends_at')
+        .eq('id', tenantId)
+        .single();
+
+      if (profile?.plan_type && profile.plan_type !== 'free') {
+        supabasePlan = profile.plan_type;
+      }
+    } catch {}
+  }
+
+  // --- CHECK 2: Turso Subscription (payment-based) ---
   const [sub, usage] = await Promise.all([
     db.execute(
       `SELECT s.*, p.name as planName, p.maxMessages, p.price, p.features
@@ -443,14 +463,37 @@ async function handleSubscription(request: NextRequest) {
     ),
   ]);
 
-  const subscription = sub.rows.length > 0 ? {
+  const tursoSub = sub.rows.length > 0 ? {
     planName: (sub.rows[0] as any).planName,
     maxMessages: Number((sub.rows[0] as any).maxMessages),
     messagesUsed: Number(usage.rows[0]?.total || 0),
     price: Number((sub.rows[0] as any).price),
     features: JSON.parse(((sub.rows[0] as any).features || '[]') as string),
     status: (sub.rows[0] as any).status,
+    planId: (sub.rows[0] as any).planId,
   } : null;
+
+  // --- MERGE: Supabase plan_type wins over Turso ---
+  // If admin set plan_type in Supabase, use that as active subscription
+  let subscription = tursoSub;
+  if (supabasePlan && supabasePlan !== 'free') {
+    // Map Supabase plan names to Turso plan names for compatibility
+    const planNameMap: Record<string, string> = {
+      basico: 'Basico',
+      pro: 'Profesional',
+      executive: 'Elite',
+      ejecutivo: 'Elite',
+    };
+    subscription = {
+      planName: planNameMap[supabasePlan] || supabasePlan,
+      planId: `plan_${supabasePlan}`,
+      maxMessages: -1, // unlimited for paid plans
+      messagesUsed: Number(usage.rows[0]?.total || 0),
+      price: { basico: 20, pro: 40, executive: 60, ejecutivo: 60 }[supabasePlan] || 0,
+      features: [],
+      status: 'active',
+    };
+  }
 
   return NextResponse.json({
     subscription,

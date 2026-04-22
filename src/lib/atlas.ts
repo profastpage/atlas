@@ -64,7 +64,7 @@ export const ATLAS_SYSTEM_PROMPT_EXPANDED = ATLAS_SYSTEM_PROMPT.replace(
   EXPANDED_RULE
 );
 
-export const WELCOME_MESSAGE_NEW = 'Hola, soy Atlas, tu consejero y amigo. Puedes contarme lo que quieras: trabajo, salud, estudios, dinero, relaciones... estoy aquí para ayudarte. ¿Qué necesitas resolver hoy?';
+export const WELCOME_MESSAGE_NEW = 'Hola, disculpa, como te llamas? Me gustaria llamarte por tu nombre. Mi nombre es Atlas, y el tuyo?';
 
 // ========================================
 // PROTOCOLO DE SEGURIDAD CRÍTICO

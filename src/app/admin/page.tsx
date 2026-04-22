@@ -756,57 +756,14 @@ export default function AdminPage() {
               {googleLoading ? 'Conectando con Google...' : 'Iniciar sesion con Google (Super Admin)'}
             </button>
 
-            {/* Divider */}
-            <div className="flex items-center gap-3 mb-5">
-              <div className="flex-1 h-px bg-gray-800" />
-              <span className="text-xs text-gray-600 uppercase tracking-wider">o</span>
-              <div className="flex-1 h-px bg-gray-800" />
-            </div>
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Email"
-                  className="w-full bg-gray-800/50 border border-gray-700/50 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-                  required
-                />
-              </div>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Contrasena"
-                  className="w-full bg-gray-800/50 border border-gray-700/50 rounded-xl px-4 pr-11 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {loginError && (
-                <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                  {loginError}
-                </p>
-              )}
-              <button
-                type="submit"
-                disabled={loginLoading || !email || !password}
-                className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:bg-gray-700/50 disabled:opacity-40 text-white text-sm font-semibold transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-              >
-                {loginLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Acceder'}
-              </button>
-            </form>
+            {loginError && (
+              <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mt-2">
+                {loginError}
+              </p>
+            )}
           </div>
           <p className="text-center text-[10px] text-gray-700 mt-4">
-            Solo administradores autorizados
+            Solo Super Admin autorizado ({ALLOWED_ADMIN_EMAIL})
           </p>
         </motion.div>
       </div>
