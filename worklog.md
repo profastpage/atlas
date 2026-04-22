@@ -297,3 +297,33 @@ Stage Summary:
 - All UI changes deployed: gold star system, minimalist icon actions, slide suggestions, dismissible
 - Voice repetition further reduced with interim dedup
 - Commit 9a504b1 pushed to GitHub → Cloudflare Pages deploying
+
+---
+Task ID: 3
+Agent: main
+Task: Premium PWA install prompt with iOS support and push notifications
+
+Work Log:
+- Generated new professional app icons (512x512, 192x192) with AI
+- Updated manifest.json: better description mentioning notifications, emerald theme color, shortcuts
+- Completely rewrote InstallPrompt.tsx as premium bottom-sheet modal:
+  - Shows 3 seconds after first visit (let page load)
+  - 4 benefit cards with icons: Notifications, Instant Access, Offline, Premium Experience
+  - Android: native install button (beforeinstallprompt)
+  - iOS: step-by-step installation guide (Share → Add to Home Screen)
+  - Desktop: native install button or fallback
+  - Dismiss cooldown: 7 days (shows again after cooldown)
+  - After install: requests notification permission + registers push subscription
+  - Framer-motion bottom sheet animation
+- Updated layout.tsx: theme-color to emerald (#059669) for browser chrome
+- Push notification infrastructure:
+  - SW already has push + notificationclick handlers (from v5)
+  - InstallPrompt now requests Notification permission after install
+  - VAPID key support + subscription endpoint ready
+  - Need: VAPID key generation + /api/notifications/subscribe endpoint for admin push
+
+Stage Summary:
+- Premium PWA install experience deployed
+- Works on Android (native prompt), iOS (manual guide), Desktop
+- Push notification flow prepared (needs backend API for subscription storage)
+- Commit f4acd8a pushed → Cloudflare Pages deploying
