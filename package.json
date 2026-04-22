@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "npm run prebuild && next build --webpack",
+    "build": "npm run prebuild && next build --webpack && npx @cloudflare/next-on-pages --skip-build",
     "prebuild": "node -e \"const{execSync:e}=require('child_process');const c=e('git rev-parse --short HEAD 2>/dev/null||echo dev').toString().trim();const t=new Date().toISOString();const b=Math.floor(Date.now()/1000);require('fs').writeFileSync('public/version.json',JSON.stringify({version:'atlas-'+b,commit:c,timestamp:t,build:b}))\"",
     "cf:build": "npx @cloudflare/next-on-pages",
     "pages:dev": "npx wrangler pages dev .vercel/output/static --compatibility-date=2024-12-01 --compatibility-flag=nodejs_compat",
