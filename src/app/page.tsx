@@ -143,6 +143,7 @@ export default function AtlasApp() {
   const [documentName, setDocumentName] = useState<string>('');
   const [isAnalyzingDocument, setIsAnalyzingDocument] = useState(false);
   const [showPdfPaywall, setShowPdfPaywall] = useState(false);
+  const [showPaywallModal, setShowPaywallModal] = useState(false); // Controlled paywall modal
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ---- Voice State (Web Speech API) ----
@@ -592,7 +593,7 @@ export default function AtlasApp() {
   };
 
   const openPlanGate = () => {
-    setShowSettings(true);
+    setShowPaywallModal(true);
   };
 
   // ========================================
@@ -2064,18 +2065,30 @@ export default function AtlasApp() {
       </div>
 
       {/* ====================================================================
-          UNIFIED PAYWALL — 5 trial responses, then plans required for ALL users
-          REGLA: !isStreaming && trialBotResponses >= 5 && hasActivePlan !== true
+          UNIFIED PAYWALL — Controlled modal, shown only on send attempt
+          REGLA: showPaywallModal === true (triggered by openPlanGate)
           - Guest: sees plan selection + login CTA
           - Logged-in no plan: sees plan selection + logout
           - Logged-in with plan: paywall NEVER shows (hasActivePlan === true)
           - During plan check: loading overlay handles it (checkingPlan === true)
+          - Close button returns to chat (user can read history)
           ==================================================================== */}
-      {!isStreaming && trialBotResponses >= FREE_BOT_RESPONSES && hasActivePlan !== true && !checkingPlan && (
+      {showPaywallModal && !isStreaming && !checkingPlan && (
         <>
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50" />
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50" onClick={() => setShowPaywallModal(false)} />
           <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-sm mx-auto">
             <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
+              {/* Close button */}
+              <div className="flex justify-end mb-1">
+                <button
+                  onClick={() => setShowPaywallModal(false)}
+                  className="p-1.5 rounded-full hover:bg-gray-800 transition-colors"
+                  aria-label="Cerrar"
+                >
+                  <X className="w-5 h-5 text-gray-400" />
+                </button>
+              </div>
+
               {/* Icon */}
               <div className="text-center mb-5">
                 <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-gradient-to-br from-amber-500/20 to-amber-600/5 border border-amber-500/20">
@@ -2093,24 +2106,27 @@ export default function AtlasApp() {
               <div className="space-y-3">
                 {isAuthenticated ? (
                   <button
-                    onClick={() => setShowSettings(true)}
+                    onClick={() => { setShowPaywallModal(false); setShowSettings(true); }}
                     className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-gray-950 text-sm font-bold transition-all active:scale-[0.98] shadow-lg shadow-amber-500/20"
                   >
                     <Settings className="w-4 h-4" />
                     Ver Planes
                   </button>
                 ) : (
-                  <>
-                    <a
-                      href="/login"
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
-                    >
-                      Iniciar Sesion y Ver Planes
-                      <LogIn className="w-4 h-4" />
-                    </a>
-                  </>
+                  <a
+                    href="/login"
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
+                  >
+                    Iniciar Sesion y Ver Planes
+                    <LogIn className="w-4 h-4" />
+                  </a>
                 )}
               </div>
+
+              {/* Subtle close hint */}
+              <p className="text-center text-[11px] text-gray-600 mt-4">
+                Toca fuera o cierra para volver al chat
+              </p>
             </div>
           </div>
         </>
