@@ -1,15 +1,15 @@
 {
-  "name": "Atlas - Asesor de Élite",
+  "name": "Atlas - Asesor Estratégico de Élite",
   "short_name": "Atlas",
-  "description": "Tu consultor estratégico y coach personal 24/7. Metodología socrática y reencuadre cognitivo.",
+  "description": "Tu coach personal con IA 24/7. Estrategia, productividad, bienestar y más. Recibe notificaciones exclusivas directamente en tu celular.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#030712",
-  "theme_color": "#000000",
+  "background_color": "#0a0a0a",
+  "theme_color": "#059669",
   "orientation": "portrait",
   "scope": "/",
   "lang": "es",
-  "categories": ["productivity", "lifestyle", "health"],
+  "categories": ["productivity", "lifestyle", "business"],
   "prefer_related_applications": false,
   "icons": [
     {
@@ -23,6 +23,14 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nuevo Chat",
+      "short_name": "Chat",
+      "url": "/",
+      "description": "Iniciar nueva conversación con Atlas"
     }
   ]
 }
