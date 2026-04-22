@@ -153,6 +153,7 @@ export default function AtlasApp() {
   const startYRef = useRef<number>(0);
   const shouldAutoSendRef = useRef(false);
   const isLockedRef = useRef(false);
+  const voiceTranscriptRef = useRef(''); // Accumulates final voice text across recognition restarts (locked mode)
   const isTouchingRef = useRef(false); // Prevent double fire (touch + pointer)
   const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null); // Latest sendMessage — no stale closure
   const inputValueRef = useRef(inputValue);
@@ -363,9 +364,14 @@ export default function AtlasApp() {
           interimTranscript += transcript;
         }
       }
-      // Show interim results in input in real-time + auto-scroll
-      if (interimTranscript || finalTranscript) {
-        setInputValue(finalTranscript + interimTranscript);
+      // Accumulate final text across restarts (locked mode)
+      if (finalTranscript) {
+        voiceTranscriptRef.current += finalTranscript;
+      }
+      // Show accumulated final + current interim in real-time
+      const displayText = voiceTranscriptRef.current + interimTranscript;
+      if (displayText) {
+        setInputValue(displayText);
         requestAnimationFrame(() => {
           const el = document.getElementById('chat-input') as HTMLTextAreaElement | null;
           if (el) el.scrollTop = el.scrollHeight;
@@ -373,11 +379,17 @@ export default function AtlasApp() {
       }
     };
 
+    // Helper: reset accumulated voice text
+    const resetVoiceAccumulation = () => {
+      voiceTranscriptRef.current = '';
+    };
+
     recognition.onerror = (event: any) => {
       trackVoiceError({ error: event.error || 'unknown' });
       if (event.error === 'not-allowed') {
         alert('Se requiere permiso de micrófono para usar la función de voz.');
       }
+      resetVoiceAccumulation();
       setIsListening(false);
       setIsLocked(false);
       isLockedRef.current = false;
@@ -396,6 +408,7 @@ export default function AtlasApp() {
         setIsListening(false);
         setIsLocked(false);
         const text = inputValueRef.current.trim();
+        resetVoiceAccumulation();
         if (text) {
           setInputValue('');
           // Use ref — never stale closure, always latest sendMessage
@@ -403,6 +416,7 @@ export default function AtlasApp() {
         }
         return;
       }
+      resetVoiceAccumulation();
       setIsListening(false);
     };
 
@@ -795,6 +809,7 @@ export default function AtlasApp() {
 
       setMessages((prev) => [...prev, userMsg]);
       setInputValue('');
+      voiceTranscriptRef.current = ''; // Clear voice accumulation on send
       setIsLoading(true);
       setIsStreaming(true); // ---- PASO 3: Activar streaming ANTES del fetch ----
 
