@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, LogOut, Edit3, Check,
-  Crown, Zap, CheckCircle2, Bell, Star, Trash2, Clock
+  Crown, Zap, CheckCircle2, Bell, Star, Trash2, Clock, Camera, Loader2, Infinity
 } from 'lucide-react';
 import { trackPlanSelected } from '@/lib/analytics';
 import QRPaymentModal from './QRPaymentModal';
@@ -24,7 +24,7 @@ interface AlarmItem {
 interface SettingsSidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  user: { id: string; email: string; name: string; tenantId: string; isAdmin?: boolean } | null;
+  user: { id: string; email: string; name: string; tenantId: string; isAdmin?: boolean; avatarUrl?: string } | null;
   token: string;
   forcePaywall?: boolean;
   userPlanType?: string;
@@ -120,6 +120,10 @@ export default function SettingsSidebar({
 }: SettingsSidebarProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const [nameSaved, setNameSaved] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || '');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [userPlan, setUserPlan] = useState<UserPlan | null>(null);
   const [loadingPlan, setLoadingPlan] = useState(false);
   const isAdmin = user?.isAdmin === true;
@@ -254,13 +258,70 @@ export default function SettingsSidebar({
   const startEditName = () => {
     if (user) {
       setEditName(user.name);
+      setNameSaved(false);
       setIsEditingName(true);
     }
   };
 
-  const saveEditName = () => {
+  const saveEditName = useCallback(async () => {
+    if (!user?.tenantId || !editName.trim()) return;
+    setSavingName(true);
+    try {
+      await fetch(`/api?action=save_profile&tenantId=${user.tenantId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editName.trim() }),
+      });
+      setNameSaved(true);
+      setTimeout(() => setNameSaved(false), 2000);
+      // Update localStorage user name
+      try {
+        const saved = localStorage.getItem('atlas_user');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          parsed.name = editName.trim();
+          localStorage.setItem('atlas_user', JSON.stringify(parsed));
+        }
+      } catch {}
+    } catch {}
     setIsEditingName(false);
-  };
+    setSavingName(false);
+  }, [user?.tenantId, editName]);
+
+  const handleAvatarUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    try {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const dataUrl = reader.result as string;
+        setAvatarUrl(dataUrl);
+        if (user?.tenantId) {
+          try {
+            await fetch(`/api?action=save_profile&tenantId=${user.tenantId}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ avatarUrl: dataUrl }),
+            });
+          } catch {}
+        }
+        // Update localStorage
+        try {
+          const saved = localStorage.getItem('atlas_user');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            parsed.avatarUrl = dataUrl;
+            localStorage.setItem('atlas_user', JSON.stringify(parsed));
+          }
+        } catch {}
+        setUploadingAvatar(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setUploadingAvatar(false);
+    }
+  }, [user?.tenantId]);
 
   const hasActivePlan = userPlan && userPlan.status !== 'free';
 
@@ -323,10 +384,37 @@ export default function SettingsSidebar({
               {/* ===== USER PROFILE ===== */}
               <section aria-label="Perfil de usuario">
                 <div className="flex items-center gap-3.5">
-                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/20">
-                    <span className="text-xl font-bold text-white">
-                      {user ? getInitial(user.name) : '?'}
-                    </span>
+                  <div className="relative shrink-0">
+                    {avatarUrl ? (
+                      <img
+                        src={avatarUrl}
+                        alt="Avatar"
+                        className="w-14 h-14 rounded-full object-cover shadow-lg shadow-emerald-500/20"
+                      />
+                    ) : (
+                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                        <span className="text-xl font-bold text-white">
+                          {user ? getInitial(user.name) : '?'}
+                        </span>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => document.getElementById('avatar-upload-input')?.click()}
+                      className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-gray-800 border-2 border-gray-900 flex items-center justify-center text-gray-300 hover:text-emerald-400 transition-colors"
+                    >
+                      {uploadingAvatar ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Camera className="w-3 h-3" />
+                      )}
+                    </button>
+                    <input
+                      id="avatar-upload-input"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleAvatarUpload}
+                    />
                   </div>
                   <div className="flex-1 min-w-0">
                     {isEditingName ? (
@@ -336,14 +424,20 @@ export default function SettingsSidebar({
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && saveEditName()}
+                          placeholder="Tu nombre, como quieres que te llame Atlas"
                           autoFocus
                           className="flex-1 bg-gray-800/60 border border-gray-700/50 rounded-lg px-2.5 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                         />
                         <button
                           onClick={saveEditName}
-                          className="p-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500"
+                          disabled={savingName}
+                          className="p-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
                         >
-                          <Check className="w-3.5 h-3.5" />
+                          {savingName ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
                         </button>
                       </div>
                     ) : (
@@ -354,7 +448,11 @@ export default function SettingsSidebar({
                         <span className="text-sm font-semibold text-white truncate">
                           {user?.name || 'Usuario'}
                         </span>
-                        <Edit3 className="w-3 h-3 text-gray-600 group-hover:text-emerald-400 shrink-0" />
+                        {nameSaved ? (
+                          <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        ) : (
+                          <Edit3 className="w-3 h-3 text-gray-600 group-hover:text-emerald-400 shrink-0" />
+                        )}
                       </button>
                     )}
                     <p className="text-xs text-gray-500 truncate mt-0.5">
@@ -367,17 +465,21 @@ export default function SettingsSidebar({
               {/* ===== MESSAGE USAGE ===== */}
               {!userHasPlan && (
                 <section aria-label="Uso de mensajes" className="mt-5">
-                  <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
-                    Uso este mes
-                  </h3>
                   <div className="bg-gray-800/40 border border-gray-700/30 rounded-xl p-3.5">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[11px] text-gray-400">
-                        Respuestas de Atlas
+                        Te quedan
                       </span>
-                      <span className="text-[11px] font-semibold text-white">
-                        {remainingMessages} / {messageLimit}
-                      </span>
+                      <button
+                        onClick={() => document.getElementById('plan-section-target')?.scrollIntoView({ behavior: 'smooth' })}
+                        className="flex items-center gap-1 text-[11px]"
+                      >
+                        <span className="text-base font-black text-emerald-400">{remainingMessages}</span>
+                        <span className="text-[11px] text-gray-400">de</span>
+                        <span className="text-base font-black text-emerald-400">{messageLimit}</span>
+                        <span className="text-[11px] text-gray-400">respuestas</span>
+                        <Infinity className="w-3.5 h-3.5 text-emerald-400 ml-0.5" />
+                      </button>
                     </div>
                     {/* Progress bar */}
                     <div className="w-full h-1.5 rounded-full bg-gray-700/50 overflow-hidden">
@@ -393,11 +495,13 @@ export default function SettingsSidebar({
                         }}
                       />
                     </div>
-                    {remainingMessages <= 5 && remainingMessages > 0 && (
-                      <p className="text-[10px] text-amber-400/80 mt-2">
-                        Te quedan pocas respuestas. Activa un plan para continuar.
-                      </p>
-                    )}
+                    <button
+                      onClick={() => document.getElementById('plan-section-target')?.scrollIntoView({ behavior: 'smooth' })}
+                      className="w-full mt-3 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-[0.97]"
+                    >
+                      Desbloquea el chat ilimitado
+                      <Infinity className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </section>
               )}
@@ -431,7 +535,7 @@ export default function SettingsSidebar({
               <div className="border-t border-gray-800/40 my-5" />
 
               {/* ===== PLAN SECTION ===== */}
-              <section aria-label="Plan">
+              <section id="plan-section-target" aria-label="Plan">
                 <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
                   Tu Plan
                 </h3>
@@ -466,10 +570,10 @@ export default function SettingsSidebar({
                     {/* Upgrade CTA */}
                     <div className="text-center mb-4">
                       <p className="text-sm font-bold text-white">
-                        Activa tu plan para continuar
+                        Desbloquea el chat ilimitado
                       </p>
                       <p className="text-[11px] text-gray-500 mt-1">
-                        Elige el plan que se adapte a tu ritmo
+                        Elige tu plan y chatea sin limites con Atlas
                       </p>
                     </div>
 

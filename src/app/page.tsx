@@ -835,11 +835,11 @@ export default function AtlasApp() {
         return;
       }
 
-      // CHECK 3: No plan, no trial — show plans immediately
+      // CHECK 3: No plan, no trial — let user use free messages first
       setHasActivePlan(false);
       setTrialInfo(null);
-      // Auto-open plan selection sidebar so user can choose and pay
-      setTimeout(() => setShowSettings(true), 500);
+      // Don't auto-open settings/paywall. User starts with free messages.
+      // Plan modal appears only after exhausting the free limit (sendMessage gate).
     } catch {
       setHasActivePlan(false);
       setTrialInfo(null);

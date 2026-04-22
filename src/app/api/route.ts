@@ -61,6 +61,8 @@ async function handleAdminAction(request: NextRequest, action: string) {
       // --- User city (Supabase) ---
       case 'get_city': return handleGetCity(request);
       case 'save_city': return handleSaveCity(request);
+      // --- User profile (name + avatar) ---
+      case 'save_profile': return handleSaveProfile(request);
       default:
         return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });
     }
@@ -1004,4 +1006,74 @@ async function handleSaveCity(request: NextRequest) {
   return NextResponse.json({ success: true, city });
 }
 
+// ========================================
+// SAVE PROFILE — Name + Avatar (Turso + Supabase)
+// ========================================
+
+async function handleSaveProfile(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const tenantId = searchParams.get('tenantId');
+    if (!tenantId) {
+      return NextResponse.json({ error: 'tenantId requerido' }, { status: 400 });
+    }
+
+    const body = await request.json();
+    const { name, avatarUrl } = body;
+
+    // Update name in Turso AuthUser
+    if (name && typeof name === 'string' && name.trim()) {
+      try {
+        await db.execute(
+          `UPDATE AuthUser SET name = ?, updatedAt = ? WHERE tenantId = ?`,
+          [name.trim(), new Date().toISOString(), tenantId]
+        );
+      } catch {}
+
+      // Also update UserMemory userName if exists (so Atlas uses it immediately)
+      try {
+        const existing = await db.execute(
+          `SELECT id FROM UserMemory WHERE tenantId = ?`,
+          [tenantId]
+        );
+        if (existing.rows.length > 0) {
+          await db.execute(
+            `UPDATE UserMemory SET userName = ?, updatedAt = ? WHERE tenantId = ?`,
+            [name.trim(), new Date().toISOString(), tenantId]
+          );
+        } else {
+          const id = crypto.randomUUID();
+          await db.execute(
+            `INSERT INTO UserMemory (id, tenantId, userName, contextSummary, updatedAt) VALUES (?, ?, ?, '', ?)`,
+            [id, tenantId, name.trim(), new Date().toISOString()]
+          );
+        }
+      } catch {}
+    }
+
+    // Update avatar in Supabase profiles + Turso AuthUser
+    if (avatarUrl && typeof avatarUrl === 'string') {
+      try {
+        await db.execute(
+          `UPDATE AuthUser SET avatarUrl = ?, updatedAt = ? WHERE tenantId = ?`,
+          [avatarUrl, new Date().toISOString(), tenantId]
+        );
+      } catch {}
+
+      if (supabase) {
+        try {
+          await supabase
+            .from('profiles')
+            .update({ avatar_url: avatarUrl })
+            .eq('id', tenantId);
+        } catch {}
+      }
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('[SAVE_PROFILE] Error:', error);
+    return NextResponse.json({ error: 'Error al guardar perfil' }, { status: 500 });
+  }
+}
 

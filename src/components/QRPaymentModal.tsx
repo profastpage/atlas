@@ -119,7 +119,7 @@ export default function QRPaymentModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="fixed inset-x-4 top-[5%] sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-[420px] bg-gray-900 rounded-2xl shadow-2xl border border-gray-700/40 z-[95] overflow-hidden"
+            className="fixed inset-x-4 top-[5%] sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-full sm:max-w-[420px] bg-gray-900 rounded-2xl shadow-2xl border border-gray-700/40 z-[95] overflow-y-auto overscroll-contain max-h-[90vh] sm:max-h-[85vh]"
           >
             {/* ===== SUCCESS STEP ===== */}
             {step === 'success' && (
