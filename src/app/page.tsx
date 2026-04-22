@@ -407,7 +407,11 @@ export default function AtlasApp() {
         shouldAutoSendRef.current = false;
         setIsListening(false);
         setIsLocked(false);
-        const text = inputValueRef.current.trim();
+        // Use voiceTranscriptRef (sync) — NOT inputValueRef (async React state)
+        // recognition.stop() triggers a final onresult that updates voiceTranscriptRef
+        // synchronously, but setInputValue is async and may not have committed yet.
+        // inputValueRef would be stale here.
+        const text = voiceTranscriptRef.current.trim();
         resetVoiceAccumulation();
         if (text) {
           setInputValue('');
