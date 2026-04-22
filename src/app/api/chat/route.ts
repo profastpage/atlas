@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       return handleExpandMode(sessionId, tenantId, messageId);
     }
 
-    if (!message) {
+    if (!message && !imageBase64 && !documentText) {
       return NextResponse.json(
         { error: 'message es obligatorio' },
         { status: 400 }
@@ -58,16 +58,17 @@ export async function POST(request: NextRequest) {
     // ---- PASO 0: GUARDAR MENSAJE DEL USUARIO ----
     try {
       const msgId = crypto.randomUUID();
+      const userContent = message || (imageBase64 ? '[Imagen adjunta]' : (documentText ? '[Documento adjunto]' : ''));
       await db.execute(
         `INSERT INTO Message (id, sessionId, role, content, timestamp) VALUES (?, ?, ?, ?, ?)`,
-        [msgId, sessionId, 'user', message, new Date().toISOString()]
+        [msgId, sessionId, 'user', userContent, new Date().toISOString()]
       );
     } catch (dbError) {
       console.error('[CEREBRO] DB write error:', dbError);
     }
 
     // ---- PASO 1: PROTOCOLO DE SEGURIDAD (instant JSON) ----
-    const lowerMessage = message
+    const lowerMessage = (message || '')
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
@@ -136,7 +137,7 @@ export async function POST(request: NextRequest) {
     // - Image (imageBase64) -> Gemini describes -> Qwen responds
     // ================================================================
 
-    let enrichedMessage = message;
+    let enrichedMessage = message || '';
 
     // ---- PIPELINE DE PDF: Llama extrae datos estructurados ----
     if (documentText) {

@@ -559,87 +559,71 @@ export default function AtlasApp() {
         }
       }
 
+      // === ROBUST DEDUP: find longest suffix of acc that matches prefix of newTxt ===
+      // Uses normalized words (no punctuation, case-insensitive) for comparison.
+      // No artificial 10-word limit — scans up to full text length.
+      // Then removes consecutive duplicate words at the boundary.
+      const normWord = (w: string) => w.toLowerCase().replace(/[^a-záéíóúñü0-9]/g, '');
+
+      const dedupAgainst = (accText: string, newText: string): string => {
+        const accTrimmed = accText.trimEnd();
+        const newTrimmed = newText.trim();
+        if (!accTrimmed || !newTrimmed) return newTrimmed;
+
+        const accNorm = accTrimmed.split(/\s+/).map(normWord).filter(Boolean);
+        const newWords = newTrimmed.split(/\s+/);
+        const newNorm = newWords.map(normWord);
+
+        // Find longest suffix of accNorm that is a prefix of newNorm
+        let overlap = 0;
+        const maxOv = Math.min(accNorm.length, newNorm.length);
+        for (let len = maxOv; len >= 1; len--) {
+          let ok = true;
+          for (let i = 0; i < len; i++) {
+            if (accNorm[accNorm.length - len + i] !== newNorm[i]) { ok = false; break; }
+          }
+          if (ok) { overlap = len; break; }
+        }
+
+        let result = newWords.slice(overlap);
+
+        // Safety: skip first result word if it matches last accumulated word
+        if (result.length > 0 && accNorm.length > 0 && normWord(result[0]) === accNorm[accNorm.length - 1]) {
+          result = result.slice(1);
+        }
+
+        // Remove ALL consecutive duplicate words in the result (API stutter artifact)
+        if (result.length > 1) {
+          const clean: string[] = [];
+          for (let i = 0; i < result.length; i++) {
+            const cn = normWord(result[i]);
+            const pn = i > 0 ? normWord(result[i - 1]) : (clean.length === 0 && accNorm.length > 0 ? accNorm[accNorm.length - 1] : '');
+            if (cn && cn !== pn) clean.push(result[i]);
+          }
+          result = clean;
+        }
+
+        return result.join(' ');
+      };
+
       if (finalTranscript) {
         const acc = voiceTranscriptRef.current;
         const newTxt = finalTranscript.trim();
-
         if (acc.length > 0 && newTxt.length > 0) {
-          // Normalize words: lowercase, strip punctuation for robust comparison
-          const normWord = (w: string) => w.toLowerCase().replace(/[^a-záéíóúñü0-9]/g, '');
-          const accWords = acc.trimEnd().split(/\s+/);
-          const newWords = newTxt.split(/\s+/);
-          const accNorm = accWords.map(normWord);
-          const newNorm = newWords.map(normWord);
-
-          // 1) SUFFIX/PREFIX overlap detection with normalized words
-          let overlapCount = 0;
-          const maxOverlap = Math.min(accNorm.length, newNorm.length, 10);
-          for (let w = maxOverlap; w >= 1; w--) {
-            let match = true;
-            for (let i = 0; i < w; i++) {
-              if (accNorm[accNorm.length - w + i] !== newNorm[i]) { match = false; break; }
-            }
-            if (match) { overlapCount = w; break; }
-          }
-          let dedupedWords = newWords.slice(overlapCount);
-
-          // 2) SAFETY: skip first new word if it matches the very last accumulated word (normalized)
-          //    Handles cases where overlap detection missed due to punctuation/spacing differences
-          if (dedupedWords.length > 0 && accNorm.length > 0) {
-            const firstNewNorm = normWord(dedupedWords[0]);
-            const lastAccNorm = accNorm[accNorm.length - 1];
-            if (firstNewNorm && firstNewNorm === lastAccNorm) {
-              dedupedWords = dedupedWords.slice(1);
-            }
-          }
-
-          // 3) SAFETY: remove consecutive duplicate words (API artifact)
-          if (dedupedWords.length > 1) {
-            const filtered: string[] = [];
-            for (let i = 0; i < dedupedWords.length; i++) {
-              const curNorm = normWord(dedupedWords[i]);
-              const prevNorm = i > 0 ? normWord(dedupedWords[i - 1]) : '';
-              // Also check against last word of accumulated text
-              const boundaryNorm = filtered.length === 0 && accNorm.length > 0 ? accNorm[accNorm.length - 1] : '';
-              if (curNorm && curNorm !== prevNorm && curNorm !== boundaryNorm) {
-                filtered.push(dedupedWords[i]);
-              }
-            }
-            dedupedWords = filtered;
-          }
-
-          if (dedupedWords.length > 0) {
-            voiceTranscriptRef.current = (voiceTranscriptRef.current.trimEnd() + ' ' + dedupedWords.join(' ')).trim();
+          const deduped = dedupAgainst(acc, newTxt);
+          if (deduped) {
+            voiceTranscriptRef.current = (voiceTranscriptRef.current.trimEnd() + ' ' + deduped).trim();
           }
         } else {
           voiceTranscriptRef.current = newTxt;
         }
       }
 
-      // Dedup interim against accumulated text (normalized comparison)
       if (interimTranscript) {
-        const acc = voiceTranscriptRef.current.trimEnd();
+        const acc = voiceTranscriptRef.current;
         const interTrimmed = interimTranscript.trim();
         if (acc.length > 0 && interTrimmed.length > 0) {
-          const normWord = (w: string) => w.toLowerCase().replace(/[^a-záéíóúñü0-9]/g, '');
-          const accNorm = acc.split(/\s+/).map(normWord);
-          const interWords = interTrimmed.split(/\s+/);
-          const interNorm = interWords.map(normWord);
-          let overlapCount = 0;
-          const maxOverlap = Math.min(accNorm.length, interNorm.length, 10);
-          for (let w = maxOverlap; w >= 1; w--) {
-            let match = true;
-            for (let i = 0; i < w; i++) {
-              if (accNorm[accNorm.length - w + i] !== interNorm[i]) { match = false; break; }
-            }
-            if (match) { overlapCount = w; break; }
-          }
-          let deduped = interWords.slice(overlapCount);
-          // Safety: skip first if it matches last accumulated word
-          if (deduped.length > 0 && accNorm.length > 0 && normWord(deduped[0]) === accNorm[accNorm.length - 1]) {
-            deduped = deduped.slice(1);
-          }
-          interimTranscript = deduped.join(' ');
+          interimTranscript = dedupAgainst(acc, interTrimmed);
         }
       }
 
@@ -1049,7 +1033,7 @@ export default function AtlasApp() {
   // SESSION MANAGEMENT
   // ========================================
 
-  const createNewSession = useCallback(async () => {
+  const createNewSession = useCallback(async (skipWelcome = false) => {
     try {
       const res = await fetch('/api/session', {
         method: 'POST',
@@ -1064,25 +1048,29 @@ export default function AtlasApp() {
       setMessages([]);
       setShowSessions(false);
 
-      setTimeout(() => {
-        let welcomeContent = WELCOME_MESSAGE_NEW;
+      if (!skipWelcome) {
+        setTimeout(() => {
+          let welcomeContent = WELCOME_MESSAGE_NEW;
 
-        if (!data.isNewUser && data.userName && data.contextSummary) {
-          welcomeContent = `${data.userName}, otra vez aqui. Volvamos a tu problema: **${data.contextSummary.substring(0, 60)}**. Hubo algun cambio o seguimos en el mismo punto?`;
-        } else if (!data.isNewUser && data.contextSummary) {
-          welcomeContent = `Ya hemos hablado. Tu situacion previa: **${data.contextSummary.substring(0, 60)}**. Que hay de nuevo?`;
-        }
+          if (!data.isNewUser && data.userName && data.contextSummary) {
+            welcomeContent = `${data.userName}, otra vez aqui. Volvamos a tu problema: **${data.contextSummary.substring(0, 60)}**. Hubo algun cambio o seguimos en el mismo punto?`;
+          } else if (!data.isNewUser && data.contextSummary) {
+            welcomeContent = `Ya hemos hablado. Tu situacion previa: **${data.contextSummary.substring(0, 60)}**. Que hay de nuevo?`;
+          }
 
-        setMessages([
-          {
-            id: `welcome-${Date.now()}`,
-            role: 'assistant',
-            content: welcomeContent,
-            timestamp: new Date().toISOString(),
-          },
-        ]);
+          setMessages([
+            {
+              id: `welcome-${Date.now()}`,
+              role: 'assistant',
+              content: welcomeContent,
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+          setSessionReady(true);
+        }, 400);
+      } else {
         setSessionReady(true);
-      }, 400);
+      }
 
       fetchSessions(data.tenantId);
       return data;
@@ -1237,7 +1225,7 @@ export default function AtlasApp() {
         }
       }
 
-      if (!text.trim() || isLoading || isStreaming) return;
+      if ((!text.trim() && !imageBase64 && !documentText) || isLoading || isStreaming) return;
 
       // ---- CHECK PLAN FOR DOCUMENT UPLOADS ----
       if (documentText && isAuthenticated) {
@@ -1258,11 +1246,10 @@ export default function AtlasApp() {
       let currentSessionId = sessionId;
       let currentTenantId = tenantId;
       if (!currentSessionId) {
-        const sessionData = await createNewSession();
+        const sessionData = await createNewSession(true);
         if (!sessionData) return;
         currentSessionId = sessionData.sessionId;
         currentTenantId = sessionData.tenantId;
-        await new Promise((r) => setTimeout(r, 500));
       }
 
       // Safety: if tenantId is still empty (race condition on first load), block send
