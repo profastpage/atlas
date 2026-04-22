@@ -1,0 +1,8 @@
+# Cloudflare Pages — _headers
+# Prevent CDN caching of HTML pages (always serve fresh)
+
+/*
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/*.html
+  Cache-Control: no-cache, no-store, must-revalidate
