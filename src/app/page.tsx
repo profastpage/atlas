@@ -10,7 +10,8 @@ import {
   Copy, Share2, Bell, Star, Hash, PencilLine,
   Sparkles, RotateCcw, ChevronRight, Wand2, RefreshCw
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { auth } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import {
   trackMessageSent,
   trackPaywallShown,
@@ -184,6 +185,8 @@ export default function AtlasApp() {
   const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null); // Latest sendMessage — no stale closure
   const inputValueRef = useRef(inputValue);
   inputValueRef.current = inputValue;
+  const sendingVoiceRef = useRef(false); // Prevents double-send of voice messages
+  const lastFinalResultTimeRef = useRef(0); // Debounces final results to prevent rapid duplicate sends
 
   // ---- PWA Install Prompt State ----
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
@@ -347,18 +350,17 @@ export default function AtlasApp() {
           });
       }
     } else {
-      // No token — check if Supabase session exists (from client-side OAuth)
-      // This handles the flow: Google auth → Supabase callback → redirect to / → sync
-      if (supabase) {
-        (async () => {
-          try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.access_token) {
-              // Exchange Supabase session for Turso token
-              const res = await fetch('/api/auth/supabase-sync', {
+      // No token — check if Firebase session exists (from Google sign-in)
+      try {
+        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+          unsubscribe(); // Only listen once
+          if (firebaseUser) {
+            try {
+              const idToken = await firebaseUser.getIdToken();
+              const res = await fetch('/api/auth/firebase-sync', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ accessToken: session.access_token }),
+                body: JSON.stringify({ idToken }),
               });
               if (res.ok) {
                 const authData = await res.json();
@@ -371,17 +373,17 @@ export default function AtlasApp() {
                   return;
                 }
               }
+            } catch (e) {
+              console.warn('[FIREBASE_SYNC] Sync failed:', e);
             }
-          } catch (e) {
-            console.warn('[SUPABASE_SYNC] No session found or sync failed:', e);
           }
-          // No Supabase session — Guest mode
+          // No Firebase session — Guest mode
           startGuestMode();
-        })();
-        return;
+        });
+      } catch {
+        // Firebase not available — Guest mode
+        startGuestMode();
       }
-      // Guest mode (fallback if no supabase client)
-      startGuestMode();
     }
   }, []);
 
@@ -522,6 +524,7 @@ export default function AtlasApp() {
     recognition.lang = 'es-419';
     recognition.continuous = true;
     recognition.interimResults = true;
+    recognition.maxAlternatives = 1; // Only one result to prevent duplicates
 
     recognition.onresult = (event: any) => {
       let interimTranscript = '';
@@ -534,50 +537,61 @@ export default function AtlasApp() {
           interimTranscript += transcript;
         }
       }
-      // Accumulate final text across restarts (locked mode)
-      // OVERLAP DEDUP: When the browser re-processes the audio buffer tail
-      // after a recognition restart, the last word/phrase may be delivered again.
-      // Detect overlap between end of accumulated text and start of new text.
+
       if (finalTranscript) {
         const acc = voiceTranscriptRef.current;
         const newTxt = finalTranscript.trim();
+
         if (acc.length > 0 && newTxt.length > 0) {
-          const accTail = acc.trimEnd();
-          // Find maximum overlap (up to 60 chars) to avoid O(n²)
-          const maxCheck = Math.min(accTail.length, newTxt.length, 60);
-          let overlap = 0;
-          for (let l = maxCheck; l >= 1; l--) {
-            if (accTail.endsWith(newTxt.slice(0, l))) {
-              overlap = l;
+          // WORD-LEVEL OVERLAP DEDUP: Split into words and find overlap
+          const accWords = acc.trimEnd().split(/\s+/);
+          const newWords = newTxt.split(/\s+/);
+          let overlapCount = 0;
+          const maxOverlap = Math.min(accWords.length, newWords.length, 10);
+          for (let w = maxOverlap; w >= 1; w--) {
+            const accTail = accWords.slice(-w);
+            const newHead = newWords.slice(0, w);
+            if (accTail.join(' ').toLowerCase() === newHead.join(' ').toLowerCase()) {
+              overlapCount = w;
               break;
             }
           }
-          const toAppend = newTxt.slice(overlap);
-          if (toAppend) {
-            voiceTranscriptRef.current += toAppend;
+          const dedupedWords = newWords.slice(overlapCount);
+          if (dedupedWords.length > 0) {
+            voiceTranscriptRef.current = (voiceTranscriptRef.current.trimEnd() + ' ' + dedupedWords.join(' ')).trim();
           }
         } else {
-          voiceTranscriptRef.current += finalTranscript;
+          voiceTranscriptRef.current = newTxt;
         }
+
+        // Debounce final results: ignore rapid-fire finals within 300ms
+        const now = Date.now();
+        lastFinalResultTimeRef.current = now;
       }
-      // Also dedup interim — remove overlap with accumulated text
+
+      // Dedup interim against accumulated text
       if (interimTranscript) {
         const acc = voiceTranscriptRef.current.trimEnd();
         const interTrimmed = interimTranscript.trim();
         if (acc.length > 0 && interTrimmed.length > 0) {
-          const maxInterim = Math.min(acc.length, interTrimmed.length, 60);
-          let interOverlap = 0;
-          for (let l = maxInterim; l >= 1; l--) {
-            if (acc.endsWith(interTrimmed.slice(0, l))) {
-              interOverlap = l;
+          const accWords = acc.split(/\s+/);
+          const interWords = interTrimmed.split(/\s+/);
+          let overlapCount = 0;
+          const maxOverlap = Math.min(accWords.length, interWords.length, 10);
+          for (let w = maxOverlap; w >= 1; w--) {
+            const accTail = accWords.slice(-w);
+            const interHead = interWords.slice(0, w);
+            if (accTail.join(' ').toLowerCase() === interHead.join(' ').toLowerCase()) {
+              overlapCount = w;
               break;
             }
           }
-          interimTranscript = interTrimmed.slice(interOverlap);
+          interimTranscript = interWords.slice(overlapCount).join(' ');
         }
       }
+
       // Show accumulated final + current interim in real-time
-      const displayText = voiceTranscriptRef.current + interimTranscript;
+      const displayText = (voiceTranscriptRef.current + ' ' + interimTranscript).trim();
       if (displayText) {
         setInputValue(displayText);
         requestAnimationFrame(() => {
@@ -590,11 +604,12 @@ export default function AtlasApp() {
     recognition.onerror = (event: any) => {
       trackVoiceError({ error: event.error || 'unknown' });
       if (event.error === 'not-allowed') {
-        alert('Se requiere permiso de micrófono para usar la función de voz.');
+        alert('Se requiere permiso de microfono para usar la funcion de voz.');
       }
       // CRITICAL: Clear any pending restart timer to prevent ghost sessions
       if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null; }
       resetVoiceAccumulation();
+      sendingVoiceRef.current = false;
       setIsListening(false);
       setIsLocked(false);
       isLockedRef.current = false;
@@ -602,14 +617,17 @@ export default function AtlasApp() {
     };
 
     recognition.onend = () => {
-      // If locked mode: debounced auto-restart to avoid race with
-      // the browser's own continuous-mode auto-restart (which causes duplicates)
+      // If locked mode: debounced auto-restart with longer delay (1000ms)
+      // to avoid race with browser's continuous-mode auto-restart
       if (isLockedRef.current) {
         if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
         restartTimerRef.current = setTimeout(() => {
           restartTimerRef.current = null;
-          try { recognition.start(); } catch {}
-        }, 500);
+          // Only restart if still in locked mode
+          if (isLockedRef.current) {
+            try { recognition.start(); } catch {}
+          }
+        }, 1000);
         return;
       }
       // If we need to auto-send (quick press release)
@@ -617,12 +635,24 @@ export default function AtlasApp() {
         shouldAutoSendRef.current = false;
         setIsListening(false);
         setIsLocked(false);
+        // Prevent double-send
+        if (sendingVoiceRef.current) {
+          resetVoiceAccumulation();
+          return;
+        }
+        sendingVoiceRef.current = true;
         // Use voiceTranscriptRef (sync) — NOT inputValueRef (async React state)
         const text = voiceTranscriptRef.current.trim();
         resetVoiceAccumulation();
         if (text) {
           setInputValue('');
-          sendMessageRef.current?.(text);
+          // Small delay to ensure React state is cleared before send
+          setTimeout(() => {
+            sendMessageRef.current?.(text);
+            setTimeout(() => { sendingVoiceRef.current = false; }, 500);
+          }, 50);
+        } else {
+          sendingVoiceRef.current = false;
         }
         return;
       }
@@ -649,6 +679,9 @@ export default function AtlasApp() {
   const _startListening = useCallback(() => {
     if (recognitionRef.current && !isListening) {
       try {
+        // Always reset accumulation when starting fresh
+        voiceTranscriptRef.current = '';
+        setInputValue('');
         recognitionRef.current.start();
         setIsListening(true);
       } catch {}
@@ -769,6 +802,9 @@ export default function AtlasApp() {
   const handleLockedSend = useCallback(() => {
     // CRITICAL: Clear any pending restart timer to prevent ghost recognition sessions
     if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null; }
+    // Prevent double-send
+    if (sendingVoiceRef.current) return;
+    sendingVoiceRef.current = true;
     shouldAutoSendRef.current = true;
     isLockedRef.current = false;
     setIsLocked(false);
@@ -780,6 +816,7 @@ export default function AtlasApp() {
         shouldAutoSendRef.current = false;
         setIsListening(false);
         resetVoiceAccumulation();
+        sendingVoiceRef.current = false;
       }
     }, 2000);
     // Actual send happens in onend handler
@@ -793,6 +830,7 @@ export default function AtlasApp() {
     isLockedRef.current = false;
     setIsLocked(false);
     setIsSwipeCanceling(false);
+    sendingVoiceRef.current = false;
     resetVoiceAccumulation();
     try { recognitionRef.current?.stop(); } catch {}
     setIsListening(false);

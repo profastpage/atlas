@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, LogOut, Edit3, Check,
-  Crown, Zap, CheckCircle2, Bell, Star, Trash2, Clock, Camera, Loader2, Infinity
+  Crown, Zap, CheckCircle2, Bell, Star, Trash2, Clock, Camera, Loader2, Infinity,
+  Smartphone, Download
 } from 'lucide-react';
 import { trackPlanSelected } from '@/lib/analytics';
 import QRPaymentModal from './QRPaymentModal';
@@ -138,7 +139,59 @@ export default function SettingsSidebar({
   const [savingCity, setSavingCity] = useState(false);
   const [citySaved, setCitySaved] = useState(false);
 
+  // ---- PWA Install state ----
+  const [canInstallPWA, setCanInstallPWA] = useState(false);
+  const [pwaInstalling, setPwaInstalling] = useState(false);
+  const deferredPromptRef = useRef<any>(null);
+
   const isEjecutivo = userPlanType === 'ejecutivo';
+
+  // ---- Listen for PWA install prompt ----
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    // Don't show install button if already installed as PWA
+    if (localStorage.getItem('atlas_pwa_installed') === 'true') return;
+    if (window.matchMedia('(display-mode: standalone)').matches) return;
+
+    const handler = (e: Event) => {
+      e.preventDefault();
+      deferredPromptRef.current = e;
+      setCanInstallPWA(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+
+    const handleInstalled = () => {
+      setCanInstallPWA(false);
+      localStorage.setItem('atlas_pwa_installed', 'true');
+      deferredPromptRef.current = null;
+    };
+    window.addEventListener('appinstalled', handleInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
+  }, []);
+
+  const handleInstallPWA = useCallback(async () => {
+    const prompt = deferredPromptRef.current;
+    if (!prompt) {
+      // Fallback: show the install prompt component via parent
+      window.dispatchEvent(new CustomEvent('atlas:install-pwa'));
+      return;
+    }
+    setPwaInstalling(true);
+    try {
+      await prompt.prompt();
+      const { outcome } = await prompt.userChoice;
+      if (outcome === 'accepted') {
+        localStorage.setItem('atlas_pwa_installed', 'true');
+        setCanInstallPWA(false);
+      }
+      deferredPromptRef.current = null;
+    } catch {}
+    setPwaInstalling(false);
+  }, []);
 
   // ---- QR Payment Modal state ----
   const [paymentModal, setPaymentModal] = useState<{
@@ -530,6 +583,35 @@ export default function SettingsSidebar({
                 <p className="text-[10px] text-gray-600 mt-1.5">
                   Para consultas de clima y contexto local
                 </p>
+              </section>
+
+              {/* ===== INSTALL APP MOBILE (PWA) ===== */}
+              <section aria-label="Instalar App">
+                <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3 mt-5">
+                  App Movil
+                </h3>
+                <button
+                  onClick={handleInstallPWA}
+                  disabled={pwaInstalling}
+                  className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/15 transition-all active:scale-[0.98] group/pwa"
+                >
+                  <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0 group-hover/pwa:bg-emerald-500/30 transition-colors">
+                    {pwaInstalling ? (
+                      <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+                    ) : (
+                      <Download className="w-5 h-5 text-emerald-400" />
+                    )}
+                  </div>
+                  <div className="text-left flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white">
+                      {pwaInstalling ? 'Instalando...' : 'Instalar App Atlas'}
+                    </p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      {canInstallPWA ? 'Toca para instalar en tu dispositivo' : 'Acceso rapido desde tu pantalla de inicio'}
+                    </p>
+                  </div>
+                  <Smartphone className="w-4 h-4 text-gray-600 group-hover/pwa:text-emerald-400 transition-colors shrink-0" />
+                </button>
               </section>
 
               <div className="border-t border-gray-800/40 my-5" />

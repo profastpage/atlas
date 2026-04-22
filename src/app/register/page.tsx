@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, Mail, Lock, User, Loader2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
+import { auth, googleProvider } from '@/lib/firebase';
+import { signInWithPopup } from 'firebase/auth';
 
 // ========================================
 // REGISTER PAGE — /register
@@ -65,33 +66,47 @@ export default function RegisterPage() {
   };
 
   const handleGoogleAuth = async () => {
-    if (!supabase) {
-      setError('OAuth no disponible. Intenta con email/contrasena.');
-      return;
-    }
     setGoogleLoading(true);
     setError('');
     try {
-      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/`,
-        },
-      });
+      // Firebase Google Sign-In (popup - no redirect needed)
+      const result = await signInWithPopup(auth, googleProvider);
+      const idToken = await result.user.getIdToken();
 
-      if (oauthError) {
-        setError(oauthError.message || 'Error al conectar con Google');
-        console.error('[GOOGLE_AUTH]', oauthError);
+      if (!idToken) {
+        setError('No se obtuvo el token de Firebase. Intenta de nuevo.');
         return;
       }
 
-      if (data?.url) {
-        window.location.href = data.url;
-      } else {
-        setError('No se genero el enlace de Google. Intenta de nuevo.');
+      // Exchange Firebase token for Turso auth token
+      const res = await fetch('/api/auth/firebase-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || 'Error al autenticar con Google');
+        console.error('[GOOGLE_AUTH]', data);
+        return;
       }
-    } catch (err) {
+
+      // Save session and redirect to chat
+      localStorage.setItem('atlas_token', data.token);
+      localStorage.setItem('atlas_tenant_id', data.tenantId);
+      localStorage.setItem('atlas_user', JSON.stringify(data.user));
+
+      window.location.href = '/';
+    } catch (err: any) {
       console.error('[GOOGLE_AUTH]', err);
+      if (err?.code === 'auth/popup-closed-by-user') {
+        return;
+      }
+      if (err?.code === 'auth/cancelled-popup-request') {
+        return;
+      }
       setError('Error de conexion con Google. Intenta de nuevo.');
     } finally {
       setGoogleLoading(false);
