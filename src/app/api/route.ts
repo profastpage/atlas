@@ -3,6 +3,7 @@ export const runtime = 'edge';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/sql';
 import { getSupabaseServer } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 // Server-side Supabase client — reads env vars at runtime, not build time
 const supabase = getSupabaseServer();
@@ -626,8 +627,9 @@ export async function POST(request: NextRequest) {
 // GRANT TRIAL — Admin gives premium trial
 // ========================================
 async function handleGrantTrial(request: NextRequest) {
-  if (!supabase) {
-    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: 'Supabase admin no configurado. Set SUPABASE_SERVICE_ROLE_KEY.' }, { status: 503 });
   }
 
   const body = await request.json();
@@ -650,7 +652,7 @@ async function handleGrantTrial(request: NextRequest) {
 
   const trialEndsAt = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('profiles')
     .upsert({
       id: tenantId,
@@ -675,8 +677,9 @@ async function handleGrantTrial(request: NextRequest) {
 // CHANGE PLAN — Force change user's plan
 // ========================================
 async function handleChangePlan(request: NextRequest) {
-  if (!supabase) {
-    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: 'Supabase admin no configurado. Set SUPABASE_SERVICE_ROLE_KEY.' }, { status: 503 });
   }
 
   try {
@@ -699,7 +702,7 @@ async function handleChangePlan(request: NextRequest) {
     }
 
     // Try to fetch existing profile
-    const { data: existing, error: fetchError } = await supabase
+    const { data: existing, error: fetchError } = await supabaseAdmin
       .from('profiles')
       .select('trial_plan, trial_ends_at, is_admin')
       .eq('id', tenantId)
@@ -723,7 +726,7 @@ async function handleChangePlan(request: NextRequest) {
       }
     }
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('profiles')
       .upsert(upsertData, { onConflict: 'id' });
 
@@ -749,8 +752,9 @@ async function handleChangePlan(request: NextRequest) {
 // SUSPEND USER
 // ========================================
 async function handleSuspendUser(request: NextRequest) {
-  if (!supabase) {
-    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: 'Supabase admin no configurado. Set SUPABASE_SERVICE_ROLE_KEY.' }, { status: 503 });
   }
 
   const body = await request.json();
@@ -764,7 +768,7 @@ async function handleSuspendUser(request: NextRequest) {
   }
 
   // Fetch existing profile to preserve other values
-  const { data: existing } = await supabase
+  const { data: existing } = await supabaseAdmin
     .from('profiles')
     .select('trial_plan, trial_ends_at, is_admin')
     .eq('id', tenantId)
@@ -784,7 +788,7 @@ async function handleSuspendUser(request: NextRequest) {
     }
   }
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('profiles')
     .upsert(upsertData, { onConflict: 'id' });
 
@@ -800,8 +804,9 @@ async function handleSuspendUser(request: NextRequest) {
 // TOGGLE FEATURE — Enable/disable a feature for a plan
 // ========================================
 async function handleToggleFeature(request: NextRequest) {
-  if (!supabase) {
-    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: 'Supabase admin no configurado. Set SUPABASE_SERVICE_ROLE_KEY.' }, { status: 503 });
   }
 
   const body = await request.json();
@@ -814,7 +819,7 @@ async function handleToggleFeature(request: NextRequest) {
     );
   }
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('plan_features')
     .upsert({
       plan_id: planId,
@@ -834,8 +839,9 @@ async function handleToggleFeature(request: NextRequest) {
 // SAVE SETTINGS — Upsert system settings
 // ========================================
 async function handleSaveSettings(request: NextRequest) {
-  if (!supabase) {
-    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: 'Supabase admin no configurado. Set SUPABASE_SERVICE_ROLE_KEY.' }, { status: 503 });
   }
 
   const body = await request.json();
@@ -860,7 +866,7 @@ async function handleSaveSettings(request: NextRequest) {
     value: typeof value === 'string' ? value : JSON.stringify(value),
   }));
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('settings')
     .upsert(rows, { onConflict: 'key' });
 
@@ -876,8 +882,9 @@ async function handleSaveSettings(request: NextRequest) {
 // SAVE ALARM — Executive users schedule reminders
 // ========================================
 async function handleSaveAlarm(request: NextRequest) {
-  if (!supabase) {
-    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: 'Supabase admin no configurado. Set SUPABASE_SERVICE_ROLE_KEY.' }, { status: 503 });
   }
 
   const body = await request.json();
@@ -890,7 +897,7 @@ async function handleSaveAlarm(request: NextRequest) {
     );
   }
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('tasks_alarms')
     .insert({
       tenant_id: tenantId,
@@ -948,8 +955,9 @@ async function handleListAlarms(request: NextRequest) {
 // CANCEL ALARM — Mark alarm as cancelled
 // ========================================
 async function handleCancelAlarm(request: NextRequest) {
-  if (!supabase) {
-    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: 'Supabase admin no configurado. Set SUPABASE_SERVICE_ROLE_KEY.' }, { status: 503 });
   }
 
   const body = await request.json();
@@ -962,7 +970,7 @@ async function handleCancelAlarm(request: NextRequest) {
     );
   }
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('tasks_alarms')
     .update({ status: 'cancelled' })
     .eq('id', alarmId)
@@ -996,13 +1004,14 @@ async function handleGetCity(request: NextRequest) {
 }
 
 async function handleSaveCity(request: NextRequest) {
-  if (!supabase) return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
   const { searchParams } = new URL(request.url);
   const tenantId = searchParams.get('tenantId');
   const city = searchParams.get('city') || '';
   if (!tenantId) return NextResponse.json({ error: 'tenantId requerido' }, { status: 400 });
 
-  await supabase
+  await supabaseAdmin
     .from('profiles')
     .update({ city })
     .eq('id', tenantId);
@@ -1014,11 +1023,12 @@ async function handleSaveCity(request: NextRequest) {
 // PENDING IMAGE PAYMENTS (GET)
 // ========================================
 async function handlePendingImagePayments() {
-  if (!supabase) {
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
     return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('profiles')
     .select('id, plan_type, images_generated_month, extra_images_purchased, image_payment_amount, pending_image_payment, created_at')
     .eq('pending_image_payment', true);
@@ -1035,8 +1045,9 @@ async function handlePendingImagePayments() {
 // APPROVE IMAGE PAYMENT (POST)
 // ========================================
 async function handleApproveImagePayment(request: NextRequest) {
-  if (!supabase) {
-    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: 'Supabase admin no configurado. Set SUPABASE_SERVICE_ROLE_KEY.' }, { status: 503 });
   }
 
   const body = await request.json();
@@ -1050,7 +1061,7 @@ async function handleApproveImagePayment(request: NextRequest) {
   }
 
   // Get current profile to add images
-  const { data: existing } = await supabase
+  const { data: existing } = await supabaseAdmin
     .from('profiles')
     .select('extra_images_purchased')
     .eq('id', tenantId)
@@ -1058,7 +1069,7 @@ async function handleApproveImagePayment(request: NextRequest) {
 
   const currentExtra = existing?.extra_images_purchased || 0;
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('profiles')
     .update({
       pending_image_payment: false,
@@ -1081,8 +1092,9 @@ async function handleApproveImagePayment(request: NextRequest) {
 // REJECT IMAGE PAYMENT (POST)
 // ========================================
 async function handleRejectImagePayment(request: NextRequest) {
-  if (!supabase) {
-    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: 'Supabase admin no configurado. Set SUPABASE_SERVICE_ROLE_KEY.' }, { status: 503 });
   }
 
   const body = await request.json();
@@ -1095,7 +1107,7 @@ async function handleRejectImagePayment(request: NextRequest) {
     );
   }
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('profiles')
     .update({
       pending_image_payment: false,
@@ -1167,7 +1179,9 @@ async function handleSaveProfile(request: NextRequest) {
 
       if (supabase) {
         try {
-          await supabase
+          const supabaseAdmin = getSupabaseAdmin();
+          const sb = supabaseAdmin || supabase;
+          await sb
             .from('profiles')
             .update({ avatar_url: avatarUrl })
             .eq('id', tenantId);

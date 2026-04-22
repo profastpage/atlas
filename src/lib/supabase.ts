@@ -56,3 +56,30 @@ export function getSupabaseServer(): SupabaseClient | null {
   _serverClient = createClient(url, key);
   return _serverClient;
 }
+
+// ========================================
+// ADMIN CLIENT — Uses service_role key to BYPASS RLS
+// Required for admin operations that modify other users' profiles
+// Env var: SUPABASE_SERVICE_ROLE_KEY (set in Cloudflare Pages dashboard)
+// ========================================
+let _adminClient: SupabaseClient | null = null;
+
+export function getSupabaseAdmin(): SupabaseClient | null {
+  if (_adminClient) return _adminClient;
+
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url) {
+    console.warn('[SUPABASE ADMIN] SUPABASE_URL no configurada.');
+    return null;
+  }
+
+  if (!serviceKey) {
+    console.warn('[SUPABASE ADMIN] SUPABASE_SERVICE_ROLE_KEY no configurada. Las operaciones de admin fallaran con RLS.');
+    return null;
+  }
+
+  _adminClient = createClient(url, serviceKey);
+  return _adminClient;
+}
