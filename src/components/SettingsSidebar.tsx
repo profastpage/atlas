@@ -7,6 +7,7 @@ import {
   Crown, Zap, CheckCircle2, Bell, Star, Trash2, Clock
 } from 'lucide-react';
 import { trackPlanSelected } from '@/lib/analytics';
+import QRPaymentModal from './QRPaymentModal';
 
 // ========================================
 // SETTINGS SIDEBAR — Premium Brand, Dynamic Plans
@@ -134,6 +135,24 @@ export default function SettingsSidebar({
   const [citySaved, setCitySaved] = useState(false);
 
   const isEjecutivo = userPlanType === 'ejecutivo';
+
+  // ---- QR Payment Modal state ----
+  const [paymentModal, setPaymentModal] = useState<{
+    isOpen: boolean;
+    planName: string;
+    planPrice: number;
+    planFeatures: string[];
+  }>({ isOpen: false, planName: '', planPrice: 0, planFeatures: [] });
+
+  const openPayment = (planId: string, planName: string, planPrice: number, planFeatures: string[]) => {
+    trackPlanSelected({
+      planId,
+      planName,
+      price: planPrice,
+      source: forcePaywall ? 'paywall' : 'settings',
+    });
+    setPaymentModal({ isOpen: true, planName, planPrice, planFeatures });
+  };
 
   // ---- Fetch user city on open ----
   useEffect(() => {
@@ -505,15 +524,7 @@ export default function SettingsSidebar({
 
                             {/* CTA Button */}
                             <button
-                              onClick={() => {
-                                trackPlanSelected({
-                                  planId: plan.id,
-                                  planName: plan.name,
-                                  price: plan.price,
-                                  source: forcePaywall ? 'paywall' : 'settings',
-                                });
-                                console.log(`Plan seleccionado: ${plan.id}`);
-                              }}
+                              onClick={() => openPayment(plan.id, plan.name, plan.price, plan.features)}
                               className={`w-full py-2 rounded-lg text-[11px] font-semibold transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 ${
                                 plan.id === 'ejecutivo'
                                   ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/20'
@@ -642,6 +653,15 @@ export default function SettingsSidebar({
               <div className="h-[env(safe-area-inset-bottom,0px)]" />
             </div>
           </motion.aside>
+
+          {/* QR Payment Modal */}
+          <QRPaymentModal
+            isOpen={paymentModal.isOpen}
+            onClose={() => setPaymentModal({ isOpen: false, planName: '', planPrice: 0, planFeatures: [] })}
+            planName={paymentModal.planName}
+            planPrice={paymentModal.planPrice}
+            planFeatures={paymentModal.planFeatures}
+          />
         </>
       )}
     </AnimatePresence>

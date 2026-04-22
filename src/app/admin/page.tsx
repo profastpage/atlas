@@ -234,6 +234,11 @@ export default function AdminPage() {
         setLoginError('Acceso denegado. No eres administrador.');
         return;
       }
+      // ONLY profastpage@gmail.com can access Super Admin
+      if (data.user?.email !== 'profastpage@gmail.com') {
+        setLoginError('Acceso denegado. Solo el Super Admin puede acceder.');
+        return;
+      }
       setToken(data.token);
       setIsAuthenticated(true);
       localStorage.setItem('atlas_admin_token', data.token);
