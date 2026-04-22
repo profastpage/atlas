@@ -89,22 +89,50 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Atlas" />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
-        {/* Service Worker Registration + one-time reload on update */}
+        {/* Self-healing: detect stale SW errors + force SW registration */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
-                if (!('serviceWorker' in navigator)) return;
-                var reloaded = sessionStorage.getItem('sw-reloaded');
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js').catch(function() {});
-                });
-                navigator.serviceWorker.addEventListener('message', function(event) {
-                  if (event.data && event.data.type === 'SW_UPDATED' && !reloaded) {
-                    sessionStorage.setItem('sw-reloaded', '1');
-                    window.location.reload();
+                // 1. If JS crashes with "Cannot access" / "is not defined" etc,
+                //    the old SW probably served stale HTML. Unregister SW and reload.
+                var healingKey = 'atlas-sw-healed-' + (document.documentElement.getAttribute('data-build') || '0');
+                var healed = sessionStorage.getItem(healingKey);
+                window.addEventListener('error', function(e) {
+                  if (healed) return;
+                  var msg = (e.message || '').toLowerCase();
+                  if (msg.indexOf('cannot access') !== -1 ||
+                      msg.indexOf('is not defined') !== -1 ||
+                      msg.indexOf('is not a function') !== -1) {
+                    healed = true;
+                    sessionStorage.setItem(healingKey, '1');
+                    if ('serviceWorker' in navigator) {
+                      navigator.serviceWorker.getRegistrations().then(function(regs) {
+                        return Promise.all(regs.map(function(r) { return r.unregister(); }));
+                      }).then(function() {
+                        window.location.reload();
+                      });
+                    } else {
+                      window.location.reload();
+                    }
                   }
                 });
+                // 2. Register SW
+                if ('serviceWorker' in navigator) {
+                  var swKey = 'sw-reloaded';
+                  window.addEventListener('load', function() {
+                    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(function() {});
+                  });
+                  navigator.serviceWorker.addEventListener('message', function(event) {
+                    if (event.data && event.data.type === 'SW_UPDATED') {
+                      var v = sessionStorage.getItem(swKey);
+                      if (v !== event.data.version) {
+                        sessionStorage.setItem(swKey, event.data.version);
+                        window.location.reload();
+                      }
+                    }
+                  });
+                }
               })();
             `,
           }}
