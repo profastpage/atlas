@@ -180,6 +180,7 @@ export default function AtlasApp() {
   const [isSwipeCanceling, setIsSwipeCanceling] = useState(false);
   const micCancelRef = useRef(false); // Prevents auto-send when swipe-down cancels
   const isTouchingRef = useRef(false); // Prevent double fire (touch + pointer)
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Voice restart timer — accessible outside useEffect
   const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null); // Latest sendMessage — no stale closure
   const inputValueRef = useRef(inputValue);
   inputValueRef.current = inputValue;
@@ -574,6 +575,8 @@ export default function AtlasApp() {
       if (event.error === 'not-allowed') {
         alert('Se requiere permiso de micrófono para usar la función de voz.');
       }
+      // CRITICAL: Clear any pending restart timer to prevent ghost sessions
+      if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null; }
       resetVoiceAccumulation();
       setIsListening(false);
       setIsLocked(false);
@@ -581,16 +584,15 @@ export default function AtlasApp() {
       shouldAutoSendRef.current = false;
     };
 
-    let restartTimer: ReturnType<typeof setTimeout> | null = null;
-
     recognition.onend = () => {
       // If locked mode: debounced auto-restart to avoid race with
       // the browser's own continuous-mode auto-restart (which causes duplicates)
       if (isLockedRef.current) {
-        if (restartTimer) clearTimeout(restartTimer);
-        restartTimer = setTimeout(() => {
+        if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = setTimeout(() => {
+          restartTimerRef.current = null;
           try { recognition.start(); } catch {}
-        }, 300);
+        }, 500);
         return;
       }
       // If we need to auto-send (quick press release)
@@ -599,14 +601,10 @@ export default function AtlasApp() {
         setIsListening(false);
         setIsLocked(false);
         // Use voiceTranscriptRef (sync) — NOT inputValueRef (async React state)
-        // recognition.stop() triggers a final onresult that updates voiceTranscriptRef
-        // synchronously, but setInputValue is async and may not have committed yet.
-        // inputValueRef would be stale here.
         const text = voiceTranscriptRef.current.trim();
         resetVoiceAccumulation();
         if (text) {
           setInputValue('');
-          // Use ref — never stale closure, always latest sendMessage
           sendMessageRef.current?.(text);
         }
         return;
@@ -618,7 +616,7 @@ export default function AtlasApp() {
     recognitionRef.current = recognition;
 
     return () => {
-      if (restartTimer) clearTimeout(restartTimer);
+      if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null; }
       try { recognition.abort(); } catch {}
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -752,16 +750,28 @@ export default function AtlasApp() {
   }, [isListening, isLocked, resetVoiceAccumulation]);
 
   const handleLockedSend = useCallback(() => {
+    // CRITICAL: Clear any pending restart timer to prevent ghost recognition sessions
+    if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null; }
     shouldAutoSendRef.current = true;
     isLockedRef.current = false;
     setIsLocked(false);
     setIsSwipeCanceling(false);
     try { recognitionRef.current?.stop(); } catch {}
+    // Safety net: if onend never fires, force reset after 2s
+    setTimeout(() => {
+      if (shouldAutoSendRef.current) {
+        shouldAutoSendRef.current = false;
+        setIsListening(false);
+        resetVoiceAccumulation();
+      }
+    }, 2000);
     // Actual send happens in onend handler
   }, []);
 
   // Cancel voice recording from locked state (swipe down or X)
   const handleLockedCancel = useCallback(() => {
+    // CRITICAL: Clear any pending restart timer to prevent ghost recognition sessions
+    if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null; }
     shouldAutoSendRef.current = false;
     isLockedRef.current = false;
     setIsLocked(false);
