@@ -175,6 +175,9 @@ export default function AtlasApp() {
   const shouldAutoSendRef = useRef(false);
   const isLockedRef = useRef(false);
   const voiceTranscriptRef = useRef(''); // Accumulates final voice text across recognition restarts (locked mode)
+  const lockedStartYRef = useRef(0);
+  const [isSwipeCanceling, setIsSwipeCanceling] = useState(false);
+  const micCancelRef = useRef(false); // Prevents auto-send when swipe-down cancels
   const isTouchingRef = useRef(false); // Prevent double fire (touch + pointer)
   const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null); // Latest sendMessage — no stale closure
   const inputValueRef = useRef(inputValue);
@@ -414,6 +417,11 @@ export default function AtlasApp() {
   };
 
   // ========================================
+  // Helper: reset accumulated voice text (defined outside useEffect for reuse)
+  const resetVoiceAccumulation = useCallback(() => {
+    voiceTranscriptRef.current = '';
+  }, []);
+
   // WEB SPEECH API — Browser-native voice input
   // ========================================
 
@@ -491,11 +499,6 @@ export default function AtlasApp() {
           if (el) el.scrollTop = el.scrollHeight;
         });
       }
-    };
-
-    // Helper: reset accumulated voice text
-    const resetVoiceAccumulation = () => {
-      voiceTranscriptRef.current = '';
     };
 
     recognition.onerror = (event: any) => {
@@ -588,6 +591,15 @@ export default function AtlasApp() {
     e.preventDefault();
     const touch = e.touches[0];
     const diff = startYRef.current - touch.clientY;
+    // Swipe DOWN to cancel
+    if (diff < -40) {
+      micCancelRef.current = true;
+      setIsSwipeCanceling(true);
+      return;
+    }
+    micCancelRef.current = false;
+    setIsSwipeCanceling(false);
+    // Swipe UP to lock
     if (diff > 60 && !isLockedRef.current) {
       setIsLocked(true);
       isLockedRef.current = true;
@@ -600,11 +612,21 @@ export default function AtlasApp() {
     e.preventDefault();
     isTouchingRef.current = false;
     if (!isListening) return;
+    if (micCancelRef.current) {
+      // Swipe-down cancel: discard without sending
+      micCancelRef.current = false;
+      setIsSwipeCanceling(false);
+      resetVoiceAccumulation();
+      shouldAutoSendRef.current = false;
+      try { recognitionRef.current?.stop(); } catch {}
+      setIsListening(false);
+      return;
+    }
     if (!isLockedRef.current) {
       shouldAutoSendRef.current = true;
       try { recognitionRef.current?.stop(); } catch {}
     }
-  }, [isListening, isLocked]);
+  }, [isListening, isLocked, resetVoiceAccumulation]);
 
   // ---- POINTER EVENTS (Desktop fallback — skipped on touch devices) ----
   const handleMicPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
@@ -624,6 +646,15 @@ export default function AtlasApp() {
     if (isTouchingRef.current) return;
     if (!isListening || isLockedRef.current) return;
     const diff = startYRef.current - e.clientY;
+    // Swipe DOWN to cancel
+    if (diff < -40) {
+      micCancelRef.current = true;
+      setIsSwipeCanceling(true);
+      return;
+    }
+    micCancelRef.current = false;
+    setIsSwipeCanceling(false);
+    // Swipe UP to lock
     if (diff > 60 && !isLockedRef.current) {
       setIsLocked(true);
       isLockedRef.current = true;
@@ -636,19 +667,94 @@ export default function AtlasApp() {
     if (isTouchingRef.current) return;
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     if (!isListening) return;
+    if (micCancelRef.current) {
+      // Swipe-down cancel: discard without sending
+      micCancelRef.current = false;
+      setIsSwipeCanceling(false);
+      resetVoiceAccumulation();
+      shouldAutoSendRef.current = false;
+      try { recognitionRef.current?.stop(); } catch {}
+      setIsListening(false);
+      return;
+    }
     if (!isLockedRef.current) {
       shouldAutoSendRef.current = true;
       try { recognitionRef.current?.stop(); } catch {}
     }
-  }, [isListening, isLocked]);
+  }, [isListening, isLocked, resetVoiceAccumulation]);
 
   const handleLockedSend = useCallback(() => {
     shouldAutoSendRef.current = true;
     isLockedRef.current = false;
     setIsLocked(false);
+    setIsSwipeCanceling(false);
     try { recognitionRef.current?.stop(); } catch {}
     // Actual send happens in onend handler
   }, []);
+
+  // Cancel voice recording from locked state (swipe down or X)
+  const handleLockedCancel = useCallback(() => {
+    shouldAutoSendRef.current = false;
+    isLockedRef.current = false;
+    setIsLocked(false);
+    setIsSwipeCanceling(false);
+    resetVoiceAccumulation();
+    try { recognitionRef.current?.stop(); } catch {}
+    setIsListening(false);
+  }, [resetVoiceAccumulation]);
+
+  // ---- LOCKED BUTTON: Touch events for swipe-down to cancel ----
+  const handleLockedTouchStart = useCallback((e: React.TouchEvent<HTMLButtonElement>) => {
+    const touch = e.touches[0];
+    lockedStartYRef.current = touch.clientY;
+    setIsSwipeCanceling(false);
+  }, []);
+
+  const handleLockedTouchMove = useCallback((e: React.TouchEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const diff = touch.clientY - lockedStartYRef.current;
+    if (diff > 40) {
+      setIsSwipeCanceling(true);
+    } else {
+      setIsSwipeCanceling(false);
+    }
+  }, []);
+
+  const handleLockedTouchEnd = useCallback((e: React.TouchEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    if (isSwipeCanceling) {
+      handleLockedCancel();
+    }
+    setIsSwipeCanceling(false);
+  }, [isSwipeCanceling, handleLockedCancel]);
+
+  // ---- LOCKED BUTTON: Pointer events (desktop) for swipe-down to cancel ----
+  const handleLockedPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (isTouchingRef.current) return;
+    lockedStartYRef.current = e.clientY;
+    setIsSwipeCanceling(false);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
+
+  const handleLockedPointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (isTouchingRef.current) return;
+    const diff = e.clientY - lockedStartYRef.current;
+    if (diff > 40) {
+      setIsSwipeCanceling(true);
+    } else {
+      setIsSwipeCanceling(false);
+    }
+  }, []);
+
+  const handleLockedPointerUp = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (isTouchingRef.current) return;
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    if (isSwipeCanceling) {
+      handleLockedCancel();
+    }
+    setIsSwipeCanceling(false);
+  }, [isSwipeCanceling, handleLockedCancel]);
 
   // ========================================
   // PLAN GATE — Post-login subscription check
@@ -2403,19 +2509,35 @@ export default function AtlasApp() {
           {/* Microphone — Slide-to-Lock + Auto-Send */}
           {speechSupported && (
             isLocked ? (
-              /* LOCKED STATE — Send button */
+              /* LOCKED STATE — Send button (swipe down to cancel) */
               <motion.button
                 key="mic-locked"
                 type="button"
                 onClick={handleLockedSend}
+                onTouchStart={handleLockedTouchStart}
+                onTouchMove={handleLockedTouchMove}
+                onTouchEnd={handleLockedTouchEnd}
+                onTouchCancel={handleLockedTouchEnd}
+                onPointerDown={handleLockedPointerDown}
+                onPointerMove={handleLockedPointerMove}
+                onPointerUp={handleLockedPointerUp}
+                onPointerCancel={handleLockedPointerUp}
                 initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
+                animate={{ scale: isSwipeCanceling ? 1.1 : 1, opacity: 1, backgroundColor: isSwipeCanceling ? '#ef4444' : '#059669' }}
                 transition={{ type: 'spring', damping: 15, stiffness: 300 }}
                 disabled={isLoading || isStreaming}
-                className="w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full bg-emerald-600 hover:bg-emerald-500 shadow-xl shadow-emerald-500/40 flex items-center justify-center transition-all active:scale-90 shrink-0 select-none touch-none"
+                className={`w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full shadow-xl flex items-center justify-center transition-all active:scale-90 shrink-0 select-none touch-none ${
+                  isSwipeCanceling
+                    ? 'bg-red-500 shadow-red-500/40'
+                    : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/40'
+                }`}
                 aria-label="Enviar mensaje de voz"
               >
-                <Send className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
+                {isSwipeCanceling ? (
+                  <X className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
+                ) : (
+                  <Send className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
+                )}
               </motion.button>
             ) : (
               /* NORMAL STATE — Mic button (press & hold, slide up to lock) */
@@ -2515,9 +2637,11 @@ export default function AtlasApp() {
               className="mt-2 mx-auto max-w-xs px-4 py-2.5 rounded-xl bg-emerald-600/20 border border-emerald-500/30 backdrop-blur-sm"
             >
               <div className="flex items-center justify-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[12px] sm:text-[13px] font-semibold text-emerald-300">
-                  Modo de voz bloqueado. Toca el boton verde para enviar.
+                <span className={`w-2.5 h-2.5 rounded-full animate-pulse ${isSwipeCanceling ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                <span className={`text-[12px] sm:text-[13px] font-semibold transition-colors ${isSwipeCanceling ? 'text-red-300' : 'text-emerald-300'}`}>
+                  {isSwipeCanceling
+                    ? 'Suelta para cancelar grabacion'
+                    : 'Toca para enviar. Desliza hacia abajo para cancelar.'}
                 </span>
               </div>
             </motion.div>
@@ -2531,10 +2655,17 @@ export default function AtlasApp() {
               exit={{ opacity: 0, y: -4 }}
               className="flex items-center justify-center gap-2 mt-2"
             >
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-[11px] font-medium text-red-400">
-                Escuchando... desliza arriba para bloquear, suelta para enviar
+              <span className={`w-2 h-2 rounded-full animate-pulse ${isSwipeCanceling ? 'bg-red-400' : 'bg-red-500'}`} />
+              <span className={`text-[11px] font-medium transition-colors ${isSwipeCanceling ? 'text-orange-400' : 'text-red-400'}`}>
+                {isSwipeCanceling
+                  ? 'Suelta para cancelar'
+                  : 'Desliza arriba para bloquear, suelta para enviar'}
               </span>
+              {!isSwipeCanceling && (
+                <span className="text-[9px] text-red-400/50">
+                  &nbsp;| Desliza hacia abajo para dejar de grabar
+                </span>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
