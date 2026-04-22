@@ -87,10 +87,10 @@ const TRIAL_BOT_KEY = 'atlas_trial_bot_count';
 const REG_MSGS_KEY_PREFIX = 'atlas_reg_msgs_'; // atlas_reg_msgs_YYYY-MM
 
 const IMAGE_LIMITS: Record<string, number> = {
-  pro: 20,
-  executive: 50,
+  basico: 20,
+  pro: 50,
+  executive: 100,
   free: 0,
-  basico: 0,
 };
 
 // ========================================
@@ -1294,11 +1294,27 @@ export default function AtlasApp() {
           }),
         });
 
-        const contentType = res.headers.get('content-type') || '';
+        // ---- CHECK FOR HTTP ERRORS FIRST ----
+        if (!res.ok) {
+          let errorMsg = 'Error de comunicacion. Intenta de nuevo.';
+          try {
+            const errData = await res.json();
+            errorMsg = errData.detail || errData.error || errorMsg;
+          } catch {}
+          console.error('[CEREBRO] Backend error:', res.status, errorMsg);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `error-${Date.now()}`,
+              role: 'assistant',
+              content: errorMsg,
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+          return; // Don't continue to streaming/non-streaming
+        }
 
-        // ---- PLAN GATE: Backend no longer sends 403 PLAN_REQUIRED ----
-        // Paywall is purely frontend-driven via trialBotResponses counter.
-        // First 5 messages always work. After 5, input is blocked + modal shown.
+        const contentType = res.headers.get('content-type') || '';
 
         if (contentType.includes('text/event-stream')) {
           // ====== STREAMING MODE — Real-time tokens ======
@@ -1394,16 +1410,17 @@ export default function AtlasApp() {
         } else {
           // ====== NON-STREAMING MODE (fallback) ======
           const data = await res.json();
+          const responseContent = data.response || data.error || '';
           const assistantMsg: Message = {
             id: `assistant-${Date.now()}`,
             role: 'assistant',
-            content: data.response || 'Error de comunicacion.',
+            content: responseContent || 'Sin respuesta. Intenta de nuevo.',
             timestamp: new Date().toISOString(),
           };
           setMessages((prev) => [...prev, assistantMsg]);
 
           // ---- PASO 4: INCREMENT COUNTER ONLY ON SUCCESSFUL ASSISTANT RESPONSE ----
-          if (assistantMsg.content && assistantMsg.content !== 'Sin respuesta.' && assistantMsg.content !== 'Error de comunicacion.') {
+          if (assistantMsg.content && assistantMsg.content !== 'Sin respuesta.' && assistantMsg.content !== 'Error de comunicacion.' && !data.error) {
             if (isAuthenticated) {
               setRegisteredMsgCount((prev) => {
                 const next = prev + 1;
@@ -3027,7 +3044,7 @@ export default function AtlasApp() {
           </button>
 
           {/* Image Generation — Pro/Executive only */}
-          {(userPlanType === 'pro' || userPlanType === 'executive' || userPlanType?.startsWith('trial_pro') || userPlanType?.startsWith('trial_executive') || hasPaidExtraImages) && (
+          {(IMAGE_LIMITS[userPlanType?.toLowerCase()] > 0 || userPlanType?.startsWith('trial_') || hasPaidExtraImages) && (
             <button
               type="button"
               onClick={handleGenerateImage}

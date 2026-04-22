@@ -8,10 +8,10 @@ const supabase = getSupabaseServer();
 
 // Image limits per plan
 const IMAGE_LIMITS: Record<string, number> = {
-  pro: 20,
-  executive: 50,
+  basico: 20,
+  pro: 50,
+  executive: 100,
   free: 0,
-  basico: 0,
   suspended: 0,
 };
 

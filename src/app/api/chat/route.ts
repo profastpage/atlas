@@ -241,28 +241,43 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
       }
     }
 
-    // ---- PASO 4: CEREBRO — TRY STREAMING FIRST ----
-    const qwenStream = await streamChatCompletion({
-      messages: llmMessages,
-      temperature: 0.7,
-      max_tokens: 300,
-    });
+    // ---- PASO 4: CEREBRO — TRY STREAMING FIRST, FALLBACK TO NON-STREAMING ----
+    let qwenStream: ReadableStream<Uint8Array> | null = null;
+    try {
+      qwenStream = await streamChatCompletion({
+        messages: llmMessages,
+        temperature: 0.7,
+        max_tokens: 300,
+      });
+    } catch (streamErr) {
+      console.error('[CEREBRO] Streaming failed, trying non-streaming:', streamErr);
+    }
 
     if (qwenStream) {
       return createSSEStream(qwenStream, sessionId, tenantId, message, userName, contextSummary);
     }
 
-    // ---- FALLBACK: NON-STREAMING (Qwen only, no GLM) ----
-    const completion = await createChatCompletion({
-      messages: llmMessages,
-      temperature: 0.7,
-      max_tokens: 300,
-    });
-    const responseText = completion.choices?.[0]?.message?.content?.trim() || '';
+    // ---- FALLBACK: NON-STREAMING (Qwen only) ----
+    console.log('[CEREBRO] Falling back to non-streaming');
+    try {
+      const completion = await createChatCompletion({
+        messages: llmMessages,
+        temperature: 0.7,
+        max_tokens: 300,
+      });
+      const responseText = completion.choices?.[0]?.message?.content?.trim() || '';
 
-    await saveAssistantAndMemory(sessionId, tenantId, message, responseText, userName, contextSummary);
+      await saveAssistantAndMemory(sessionId, tenantId, message, responseText, userName, contextSummary);
 
-    return NextResponse.json({ response: responseText });
+      return NextResponse.json({ response: responseText });
+    } catch (fallbackErr) {
+      console.error('[CEREBRO] Non-streaming also failed:', fallbackErr);
+      const msg = fallbackErr instanceof Error ? fallbackErr.message : 'Error desconocido';
+      return NextResponse.json(
+        { error: 'Error interno del servidor', detail: msg },
+        { status: 500 }
+      );
+    }
   } catch (error) {
     console.error('[CEREBRO] Error:', error);
     const msg = error instanceof Error ? error.message : 'Error desconocido';
