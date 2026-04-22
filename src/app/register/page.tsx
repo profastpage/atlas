@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, Mail, Lock, User, Loader2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
 
 // ========================================
 // REGISTER PAGE — /register
@@ -64,19 +65,31 @@ export default function RegisterPage() {
   };
 
   const handleGoogleAuth = async () => {
+    if (!supabase) {
+      setError('OAuth no disponible. Intenta con email/contrasena.');
+      return;
+    }
     setGoogleLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/google');
-      const data = await res.json();
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/`,
+        },
+      });
 
-      if (!res.ok || !data.url) {
-        setError(data.error || 'Error al conectar con Google');
-        console.error('[GOOGLE_AUTH]', data);
+      if (oauthError) {
+        setError(oauthError.message || 'Error al conectar con Google');
+        console.error('[GOOGLE_AUTH]', oauthError);
         return;
       }
 
-      window.location.href = data.url;
+      if (data?.url) {
+        window.location.href = data.url;
+      } else {
+        setError('No se genero el enlace de Google. Intenta de nuevo.');
+      }
     } catch (err) {
       console.error('[GOOGLE_AUTH]', err);
       setError('Error de conexion con Google. Intenta de nuevo.');

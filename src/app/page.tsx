@@ -10,6 +10,7 @@ import {
   Copy, Share2, Bell, Star, Hash, PencilLine,
   Sparkles, RotateCcw, ChevronRight, Wand2, RefreshCw
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import {
   trackMessageSent,
   trackPaywallShown,
@@ -345,23 +346,60 @@ export default function AtlasApp() {
           });
       }
     } else {
-      // No token — Guest mode: restore guest session or start fresh
-      const guestTenantId = localStorage.getItem(GUEST_TENANT_KEY);
-      const savedBotCount = parseInt(localStorage.getItem(TRIAL_BOT_KEY) || '0', 10);
-      setTrialBotResponses(savedBotCount);
-      // Load registered monthly counter
-      const monthKey = REG_MSGS_KEY_PREFIX + new Date().toISOString().slice(0, 7);
-      const savedRegCount = parseInt(localStorage.getItem(monthKey) || '0', 10);
-      setRegisteredMsgCount(savedRegCount);
-
-      if (guestTenantId) {
-        setTenantId(guestTenantId);
+      // No token — check if Supabase session exists (from client-side OAuth)
+      // This handles the flow: Google auth → Supabase callback → redirect to / → sync
+      if (supabase) {
+        (async () => {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.access_token) {
+              // Exchange Supabase session for Turso token
+              const res = await fetch('/api/auth/supabase-sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ accessToken: session.access_token }),
+              });
+              if (res.ok) {
+                const authData = await res.json();
+                if (authData.token && authData.tenantId) {
+                  localStorage.setItem('atlas_token', authData.token);
+                  localStorage.setItem('atlas_tenant_id', authData.tenantId);
+                  localStorage.setItem('atlas_user', JSON.stringify(authData.user));
+                  // Reload to apply auth state
+                  window.location.reload();
+                  return;
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('[SUPABASE_SYNC] No session found or sync failed:', e);
+          }
+          // No Supabase session — Guest mode
+          startGuestMode();
+        })();
+        return;
       }
-
-      // Auto-init session for guest
-      initGuestSession(guestTenantId);
+      // Guest mode (fallback if no supabase client)
+      startGuestMode();
     }
   }, []);
+
+  const startGuestMode = () => {
+    const guestTenantId = localStorage.getItem(GUEST_TENANT_KEY);
+    const savedBotCount = parseInt(localStorage.getItem(TRIAL_BOT_KEY) || '0', 10);
+    setTrialBotResponses(savedBotCount);
+    // Load registered monthly counter
+    const monthKey = REG_MSGS_KEY_PREFIX + new Date().toISOString().slice(0, 7);
+    const savedRegCount = parseInt(localStorage.getItem(monthKey) || '0', 10);
+    setRegisteredMsgCount(savedRegCount);
+
+    if (guestTenantId) {
+      setTenantId(guestTenantId);
+    }
+
+    // Auto-init session for guest
+    initGuestSession(guestTenantId);
+  };
 
   const initGuestSession = async (existingTenantId?: string | null) => {
     try {

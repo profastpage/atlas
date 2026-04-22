@@ -4,11 +4,12 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Eye, EyeOff, Mail, Lock, Loader2, ArrowRight, X, CheckCircle2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
 
 // ========================================
 // LOGIN PAGE — /login
 // Mobile First, Dark Theme, Emerald Accent
-// Google OAuth + Forgot Password
+// Google OAuth (client-side Supabase) + Email/Password + Forgot Password
 // ========================================
 
 export default function LoginPage() {
@@ -59,20 +60,33 @@ export default function LoginPage() {
   };
 
   const handleGoogleAuth = async () => {
+    if (!supabase) {
+      setError('OAuth no disponible. Intenta con email/contrasena.');
+      return;
+    }
     setGoogleLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/google');
-      const data = await res.json();
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/`,
+        },
+      });
 
-      if (!res.ok || !data.url) {
-        setError(data.error || 'Error al conectar con Google');
-        console.error('[GOOGLE_AUTH]', data);
+      if (oauthError) {
+        setError(oauthError.message || 'Error al conectar con Google');
+        console.error('[GOOGLE_AUTH]', oauthError);
         return;
       }
 
-      // Redirect to Google OAuth consent screen
-      window.location.href = data.url;
+      if (data?.url) {
+        // Redirect to Google OAuth consent screen
+        // After auth, Google → Supabase → our site (Supabase handles the callback)
+        window.location.href = data.url;
+      } else {
+        setError('No se genero el enlace de Google. Intenta de nuevo.');
+      }
     } catch (err) {
       console.error('[GOOGLE_AUTH]', err);
       setError('Error de conexion con Google. Intenta de nuevo.');
