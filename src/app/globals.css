@@ -96,10 +96,7 @@
     color: var(--foreground);
     overflow: hidden;
     overscroll-behavior: none;
-    position: fixed;
     width: 100%;
-    /* Prevent iOS rubber-band scrolling on body */
-    -webkit-overflow-scrolling: touch;
   }
 
   /* Custom scrollbar */

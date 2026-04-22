@@ -89,14 +89,21 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Atlas" />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
-        {/* Service Worker Registration */}
+        {/* Service Worker Registration + one-time reload on update */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
                 if (!('serviceWorker' in navigator)) return;
+                var reloaded = sessionStorage.getItem('sw-reloaded');
                 window.addEventListener('load', function() {
                   navigator.serviceWorker.register('/sw.js').catch(function() {});
+                });
+                navigator.serviceWorker.addEventListener('message', function(event) {
+                  if (event.data && event.data.type === 'SW_UPDATED' && !reloaded) {
+                    sessionStorage.setItem('sw-reloaded', '1');
+                    window.location.reload();
+                  }
                 });
               })();
             `,

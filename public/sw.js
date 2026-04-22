@@ -1,15 +1,15 @@
 // ========================================
-// ATLAS SERVICE WORKER — PWA Engine v3
+// ATLAS SERVICE WORKER — PWA Engine v4
 // Cloudflare Pages compatible (static file)
 // Pure vanilla JS — NO TypeScript syntax
 //
 // STRATEGY:
 // - HTML + _next/* use NetworkFirst (always try fresh first)
-// - No forced reloads, no polling, no version checks
-// - Users get new assets naturally on next page load after deploy
+// - On SW update: clear ALL old caches + one-time client reload
+// - No polling, no version.json checks
 // ========================================
 
-var CACHE_VERSION = 'atlas-v3';
+var CACHE_VERSION = 'atlas-v4';
 var OFFLINE_URL = '/offline.html';
 
 // ========================================
@@ -39,11 +39,17 @@ self.addEventListener('install', function(event) {
 self.addEventListener('activate', function(event) {
   event.waitUntil(
     caches.keys().then(function(names) {
-      return Promise.all(
-        names.filter(function(n) { return n !== CACHE_VERSION; }).map(function(n) { return caches.delete(n); })
-      );
+      // Delete ALL caches (not just different versions) to prevent stale HTML
+      return Promise.all(names.map(function(n) { return caches.delete(n); }));
     }).then(function() {
       return self.clients.claim();
+    }).then(function() {
+      // One-time reload: tell all open tabs to refresh so they get fresh assets
+      return self.clients.matchAll({ type: 'window' }).then(function(clients) {
+        clients.forEach(function(client) {
+          client.postMessage({ type: 'SW_UPDATED', version: CACHE_VERSION });
+        });
+      });
     })
   );
 });
