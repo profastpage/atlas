@@ -192,7 +192,7 @@ export default function SettingsSidebar({
   const handleInstallPWA = useCallback(async () => {
     const prompt = deferredPromptRef.current;
     if (prompt) {
-      // Native install prompt available (Android/Chrome)
+      // Native install prompt available (Android/Chrome) — trigger directly
       setPwaInstalling(true);
       try {
         await prompt.prompt();
@@ -205,7 +205,8 @@ export default function SettingsSidebar({
       deferredPromptRef.current = null;
       setPwaInstalling(false);
     } else if (onRequestInstall) {
-      // No native prompt — trigger InstallPrompt bottom sheet from parent
+      // No native prompt — request parent to re-show InstallPrompt bottom sheet
+      // This handles the case where beforeinstallprompt hasn't fired yet or was consumed
       onRequestInstall();
     }
   }, [onRequestInstall]);

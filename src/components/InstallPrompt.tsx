@@ -276,25 +276,17 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
                   </div>
                 </div>
 
-                {/* Benefits Grid */}
-                <div className="px-6 pb-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {BENEFITS.map((b, i) => (
-                      <motion.div
+                {/* Benefits — compact (2 items only) */}
+                <div className="px-6 pb-4">
+                  <div className="grid grid-cols-1 gap-2">
+                    {BENEFITS.slice(0, 2).map((b, i) => (
+                      <div
                         key={i}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 + i * 0.08 }}
-                        className={`flex items-start gap-3 p-3 rounded-xl ${b.bg} border ${b.border}`}
+                        className={`flex items-start gap-2.5 p-2.5 rounded-xl ${b.bg} border ${b.border}`}
                       >
-                        <div className={`shrink-0 mt-0.5`}>
-                          <b.icon className={`w-4.5 h-4.5 ${b.color}`} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[12px] font-semibold text-white">{b.title}</p>
-                          <p className="text-[10.5px] text-gray-400 mt-0.5 leading-relaxed">{b.desc}</p>
-                        </div>
-                      </motion.div>
+                        <b.icon className={`w-4 h-4 ${b.color} shrink-0 mt-0.5`} />
+                        <p className="text-[11px] text-gray-400 leading-relaxed">{b.desc}</p>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -387,9 +379,9 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
                         <>
                           <Download className="w-5 h-5" />
                           {isAndroid
-                            ? 'Instalar App Gratis'
+                            ? 'Instalar App'
                             : isIOS
-                              ? 'Ver Instrucciones de Instalación'
+                              ? 'Ver Instrucciones para iPhone'
                               : 'Instalar App'
                           }
                         </>

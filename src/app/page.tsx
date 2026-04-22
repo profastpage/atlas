@@ -1256,7 +1256,10 @@ export default function AtlasApp() {
         }
       }
 
-      if ((!text.trim() && !imageBase64 && !documentText) || isLoading || isStreaming) return;
+      if ((!text.trim() && !imageBase64 && !documentText) || isLoading || isStreaming) {
+        console.log('[SEND] Bloqueado - isLoading:', isLoading, 'isStreaming:', isStreaming);
+        return;
+      }
 
       // ---- CHECK PLAN FOR DOCUMENT UPLOADS ----
       if (documentText && isAuthenticated) {
@@ -1661,6 +1664,7 @@ export default function AtlasApp() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      if (isLoading || isStreaming) return;
       sendMessage(inputValue);
     }
   };
@@ -3227,7 +3231,7 @@ export default function AtlasApp() {
                     initial={{ opacity: 0, x: 20, scale: 0.95 }}
                     animate={{ opacity: 1, x: 0, scale: 1 }}
                     transition={{ delay: i * 0.06, type: 'spring', damping: 25, stiffness: 300 }}
-                    onClick={() => { setShowSuggestions(false); setSuggestions([]); sendMessage(sug); }}
+                    onClick={() => { if (isLoading || isStreaming) return; setShowSuggestions(false); setSuggestions([]); sendMessage(sug); }}
                     className="shrink-0 text-left px-3 py-1.5 rounded-full bg-gray-800/60 border border-gray-700/25 text-[12px] text-gray-300 hover:text-emerald-400 hover:border-emerald-500/40 hover:bg-emerald-500/10 transition-all active:scale-95 whitespace-nowrap cursor-pointer max-w-[200px] truncate"
                   >
                     {sug}

@@ -131,9 +131,9 @@ export async function fetchWikipedia(topic: string): Promise<string | null> {
     const extract = data.extract;
     if (!extract || extract.length < 40) return null;
 
-    // Truncate to ~500 chars to avoid bloating the prompt
-    const truncated = extract.length > 500
-      ? extract.slice(0, 497) + '...'
+    // Truncate to ~800 chars to capture more biographical/sports data
+    const truncated = extract.length > 800
+      ? extract.slice(0, 797) + '...'
       : extract;
 
     return truncated;
@@ -166,10 +166,13 @@ const EXCHANGE_KEYWORDS = [
   'cotizacion', 'divisa', 'dinero',
 ];
 
-// Wikipedia triggers: questions about concepts, definitions, people, history
+// Wikipedia triggers: questions about concepts, definitions, people, history, sports
 const WIKI_TRIGGER_PATTERNS = [
   /^(que es|quien (?:es|fue)|que (?:significa|quiere decir)|que (?:fue|son)|explica(?:r)?me?|cuentame sobre|que sabes de|hablemos de|dime sobre|que (?:es|son) (?:el|la|los|las|un|una))/i,
   /^(como funciona|como fue|donde esta|cual es (?:el|la) (?:origen|historia|significado))/i,
+  /(?:quien (?:es|fue|dirigio|entreno|jugo)|que equipo|donde nacio|cuando nacio|en que ano|que goles|cuantos titulo|que posicion|que seleccion|que nacionalidad)/i,
+  /(?:datos de|biografia de|historia de|estadisticas de|trayectoria de|palmares de)/i,
+  /(?:fecha de|donde jugo|cuando jugo|que edad tiene|que edad tiene|murio en)/i,
 ];
 
 function containsKeyword(text: string, keywords: string[]): boolean {
@@ -195,12 +198,12 @@ function extractWikipediaTopic(text: string): string | null {
 
   // Extract the topic — remove question words and take the subject
   let topic = text.trim()
-    .replace(/^(que es|quien (?:es|fue)|que (?:significa|quiere decir)|que (?:fue|son)|explica(?:r)?me?|cuentame sobre|que sabes de|hablemos de|dime sobre|como funciona|como fue|donde esta|cual es (?:el|la) (?:origen|historia|significado))\s*/i, '')
+    .replace(/^(que es|quien (?:es|fue|dirigio|entreno|jugo)|que (?:significa|quiere decir|fue|son|equipo|goles|titulo|posicion|seleccion|nacionalidad)|explica(?:r)?me?|cuentame sobre|que sabes de|hablemos de|dime sobre|como funciona|como fue|donde esta|cual es (?:el|la) (?:origen|historia|significado)|datos de|biografia de|historia de|estadisticas de|trayectoria de|palmares de|fecha de|donde jugo|cuando jugo|que edad tiene|murio en)\s*/i, '')
     .replace(/[?!.]+$/, '')
     .trim();
 
   // Remove articles and prepositions at start
-  topic = topic.replace(/^(el |la |los |las |un |una |de |del |en )+/i, '').trim();
+  topic = topic.replace(/^(el |la |los |las |un |una |de |del |en |el entrenador |la entrenadora |el dt |el director tecnico |el jugador |la jugadora |el seleccionador )+/i, '').trim();
 
   // Must be at least 3 chars to be useful
   if (topic.length < 3) return null;
@@ -275,7 +278,7 @@ export function buildContextInjection(context: ContextResult): string {
 
   if (context.wikiContext) {
     parts.push(
-      `[CONTEXTO ENCICLOPEDICO]\n${context.wikiContext}\nUsa esta informacion como base factual para tu respuesta. No menciones Wikipedia, simplemente incorpora el conocimiento naturalmente. Complementa con tu propia analisis si es necesario.`
+      `[DATOS FACTUALES VERIFICADOS — USA ESTO COMO FUENTE UNICA]\n${context.wikiContext}\nREGLA: Usa ESTA información como base para tu respuesta. NO inventes datos que no aparezcan aquí. NO mezcles datos de otras personas. Si el usuario pregunta algo que no está cubierto en estos datos, aclara que no tienes esa información exacta. No menciones Wikipedia.`
     );
   }
 
