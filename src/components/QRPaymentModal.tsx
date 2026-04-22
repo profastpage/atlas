@@ -80,7 +80,7 @@ export default function QRPaymentModal({
     },
     {
       title: 'O sube la imagen del QR',
-      desc: 'Descarga el QR con el boton "Descargar QR", luego ve a Yape > Pagos > "Subir imagen con QR" y selecciona la foto descargada.',
+      desc: 'Descarga el QR con el boton "Descargar QR", luego ve a Yape > Escanear QR > "Subir imagen con QR" y selecciona la foto descargada.',
       icon: '📥',
     },
     {
