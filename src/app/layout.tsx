@@ -89,64 +89,14 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Atlas" />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
-        {/* Service Worker Registration + Auto-Update System */}
+        {/* Service Worker Registration */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
                 if (!('serviceWorker' in navigator)) return;
-
-                var RELOAD_COOLDOWN = 120000; // 2 min cooldown between reloads
-                var lastReload = 0;
-
-                // Listen for SW update messages
-                navigator.serviceWorker.addEventListener('message', function(event) {
-                  var data = event.data;
-                  if (!data) return;
-
-                  // SW was installed/updated — reload if enough time passed
-                  if (data.type === 'SW_UPDATED' || data.type === 'CONTENT_UPDATED') {
-                    var now = Date.now();
-                    if (now - lastReload > RELOAD_COOLDOWN) {
-                      lastReload = now;
-                      console.log('[PWA] New version detected, reloading...');
-                      // Wait briefly for SW to activate, then reload
-                      setTimeout(function() {
-                        window.location.reload();
-                      }, 500);
-                    }
-                  }
-
-                  // Periodic version check from SW
-                  if (data.type === 'NEW_VERSION_AVAILABLE' && data.reload) {
-                    var now2 = Date.now();
-                    if (now2 - lastReload > RELOAD_COOLDOWN) {
-                      lastReload = now2;
-                      console.log('[PWA] New version available, reloading...');
-                      setTimeout(function() {
-                        window.location.reload();
-                      }, 1000);
-                    }
-                  }
-                });
-
-                // Register SW on page load
                 window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' })
-                    .then(function(reg) {
-                      console.log('[PWA] Service Worker registered:', reg.scope);
-
-                      // Check for SW updates immediately (don't wait for default 24h)
-                      reg.update();
-
-                      // Also check every 2 minutes
-                      setInterval(function() {
-                        reg.update();
-                      }, 2 * 60 * 1000);
-                    })
-                    .catch(function(err) {
-                      console.warn('[PWA] SW registration failed:', err);
-                    });
+                  navigator.serviceWorker.register('/sw.js').catch(function() {});
                 });
               })();
             `,

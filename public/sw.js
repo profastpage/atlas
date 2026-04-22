@@ -3,16 +3,14 @@
 // Cloudflare Pages compatible (static file)
 // Pure vanilla JS — NO TypeScript syntax
 //
-// KEY CHANGE: Auto-update for ALL users (including PWA)
-// - Version is fetched from /version.json (generated at build time)
+// STRATEGY:
 // - HTML + _next/* use NetworkFirst (always try fresh first)
-// - SW auto-reloads all clients when new version detected
-// - No user interaction required to get updates
+// - No forced reloads, no polling, no version checks
+// - Users get new assets naturally on next page load after deploy
 // ========================================
 
 var CACHE_VERSION = 'atlas-v3';
 var OFFLINE_URL = '/offline.html';
-var VERSION_CHECK_INTERVAL = 2 * 60 * 1000; // Check for updates every 2 minutes
 
 // ========================================
 // INSTALL — Precache core assets
@@ -26,8 +24,7 @@ self.addEventListener('install', function(event) {
         '/manifest.json',
         '/icons/icon-192x192.png',
         '/icons/icon-512x512.png',
-        '/offline.html',
-        '/version.json'
+        '/offline.html'
       ]);
     }).then(function() {
       return self.skipWaiting(); // Activate immediately, don't wait
@@ -46,14 +43,7 @@ self.addEventListener('activate', function(event) {
         names.filter(function(n) { return n !== CACHE_VERSION; }).map(function(n) { return caches.delete(n); })
       );
     }).then(function() {
-      return self.clients.claim(); // Take control of all pages immediately
-    }).then(function() {
-      // Notify all open clients to refresh
-      return self.clients.matchAll({ type: 'window' }).then(function(clients) {
-        clients.forEach(function(client) {
-          client.postMessage({ type: 'SW_UPDATED', cacheVersion: CACHE_VERSION });
-        });
-      });
+      return self.clients.claim();
     })
   );
 });
@@ -69,17 +59,7 @@ self.addEventListener('fetch', function(event) {
   // Only intercept GET requests
   if (method !== 'GET') return;
 
-  // ---- version.json: NetworkOnly (always fresh) ----
-  if (url.pathname === '/version.json') {
-    event.respondWith(
-      fetch(event.request).catch(function() {
-        return new Response(JSON.stringify({ version: 'unknown' }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      })
-    );
-    return;
-  }
+
 
   // ---- API routes: NetworkFirst (try online, cached fallback) ----
   if (url.pathname.startsWith('/api/')) {
@@ -177,93 +157,10 @@ function cacheFirst(request) {
 }
 
 function networkFirstWithReload(request) {
-  return caches.open(CACHE_VERSION).then(function(cache) {
-    var fetchPromise = fetch(request).then(function(response) {
-      if (response.ok) {
-        // Check if content changed from cached version
-        return cache.match(request).then(function(cached) {
-          if (cached) {
-            return cached.text().then(function(oldText) {
-              return response.text().then(function(newText) {
-                // If HTML changed, notify clients to reload
-                if (oldText !== newText) {
-                  self.clients.matchAll({ type: 'window' }).then(function(clients) {
-                    clients.forEach(function(client) {
-                      client.postMessage({ type: 'CONTENT_UPDATED' });
-                    });
-                  });
-                }
-                // Always cache the new version
-                cache.put(request, response.clone());
-                return response;
-              });
-            });
-          } else {
-            cache.put(request, response.clone());
-            return response;
-          }
-        });
-      }
-      return response;
-    }).catch(function() {
-      return cache.match(request).then(function(cached) {
-        if (cached) return cached;
-        return caches.match(OFFLINE_URL);
-      });
-    });
-
-    // Return cached immediately for speed, then update in background
-    return cache.match(request).then(function(cached) {
-      if (cached) {
-        // Return cached, but still fetch in background
-        fetchPromise.catch(function() {}); // Prevent unhandled rejection
-        return cached;
-      }
-      return fetchPromise;
-    });
-  });
+  return networkFirst(request, 10);
 }
 
-// ========================================
-// PERIODIC UPDATE CHECK
-// Every 2 minutes, check /version.json for changes
-// If different, force reload all clients
-// ========================================
 
-var currentVersion = null;
-
-self.addEventListener('message', function(event) {
-  if (event.data && event.data.type === 'GET_VERSION') {
-    event.source.postMessage({
-      type: 'SW_VERSION',
-      cacheVersion: CACHE_VERSION
-    });
-  }
-});
-
-// Check for updates periodically
-setInterval(function() {
-  fetch('/version.json', { cache: 'no-store' })
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      if (currentVersion && data.version && data.version !== currentVersion) {
-        // New version detected! Notify all clients
-        self.clients.matchAll({ type: 'window' }).then(function(clients) {
-          clients.forEach(function(client) {
-            client.postMessage({
-              type: 'NEW_VERSION_AVAILABLE',
-              version: data.version,
-              reload: true
-            });
-          });
-        });
-      }
-      currentVersion = data.version || currentVersion;
-    })
-    .catch(function() {
-      // Silently fail — offline or version.json missing
-    });
-}, VERSION_CHECK_INTERVAL);
 
 // ========================================
 // PUSH NOTIFICATIONS — Executive Plan
