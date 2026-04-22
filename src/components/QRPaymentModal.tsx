@@ -69,33 +69,33 @@ export default function QRPaymentModal({
 
   const GUIDE_STEPS = [
     {
-      title: 'Abre Yape o Plin',
-      desc: 'Desliza hacia arriba o abre la aplicacion desde tu celular. Asegurate de tener saldo suficiente.',
+      title: 'Abre Yape',
+      desc: 'Desliza hacia arriba o abre la aplicacion Yape desde tu celular. Asegurate de tener saldo suficiente para el pago.',
       icon: '📱',
     },
     {
       title: 'Escanea el codigo QR',
-      desc: 'Toca el icono de escanear en Yape/Plin y apunta la camara al codigo QR que aparece en pantalla.',
+      desc: 'Toca el icono de escanear en Yape y apunta la camara al codigo QR que aparece al inicio del modal de pago.',
       icon: '📷',
     },
     {
-      title: 'O descarga la imagen',
-      desc: 'Si prefieres, toca "Descargar QR", luego ve a Yape > Pagos > Subir imagen y selecciona la foto descargada.',
+      title: 'O sube la imagen del QR',
+      desc: 'Descarga el QR con el boton "Descargar QR", luego ve a Yape > Pagos > "Subir imagen con QR" y selecciona la foto descargada.',
       icon: '📥',
     },
     {
-      title: 'Ingresa el monto exacto',
-      desc: `Escribe el monto: S/ ${planPrice}. Verifica que el destinatario sea correcto antes de confirmar.`,
-      icon: '✏️',
-    },
-    {
-      title: 'Confirma el pago',
-      desc: 'Revisa los datos y confirma la transferencia. Guarda el comprobante de pago.',
+      title: 'Verifica el destinatario',
+      desc: 'Confirma que el destinatario aparezca como Fabio Herrera antes de continuar con el pago.',
       icon: '✅',
     },
     {
+      title: 'Ingresa el monto exacto',
+      desc: `Escribe el monto: S/ ${planPrice}. Revisa que sea correcto y confirma la transferencia.`,
+      icon: '✏️',
+    },
+    {
       title: 'Envia comprobante por WhatsApp',
-      desc: 'Toca el boton verde de WhatsApp y envia tu comprobante. Activaremos tu plan de inmediato.',
+      desc: 'Toca "Ya realice el pago" y luego envia tu comprobante por WhatsApp. Activaremos tu plan de inmediato.',
       icon: '💬',
     },
   ];
@@ -283,7 +283,7 @@ export default function QRPaymentModal({
                     <span className="font-semibold text-blue-400">Plin</span>
                   </p>
                   <p className="text-[10px] text-gray-600 mt-1">
-                    Destinatario: Fabio Cesar Herrera Bonilla
+                    Destinatario: Fabio Herrera
                   </p>
                 </div>
 
