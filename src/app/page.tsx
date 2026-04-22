@@ -7,7 +7,8 @@ import {
   X, LogOut, LogIn, Settings, Lock, ShieldCheck, XCircle,
   Pencil, Archive, ArchiveRestore, Check, AlertTriangle,
   Paperclip, FileText, XCircle as XCircleIcon, Loader2,
-  Copy, Share2, Bell, Star
+  Copy, Share2, Bell, Star, Heart, Hash, PencilLine,
+  Sparkles, RotateCcw, ChevronRight
 } from 'lucide-react';
 import {
   trackMessageSent,
@@ -54,6 +55,22 @@ interface UserInfo {
   email: string;
   name: string;
   isAdmin?: boolean;
+}
+
+interface Highlight {
+  id: string;
+  messageId: string;
+  sessionId: string;
+  number: number;
+  text: string;
+  createdAt: string;
+}
+
+interface FavoriteSession {
+  sessionId: string;
+  title: string;
+  savedAt: string;
+  messageCount: number;
 }
 
 // ========================================
@@ -167,6 +184,47 @@ export default function AtlasApp() {
   // ---- Settings State ----
   const [token, setToken] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+
+  // ---- Favorites State ----
+  const [showFavoritesModal, setShowFavoritesModal] = useState(false);
+  const [favoriteSessions, setFavoriteSessions] = useState<FavoriteSession[]>([]);
+  const [favoritesTab, setFavoritesTab] = useState<'favorites' | 'numbers'>('favorites');
+
+  // ---- Numbered Highlights State ----
+  const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [showNumberPicker, setShowNumberPicker] = useState<{ messageId: string; msgContent: string; rect: DOMRect } | null>(null);
+  const [selectedText, setSelectedText] = useState('');
+
+  // ---- Edit Response State ----
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [editOriginalContent, setEditOriginalContent] = useState('');
+
+  // ---- Suggestions State ----
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+
+  // ---- Favorites & Highlights: Load from localStorage ----
+  const FAV_KEY = 'atlas_favorites';
+  const HL_KEY = 'atlas_highlights';
+
+  useEffect(() => {
+    try {
+      const savedFavs = localStorage.getItem(FAV_KEY);
+      if (savedFavs) setFavoriteSessions(JSON.parse(savedFavs));
+      const savedHl = localStorage.getItem(HL_KEY);
+      if (savedHl) setHighlights(JSON.parse(savedHl));
+    } catch {}
+  }, []);
+
+  // Persist favorites
+  useEffect(() => {
+    try { localStorage.setItem(FAV_KEY, JSON.stringify(favoriteSessions)); } catch {}
+  }, [favoriteSessions]);
+
+  // Persist highlights
+  useEffect(() => {
+    try { localStorage.setItem(HL_KEY, JSON.stringify(highlights)); } catch {}
+  }, [highlights]);
 
   // ========================================
   // INIT: Determine auth state
@@ -1411,6 +1469,177 @@ export default function AtlasApp() {
   );
 
   // ========================================
+  // FAVORITES — Heart icon, save sessions
+  // ========================================
+
+  const toggleFavoriteSession = useCallback((sId: string, sTitle: string, msgCount: number) => {
+    setFavoriteSessions(prev => {
+      const exists = prev.find(f => f.sessionId === sId);
+      if (exists) {
+        return prev.filter(f => f.sessionId !== sId);
+      }
+      return [...prev, { sessionId: sId, title: sTitle || 'Sin titulo', savedAt: new Date().toISOString(), messageCount: msgCount || 0 }];
+    });
+    trackActionButton({ action: 'favorite' });
+  }, []);
+
+  const isSessionFavorited = useCallback((sId: string) => {
+    return favoriteSessions.some(f => f.sessionId === sId);
+  }, [favoriteSessions]);
+
+  // ========================================
+  // HIGHLIGHTS — Number system (1-99)
+  // ========================================
+
+  const handleTextSelection = useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.toString().trim().length < 5) return;
+
+    // Check if selection is within a message
+    const anchorNode = selection.anchorNode;
+    if (!anchorNode) return;
+
+    const msgEl = (anchorNode as HTMLElement).closest('[data-msg-id]');
+    if (!msgEl) return;
+
+    const msgId = msgEl.getAttribute('data-msg-id');
+    if (!msgId) return;
+
+    // Get the plain text content of the message
+    const textContent = msgEl.textContent || '';
+
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+
+    setSelectedText(selection.toString().trim());
+    setShowNumberPicker({ messageId: msgId, msgContent: textContent, rect });
+  }, []);
+
+  // ---- Text selection listener for highlights ----
+  useEffect(() => {
+    const onMouseUp = () => handleTextSelection();
+    const onTouchEnd = () => setTimeout(handleTextSelection, 300);
+    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('touchend', onTouchEnd);
+    return () => {
+      document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [handleTextSelection]);
+
+  const addHighlight = useCallback((number: number) => {
+    if (!showNumberPicker || !selectedText) return;
+
+    const newHighlight: Highlight = {
+      id: `hl-${Date.now()}`,
+      messageId: showNumberPicker.messageId,
+      sessionId: sessionId,
+      number,
+      text: selectedText,
+      createdAt: new Date().toISOString(),
+    };
+
+    setHighlights(prev => [...prev, newHighlight]);
+    setShowNumberPicker(null);
+    setSelectedText('');
+    window.getSelection()?.removeAllRanges();
+    trackActionButton({ action: `highlight_${number}` });
+  }, [showNumberPicker, selectedText, sessionId]);
+
+  const removeHighlight = useCallback((hlId: string) => {
+    setHighlights(prev => prev.filter(h => h.id !== hlId));
+  }, []);
+
+  // ========================================
+  // EDIT RESPONSE — Edit bot text + regenerate
+  // ========================================
+
+  const startEditResponse = useCallback((msgId: string, content: string) => {
+    setEditingMessageId(msgId);
+    setEditText(toPlainText(content));
+    setEditOriginalContent(content);
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    setEditingMessageId(null);
+    setEditText('');
+    setEditOriginalContent('');
+  }, []);
+
+  const saveEditOnly = useCallback(() => {
+    if (!editingMessageId || !editText.trim()) return;
+    // Just update the message content locally (visual only)
+    const formatted = editText.trim().replace(/\n/g, '<br/>');
+    setMessages(prev => prev.map(m => m.id === editingMessageId ? { ...m, content: formatted } : m));
+    setEditingMessageId(null);
+    setEditText('');
+    setEditOriginalContent('');
+    trackActionButton({ action: 'edit_save' });
+  }, [editingMessageId, editText]);
+
+  const editAndRegenerate = useCallback(async () => {
+    if (!editingMessageId || !editText.trim() || !sessionId || !tenantId) return;
+    if (isLoading || isStreaming) return;
+
+    setEditingMessageId(null);
+
+    // Send the edited text as a new user message asking for revision
+    const revisionPrompt = `[EDICION DE RESPUESTA] El usuario edito tu respuesta anterior. A partir de esta version editada, genera una nueva respuesta mejorada que mantenga la esencia pero incorpore los cambios:\n\n${editText.trim()}`;
+
+    setEditText('');
+    setEditOriginalContent('');
+
+    // Use sendMessage via ref
+    await sendMessageRef.current?.(revisionPrompt);
+    trackActionButton({ action: 'edit_regenerate' });
+  }, [editingMessageId, editText, sessionId, tenantId, isLoading, isStreaming]);
+
+  // ========================================
+  // SUGGESTIONS — Atlas suggests questions
+  // ========================================
+
+  const generateSuggestions = useCallback((lastUserMsg: string, lastBotMsg: string) => {
+    const topic = lastUserMsg.toLowerCase();
+    const suggestionsList: string[] = [];
+
+    // Context-aware suggestions based on keywords
+    if (topic.includes('estrategia') || topic.includes('plan') || topic.includes('negocio')) {
+      suggestionsList.push('Dame un plan de accion paso a paso', 'Que riesgos debo considerar?', 'Como mido el progreso?');
+    } else if (topic.includes('estres') || topic.includes('ansiedad') || topic.includes('miedo')) {
+      suggestionsList.push('Dame una tecnica de respiracion rapida', 'Como manejo esto en el trabajo?', 'Que habito diario me ayudaria?');
+    } else if (topic.includes('estudio') || topic.includes('aprender') || topic.includes('examen')) {
+      suggestionsList.push('Hazme un cronograma de estudio', 'Que tecnica de aprendizaje me recomiendas?', 'Como evito la procrastinacion?');
+    } else if (topic.includes('pareja') || topic.includes('relacion') || topic.includes('amor')) {
+      suggestionsList.push('Como mejoro la comunicacion?', 'Que puedo hacer yo ahora mismo?', 'Como manejo las diferencias?');
+    } else if (topic.includes('dinero') || topic.includes('ahorro') || topic.includes('presupuesto')) {
+      suggestionsList.push('Hazme un presupuesto mensual', 'Como genero ingreso extra?', 'Que debo priorizar pagar primero?');
+    } else if (topic.includes('trabajo') || topic.includes('jefe') || topic.includes('empleo')) {
+      suggestionsList.push('Como negocio un aumento?', 'Que hago si quiero renunciar?', 'Como destaco en mi trabajo?');
+    }
+
+    // Default suggestions
+    if (suggestionsList.length === 0) {
+      suggestionsList.push('Dame un ejemplo practico', 'Que hago si no funciona?', 'Cual es el siguiente paso?');
+    }
+
+    setSuggestions(suggestionsList.slice(0, 3));
+  }, []);
+
+  // Generate suggestions after each response
+  useEffect(() => {
+    if (messages.length < 2 || isStreaming || isLoading) {
+      setSuggestions([]);
+      return;
+    }
+
+    const lastBot = [...messages].reverse().find(m => m.role === 'assistant');
+    const lastUser = [...messages].reverse().find(m => m.role === 'user');
+    if (lastBot && lastUser) {
+      generateSuggestions(lastUser.content, lastBot.content);
+    }
+  }, [messages.length, isStreaming, isLoading, generateSuggestions, messages]);
+
+  // ========================================
   // MAIN CHAT SCREEN (accessible for all)
   // ========================================
 
@@ -1486,6 +1715,20 @@ export default function AtlasApp() {
               </a>
             </>
           )}
+          {/* Favorites Heart */}
+          <button
+            onClick={() => setShowFavoritesModal(true)}
+            className="p-2 rounded-full hover:bg-gray-800/60 transition-colors relative"
+            aria-label="Favoritos"
+            title="Favoritos y destacados"
+          >
+            <Heart className={`w-5 h-5 ${favoriteSessions.length > 0 || highlights.length > 0 ? 'text-red-400 fill-red-400' : 'text-gray-400'}`} />
+            {(favoriteSessions.length > 0 || highlights.length > 0) && (
+              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-red-500 rounded-full text-[8px] text-white flex items-center justify-center font-bold">
+                {favoriteSessions.length + highlights.length}
+              </span>
+            )}
+          </button>
           <button
             onClick={createNewSession}
             className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
@@ -1634,6 +1877,14 @@ export default function AtlasApp() {
                                 >
                                   <Pencil className="w-3 h-3 text-gray-500 hover:text-gray-300" />
                                 </button>
+                                {/* Favorite toggle */}
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleFavoriteSession(session.id, session.title, session._count?.messages || 0); }}
+                                  className="p-1.5 rounded-lg hover:bg-gray-700/40 transition-colors"
+                                  title={isSessionFavorited(session.id) ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+                                >
+                                  <Heart className={`w-3 h-3 ${isSessionFavorited(session.id) ? 'text-red-400 fill-red-400' : 'text-gray-500 hover:text-red-400'}`} />
+                                </button>
                                 {/* Archive / Unarchive */}
                                 <button
                                   onClick={(e) => { e.stopPropagation(); showArchived ? unarchiveSession(session.id) : archiveSession(session.id); }}
@@ -1718,6 +1969,7 @@ export default function AtlasApp() {
               }`}
             >
               <div
+                data-msg-id={msg.id}
                 className={`relative max-w-[85%] sm:max-w-[70%] px-3.5 py-2 sm:py-2.5 shadow-sm ${
                   msg.role === 'user'
                     ? 'bg-[#005c4b] text-white rounded-2xl rounded-br-sm'
@@ -1730,6 +1982,20 @@ export default function AtlasApp() {
                     <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest">
                       Atlas
                     </span>
+                  </div>
+                )}
+                {/* Highlight number badges */}
+                {msg.role === 'assistant' && highlights.filter(h => h.messageId === msg.id).length > 0 && (
+                  <div className="flex items-center gap-1 ml-1.5 mb-1.5">
+                    {highlights.filter(h => h.messageId === msg.id).sort((a, b) => a.number - b.number).map(hl => (
+                      <span
+                        key={hl.id}
+                        className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/40 text-[9px] font-bold text-amber-400"
+                        title={hl.text.substring(0, 50) + (hl.text.length > 50 ? '...' : '')}
+                      >
+                        {hl.number}
+                      </span>
+                    ))}
                   </div>
                 )}
                 <div
@@ -1817,10 +2083,75 @@ export default function AtlasApp() {
                         isExpanding={false}
                       />
                     )}
+
+                    {/* Edit Response */}
+                    {msg.id !== editingMessageId && msg.id !== streamingId && msg.id !== expandingId && (
+                      <button
+                        onClick={() => startEditResponse(msg.id, msg.content)}
+                        className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all active:scale-95 cursor-pointer select-none"
+                        title="Editar respuesta"
+                      >
+                        <PencilLine className="w-3.5 h-3.5" />
+                        <span>Editar</span>
+                      </button>
+                    )}
+
+                    {/* Highlight / Number */}
+                    {msg.id !== streamingId && msg.id !== expandingId && (
+                      <button
+                        onClick={() => {
+                          const plainText = toPlainText(msg.content);
+                          setSelectedText(plainText);
+                          setShowNumberPicker({ messageId: msg.id, msgContent: plainText, rect: { top: 0, left: 0, bottom: 0, right: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => '' } });
+                        }}
+                        className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all active:scale-95 cursor-pointer select-none"
+                        title="Numerar / Destacar"
+                      >
+                        <Hash className="w-3.5 h-3.5" />
+                        <span>Numero</span>
+                      </button>
+                    )}
                   </div>
                 )}
                 {msg.role === 'assistant' && msg.id === expandingId && (
                   <ExpandSpinner />
+                )}
+                {/* Edit Mode */}
+                {msg.role === 'assistant' && editingMessageId === msg.id && (
+                  <div className="mt-2 space-y-2">
+                    <textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      className="w-full bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-2 text-[13px] text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500/40 resize-none min-h-[80px] leading-relaxed"
+                      placeholder="Edita la respuesta..."
+                      rows={4}
+                      autoFocus
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={saveEditOnly}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-semibold transition-all active:scale-95"
+                      >
+                        <Check className="w-3 h-3" />
+                        Guardar
+                      </button>
+                      <button
+                        onClick={editAndRegenerate}
+                        disabled={isLoading || isStreaming}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-all active:scale-95 disabled:opacity-50"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        Nueva respuesta
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-gray-800/60 text-gray-400 text-[11px] font-medium transition-all"
+                      >
+                        <X className="w-3 h-3" />
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             </motion.div>
@@ -1986,6 +2317,36 @@ export default function AtlasApp() {
             )
           )}
         </form>
+
+        {/* Suggestions Chips */}
+        <AnimatePresence>
+          {suggestions.length > 0 && !isLoading && !isStreaming && !isLocked && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              className="flex flex-wrap gap-1.5 mt-2 mx-auto max-w-3xl px-1"
+            >
+              <Sparkles className="w-3 h-3 text-amber-400 mt-1.5 shrink-0" />
+              {suggestions.map((sug, i) => (
+                <button
+                  key={i}
+                  onClick={() => sendMessage(sug)}
+                  className="px-2.5 py-1 rounded-full bg-gray-800/60 border border-gray-700/30 text-[11px] text-gray-400 hover:text-emerald-400 hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all active:scale-95 whitespace-nowrap"
+                >
+                  {sug}
+                </button>
+              ))}
+              <button
+                onClick={() => setSuggestions([])}
+                className="p-1 rounded-full hover:bg-gray-800/60 transition-colors shrink-0"
+                title="Ocultar sugerencias"
+              >
+                <X className="w-3 h-3 text-gray-600" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Listening / Locked / Document analyzing indicator */}
         <AnimatePresence>
@@ -2361,6 +2722,177 @@ export default function AtlasApp() {
                   >
                     Despues
                   </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ===== NUMBER PICKER POPUP ===== */}
+      <AnimatePresence>
+        {showNumberPicker && (
+          <>
+            <div className="fixed inset-0 z-[60]" onClick={() => { setShowNumberPicker(null); setSelectedText(''); window.getSelection()?.removeAllRanges(); }} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="fixed z-[70] bg-gray-900 border border-gray-700/50 rounded-xl p-3 shadow-2xl max-w-[200px]"
+              style={{
+                top: Math.min(showNumberPicker.rect.top - 10, window.innerHeight - 300),
+                left: Math.max(10, Math.min(showNumberPicker.rect.left, window.innerWidth - 210)),
+              }}
+            >
+              <p className="text-[11px] text-gray-400 mb-2 font-medium">Selecciona un numero</p>
+              <div className="grid grid-cols-5 gap-1 max-h-[200px] overflow-y-auto">
+                {Array.from({ length: 20 }, (_, i) => i + 1).map(n => {
+                  const used = highlights.some(h => h.number === n && h.messageId !== showNumberPicker.messageId);
+                  const currentMsgUsed = highlights.some(h => h.number === n && h.messageId === showNumberPicker.messageId);
+                  return (
+                    <button
+                      key={n}
+                      onClick={() => !used && addHighlight(n)}
+                      disabled={used}
+                      className={`w-8 h-8 rounded-lg text-[12px] font-bold transition-all ${
+                        currentMsgUsed
+                          ? 'bg-amber-500/30 border border-amber-500/50 text-amber-400'
+                          : used
+                            ? 'bg-gray-800/30 text-gray-600 cursor-not-allowed'
+                            : 'bg-gray-800/60 text-gray-300 hover:bg-amber-500/20 hover:text-amber-400 hover:border-amber-500/30 border border-transparent'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedText && (
+                <p className="text-[9px] text-gray-600 mt-2 line-clamp-2 italic">
+                  &quot;{selectedText.substring(0, 80)}{selectedText.length > 80 ? '...' : ''}&quot;
+                </p>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ===== FAVORITES MODAL ===== */}
+      <AnimatePresence>
+        {showFavoritesModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50"
+              onClick={() => setShowFavoritesModal(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 40 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="fixed inset-x-4 bottom-4 top-auto z-50 max-w-sm mx-auto max-h-[70vh] flex flex-col"
+            >
+              <div className="bg-gray-900 border border-gray-700/50 rounded-2xl shadow-2xl flex flex-col max-h-[70vh]">
+                {/* Header */}
+                <div className="flex items-center justify-between p-4 border-b border-gray-800/40 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Heart className="w-4 h-4 text-red-400 fill-red-400" />
+                    <h2 className="text-sm font-semibold text-white">Mis Destacados</h2>
+                  </div>
+                  <button
+                    onClick={() => setShowFavoritesModal(false)}
+                    className="p-1.5 rounded-full hover:bg-gray-800 transition-colors"
+                  >
+                    <X className="w-4 h-4 text-gray-400" />
+                  </button>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex border-b border-gray-800/40 shrink-0">
+                  <button
+                    onClick={() => setFavoritesTab('favorites')}
+                    className={`flex-1 py-2.5 text-[12px] font-semibold transition-all ${
+                      favoritesTab === 'favorites'
+                        ? 'text-emerald-400 border-b-2 border-emerald-400'
+                        : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    <Heart className="w-3 h-3 inline mr-1" />
+                    Favoritos ({favoriteSessions.length})
+                  </button>
+                  <button
+                    onClick={() => setFavoritesTab('numbers')}
+                    className={`flex-1 py-2.5 text-[12px] font-semibold transition-all ${
+                      favoritesTab === 'numbers'
+                        ? 'text-amber-400 border-b-2 border-amber-400'
+                        : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    <Hash className="w-3 h-3 inline mr-1" />
+                    Numeros ({highlights.length})
+                  </button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  {favoritesTab === 'favorites' ? (
+                    favoriteSessions.length === 0 ? (
+                      <div className="text-center py-8">
+                        <Heart className="w-8 h-8 text-gray-700 mx-auto mb-2" />
+                        <p className="text-xs text-gray-500">Sin chats favoritos</p>
+                        <p className="text-[10px] text-gray-600 mt-1">Toca el corazon en cualquier conversacion</p>
+                      </div>
+                    ) : (
+                      favoriteSessions.map(fav => (
+                        <div
+                          key={fav.sessionId}
+                          className="flex items-center p-3 rounded-xl bg-gray-800/40 border border-gray-700/30 hover:border-gray-600/40 transition-all cursor-pointer group"
+                          onClick={() => {
+                            loadSession(fav.sessionId);
+                            setShowFavoritesModal(false);
+                          }}
+                        >
+                          <Heart className="w-4 h-4 text-red-400 fill-red-400 shrink-0 mr-2.5" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] text-gray-200 truncate font-medium">{fav.title}</p>
+                            <p className="text-[10px] text-gray-500 mt-0.5">{fav.messageCount} mensajes</p>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors shrink-0" />
+                        </div>
+                      ))
+                    )
+                  ) : (
+                    highlights.length === 0 ? (
+                      <div className="text-center py-8">
+                        <Hash className="w-8 h-8 text-gray-700 mx-auto mb-2" />
+                        <p className="text-xs text-gray-500">Sin textos numerados</p>
+                        <p className="text-[10px] text-gray-600 mt-1">Selecciona texto en una respuesta y ponle un numero</p>
+                      </div>
+                    ) : (
+                      highlights.sort((a, b) => a.number - b.number).map(hl => (
+                        <div
+                          key={hl.id}
+                          className="p-3 rounded-xl bg-gray-800/40 border border-gray-700/30"
+                        >
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/40 text-[9px] font-bold text-amber-400">
+                              {hl.number}
+                            </span>
+                            <button
+                              onClick={() => removeHighlight(hl.id)}
+                              className="p-1 rounded hover:bg-red-500/10 transition-colors"
+                            >
+                              <X className="w-3 h-3 text-gray-600 hover:text-red-400" />
+                            </button>
+                          </div>
+                          <p className="text-[12px] text-gray-300 leading-relaxed line-clamp-3">{hl.text}</p>
+                        </div>
+                      ))
+                    )
+                  )}
                 </div>
               </div>
             </motion.div>

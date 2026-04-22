@@ -17,6 +17,9 @@ const nextConfig: NextConfig = {
     },
   },
 
+  // Silence Turbopack migration error (we use webpack for Cloudflare compat)
+  turbopack: {},
+
   // Replace cross-fetch with native globals for Cloudflare Workers
   // cross-fetch uses XMLHttpRequest which doesn't exist in Edge Workers
   webpack: (config) => {
