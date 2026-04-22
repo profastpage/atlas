@@ -77,7 +77,7 @@ interface FavoriteSession {
 // CONSTANTS
 // ========================================
 
-const FREE_BOT_RESPONSES = 5;
+const FREE_BOT_RESPONSES = 20;
 const GUEST_TENANT_KEY = 'atlas_guest_tenant_id';
 const TRIAL_BOT_KEY = 'atlas_trial_bot_count';
 
@@ -706,7 +706,9 @@ export default function AtlasApp() {
   };
 
   const openPlanGate = () => {
-    setShowPaywallModal(true);
+    // Open settings sidebar directly to plan selection
+    setShowPaywallModal(false);
+    setShowSettings(true);
   };
 
   // ========================================
@@ -886,9 +888,13 @@ export default function AtlasApp() {
   const sendMessage = useCallback(
     async (text: string) => {
       // ---- UNIFIED PAYWALL GATE ----
-      // Block if 5+ responses reached and no confirmed paid plan
+      // Block if 20+ responses reached and no confirmed paid plan
       if (trialBotResponses >= FREE_BOT_RESPONSES && hasActivePlan !== true) {
-        if (isAuthenticated) openPlanGate();
+        if (isAuthenticated) {
+          openPlanGate(); // Opens settings sidebar directly to plans
+        } else {
+          setShowPaywallModal(true); // Shows modal with login CTA for guests
+        }
         return;
       }
 
@@ -1719,13 +1725,11 @@ export default function AtlasApp() {
       <SettingsSidebar
         isOpen={showSettings}
         onClose={() => {
-          // Cannot close sidebar when paywall is active (no plan)
-          if (isAuthenticated && hasActivePlan === false) return;
           setShowSettings(false);
         }}
         user={userInfo ? { ...userInfo, tenantId } : null}
         token={token || ''}
-        forcePaywall={isAuthenticated && hasActivePlan === false}
+        forcePaywall={false}
         userPlanType={userPlanType}
       />
 
@@ -2546,7 +2550,7 @@ export default function AtlasApp() {
                   Selecciona un plan para continuar
                 </h2>
                 <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-                  Has utilizado tus {FREE_BOT_RESPONSES} mensajes de prueba. Activa una suscripcion para seguir usando tu Asesor Estrategico de Elite.
+                  Has utilizado tus 20 mensajes de prueba. Activa una suscripcion para seguir usando tu Asesor Estrategico de Elite.
                 </p>
               </div>
 
