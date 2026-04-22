@@ -424,8 +424,30 @@ export default function AtlasApp() {
         }
       }
       // Accumulate final text across restarts (locked mode)
+      // OVERLAP DEDUP: When the browser re-processes the audio buffer tail
+      // after a recognition restart, the last word/phrase may be delivered again.
+      // Detect overlap between end of accumulated text and start of new text.
       if (finalTranscript) {
-        voiceTranscriptRef.current += finalTranscript;
+        const acc = voiceTranscriptRef.current;
+        const newTxt = finalTranscript.trim();
+        if (acc.length > 0 && newTxt.length > 0) {
+          const accTail = acc.trimEnd();
+          // Find maximum overlap (up to 40 chars) to avoid O(n²)
+          const maxCheck = Math.min(accTail.length, newTxt.length, 40);
+          let overlap = 0;
+          for (let l = maxCheck; l >= 1; l--) {
+            if (accTail.endsWith(newTxt.slice(0, l))) {
+              overlap = l;
+              break;
+            }
+          }
+          const toAppend = newTxt.slice(overlap);
+          if (toAppend) {
+            voiceTranscriptRef.current += toAppend;
+          }
+        } else {
+          voiceTranscriptRef.current += finalTranscript;
+        }
       }
       // Show accumulated final + current interim in real-time
       const displayText = voiceTranscriptRef.current + interimTranscript;
@@ -455,10 +477,16 @@ export default function AtlasApp() {
       shouldAutoSendRef.current = false;
     };
 
+    let restartTimer: ReturnType<typeof setTimeout> | null = null;
+
     recognition.onend = () => {
-      // If locked mode: auto-restart so user can keep talking
+      // If locked mode: debounced auto-restart to avoid race with
+      // the browser's own continuous-mode auto-restart (which causes duplicates)
       if (isLockedRef.current) {
-        try { recognition.start(); } catch {}
+        if (restartTimer) clearTimeout(restartTimer);
+        restartTimer = setTimeout(() => {
+          try { recognition.start(); } catch {}
+        }, 300);
         return;
       }
       // If we need to auto-send (quick press release)
@@ -486,6 +514,7 @@ export default function AtlasApp() {
     recognitionRef.current = recognition;
 
     return () => {
+      if (restartTimer) clearTimeout(restartTimer);
       try { recognition.abort(); } catch {}
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
