@@ -660,7 +660,7 @@ export default function AdminPage() {
   // ========================================
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-gray-950 text-white overflow-hidden">
+    <div className="flex flex-col h-[100dvh] min-h-0 bg-gray-950 text-white overflow-hidden">
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-3 bg-gray-900/90 backdrop-blur-md border-b border-gray-800/40 shrink-0">
         <div className="flex items-center gap-3">
@@ -717,7 +717,7 @@ export default function AdminPage() {
       </AnimatePresence>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto overscroll-contain p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
         {loading && (
           <div className="flex items-center justify-center py-20">
             <RefreshCw className="w-6 h-6 text-amber-400 animate-spin" />

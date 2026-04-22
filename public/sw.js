@@ -61,71 +61,76 @@ self.addEventListener('activate', function(event) {
 // ========================================
 
 self.addEventListener('fetch', function(event) {
-  var url = new URL(event.request.url);
-  var method = event.request.method;
+  try {
+    var url = new URL(event.request.url);
+    var method = event.request.method;
 
-  // Only intercept GET requests
-  if (method !== 'GET') return;
+    // Only intercept GET requests
+    if (method !== 'GET') return;
 
-  // ---- sw.js itself: NetworkOnly (must always get latest) ----
-  if (url.pathname === '/sw.js') {
-    return;
+    // ---- sw.js itself: NetworkOnly (must always get latest) ----
+    if (url.pathname === '/sw.js') {
+      return;
+    }
+
+    // ---- API routes: NetworkOnly (pass through, no caching) ----
+    if (url.pathname.startsWith('/api/')) {
+      return;
+    }
+
+    // ---- _next/static/* (JS bundles, CSS, fonts): CacheFirst ----
+    // These files have content hashes in filenames — safe to cache forever
+    if (url.pathname.startsWith('/_next/static/')) {
+      event.respondWith(cacheFirst(event.request));
+      return;
+    }
+
+    // ---- Build manifest files: CacheFirst ----
+    if (url.pathname === '/_next/static/chunks/webpack.json' ||
+        url.pathname.indexOf('/_buildManifest') !== -1 ||
+        url.pathname.indexOf('/_ssgManifest') !== -1) {
+      event.respondWith(cacheFirst(event.request));
+      return;
+    }
+
+    // ---- Icons/images: CacheFirst with long TTL ----
+    if (
+      url.pathname.startsWith('/icons/') ||
+      url.pathname.endsWith('.png') ||
+      url.pathname.endsWith('.jpg') ||
+      url.pathname.endsWith('.svg') ||
+      url.pathname.endsWith('.ico') ||
+      url.pathname.endsWith('.woff2') ||
+      url.pathname.endsWith('.woff')
+    ) {
+      event.respondWith(cacheFirst(event.request));
+      return;
+    }
+
+    // ---- HTML pages: NETWORK ONLY — never cache ----
+    // This prevents stale HTML referencing deleted JS chunks
+    if (
+      (event.request.headers.get('accept') &&
+       event.request.headers.get('accept').indexOf('text/html') !== -1) ||
+      url.pathname === '/' ||
+      url.pathname === '/login' ||
+      url.pathname === '/register' ||
+      url.pathname === '/update-password' ||
+      url.pathname === '/admin'
+    ) {
+      event.respondWith(
+        fetch(event.request).catch(function() {
+          return new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } });
+        })
+      );
+      return;
+    }
+
+    // ---- Default: let browser handle normally (no SW interception) ----
+  } catch (err) {
+    // Safety: if anything fails in the fetch handler, let the browser handle the request normally
+    console.error('[SW] Fetch handler error:', err);
   }
-
-  // ---- API routes: NetworkOnly (pass through, no caching) ----
-  if (url.pathname.startsWith('/api/')) {
-    return;
-  }
-
-  // ---- _next/static/* (JS bundles, CSS, fonts): CacheFirst ----
-  // These files have content hashes in filenames — safe to cache forever
-  if (url.pathname.startsWith('/_next/static/')) {
-    event.respondWith(cacheFirst(event.request));
-    return;
-  }
-
-  // ---- Build manifest files: CacheFirst ----
-  if (url.pathname === '/_next/static/chunks/webpack.json' ||
-      url.pathname.indexOf('/_buildManifest') !== -1 ||
-      url.pathname.indexOf('/_ssgManifest') !== -1) {
-    event.respondWith(cacheFirst(event.request));
-    return;
-  }
-
-  // ---- Icons/images: CacheFirst with long TTL ----
-  if (
-    url.pathname.startsWith('/icons/') ||
-    url.pathname.endsWith('.png') ||
-    url.pathname.endsWith('.jpg') ||
-    url.pathname.endsWith('.svg') ||
-    url.pathname.endsWith('.ico') ||
-    url.pathname.endsWith('.woff2') ||
-    url.pathname.endsWith('.woff')
-  ) {
-    event.respondWith(cacheFirst(event.request));
-    return;
-  }
-
-  // ---- HTML pages: NETWORK ONLY — never cache ----
-  // This prevents stale HTML referencing deleted JS chunks
-  if (
-    (event.request.headers.get('accept') &&
-     event.request.headers.get('accept').indexOf('text/html') !== -1) ||
-    url.pathname === '/' ||
-    url.pathname === '/login' ||
-    url.pathname === '/register' ||
-    url.pathname === '/update-password' ||
-    url.pathname === '/admin'
-  ) {
-    event.respondWith(
-      fetch(event.request).catch(function() {
-        return new Response('Offline', { status: 503 });
-      })
-    );
-    return;
-  }
-
-  // ---- Default: let browser handle normally (no SW interception) ----
 });
 
 // ========================================

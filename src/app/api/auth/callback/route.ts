@@ -16,6 +16,10 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code');
   const errorParam = searchParams.get('error');
 
+  // Log full URL for debugging OAuth issues
+  console.log('[OAUTH_CALLBACK] Full URL:', request.url);
+  console.log('[OAUTH_CALLBACK] Params:', Object.fromEntries(searchParams.entries()));
+
   // If Supabase itself returned an error in the callback
   if (errorParam) {
     console.error('[OAUTH_CALLBACK] Supabase error param:', errorParam);
@@ -24,6 +28,10 @@ export async function GET(request: NextRequest) {
   }
 
   if (!code) {
+    // Log additional context to help diagnose
+    console.warn('[OAUTH_CALLBACK] No code parameter received. Full searchParams:', request.url);
+    console.warn('[OAUTH_CALLBACK] Possible causes: redirect URL not configured in Supabase, browser blocked cookies, or user directly accessed callback URL.');
+    // Redirect with clear error message
     return NextResponse.redirect(`${APP_URL}/?_auth_error=no_code`);
   }
 

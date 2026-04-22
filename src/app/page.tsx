@@ -259,8 +259,13 @@ export default function AtlasApp() {
     if (authError) {
       window.history.replaceState({}, '', '/');
       console.error('[OAUTH ERROR]', authError);
-      // Show error to user via alert so we can debug
-      alert(`Error de autenticación: ${decodeURIComponent(authError)}. Contacta soporte.`);
+      const decodedError = decodeURIComponent(authError);
+      // Provide actionable error messages
+      if (decodedError === 'no_code') {
+        alert('El inicio de sesion con Google fue interrumpido. Por favor intenta de nuevo.\n\nSi el problema persiste, verifica que tu navegador acepte cookies de terceros.');
+      } else {
+        alert(`Error de autenticación: ${decodedError}.\n\nSi el problema persiste, intenta limpiar cookies o usa otro navegador.`);
+      }
       return;
     }
 
@@ -1938,7 +1943,7 @@ export default function AtlasApp() {
   // ========================================
 
   return (
-    <div className="flex flex-col h-[100dvh] max-h-[100dvh] w-full bg-[#0a0a0a] text-white overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
+    <div className="flex flex-col h-[100dvh] max-h-[100dvh] w-full min-h-0 bg-[#0a0a0a] text-white overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
       {/* ===== SETTINGS SIDEBAR ===== */}
       <SettingsSidebar
         isOpen={showSettings}
@@ -2235,7 +2240,7 @@ export default function AtlasApp() {
       </AnimatePresence>
 
       {/* ===== CHAT AREA ===== */}
-      <div className="flex-1 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3 space-y-2.5" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3 space-y-3" style={{ WebkitOverflowScrolling: 'touch' }}>
         {messages.length === 0 && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 flex items-center justify-center mb-5 border border-emerald-500/10">
@@ -2322,9 +2327,9 @@ export default function AtlasApp() {
                   </p>
                 )}
 
-                {/* Action buttons — icon-only, subtle until hover */}
+                {/* Action buttons — always visible, brighter on hover */}
                 {msg.role === 'assistant' && msg.id !== streamingId && msg.content && !msg.content.startsWith('Error') && (
-                  <div className="flex items-center gap-1 opacity-0 hover:opacity-100 transition-opacity duration-200 mt-1.5 ml-0.5">
+                  <div className="flex items-center gap-1 opacity-40 hover:opacity-100 transition-opacity duration-200 mt-1.5 ml-0.5">
                     {/* Copy */}
                     <button
                       onClick={() => copyMessage(msg.id, msg.content)}
