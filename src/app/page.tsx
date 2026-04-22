@@ -213,6 +213,8 @@ export default function AtlasApp() {
   const [isSwipeCanceling, setIsSwipeCanceling] = useState(false);
   const micCancelRef = useRef(false); // Prevents auto-send when swipe-down cancels
   const isTouchingRef = useRef(false); // Prevent double fire (touch + pointer)
+  const lockSlideProgressRef = useRef(0); // 0 to 1 — how close to lock threshold
+  const [lockSlideProgress, setLockSlideProgress] = useState(0); // for UI rendering
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Voice restart timer — accessible outside useEffect
   const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null); // Latest sendMessage — no stale closure
   const inputValueRef = useRef(inputValue);
@@ -784,15 +786,23 @@ export default function AtlasApp() {
     if (diff < -40) {
       micCancelRef.current = true;
       setIsSwipeCanceling(true);
+      lockSlideProgressRef.current = 0;
+      setLockSlideProgress(0);
       return;
     }
     micCancelRef.current = false;
     setIsSwipeCanceling(false);
+    // Calculate lock slide progress (0 to 1, triggers at diff >= 60)
+    const progress = Math.min(1, Math.max(0, diff / 60));
+    lockSlideProgressRef.current = progress;
+    setLockSlideProgress(progress);
     // Swipe UP to lock
     if (diff > 60 && !isLockedRef.current) {
       setIsLocked(true);
       isLockedRef.current = true;
       shouldAutoSendRef.current = false;
+      lockSlideProgressRef.current = 1;
+      setLockSlideProgress(1);
       trackVoiceLocked();
     }
   }, [isListening, isLocked]);
@@ -801,6 +811,8 @@ export default function AtlasApp() {
     e.preventDefault();
     isTouchingRef.current = false;
     if (!isListening) return;
+    lockSlideProgressRef.current = 0;
+    setLockSlideProgress(0);
     if (micCancelRef.current) {
       // Swipe-down cancel: discard without sending
       micCancelRef.current = false;
@@ -839,15 +851,23 @@ export default function AtlasApp() {
     if (diff < -40) {
       micCancelRef.current = true;
       setIsSwipeCanceling(true);
+      lockSlideProgressRef.current = 0;
+      setLockSlideProgress(0);
       return;
     }
     micCancelRef.current = false;
     setIsSwipeCanceling(false);
+    // Calculate lock slide progress
+    const progress = Math.min(1, Math.max(0, diff / 60));
+    lockSlideProgressRef.current = progress;
+    setLockSlideProgress(progress);
     // Swipe UP to lock
     if (diff > 60 && !isLockedRef.current) {
       setIsLocked(true);
       isLockedRef.current = true;
       shouldAutoSendRef.current = false;
+      lockSlideProgressRef.current = 1;
+      setLockSlideProgress(1);
       trackVoiceLocked();
     }
   }, [isListening, isLocked]);
@@ -856,6 +876,8 @@ export default function AtlasApp() {
     if (isTouchingRef.current) return;
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     if (!isListening) return;
+    lockSlideProgressRef.current = 0;
+    setLockSlideProgress(0);
     if (micCancelRef.current) {
       // Swipe-down cancel: discard without sending
       micCancelRef.current = false;
@@ -2974,7 +2996,7 @@ export default function AtlasApp() {
       </div>
 
       {/* ===== INPUT AREA ===== */}
-      <div className="shrink-0 border-t border-gray-800/20 bg-[#111111] px-2 sm:px-3 py-2 sm:py-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-10">
+      <div className="shrink-0 border-t border-gray-800/20 bg-[#111111] px-2 sm:px-3 py-2 sm:py-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-10 relative">
         {/* Remaining responses bar — guests AND registered free users */}
         {remainingResponses > 0 && hasActivePlan !== true && !checkingPlan && (
           <div className="text-center mb-1.5 sm:mb-2">
@@ -3042,13 +3064,49 @@ export default function AtlasApp() {
               <span className={`text-[11px] font-medium transition-colors ${isSwipeCanceling ? 'text-orange-400' : 'text-red-400'}`}>
                 {isSwipeCanceling
                   ? 'Suelta para cancelar'
-                  : 'Desliza arriba para bloquear, suelta para enviar'}
+                  : lockSlideProgress >= 1
+                    ? 'Bloqueado — suelta para grabar sin mantener'
+                    : 'Mantener pulsado para grabar'}
               </span>
-              {!isSwipeCanceling && (
+              {!isSwipeCanceling && lockSlideProgress < 0.5 && (
                 <span className="text-[9px] text-red-400/50">
                   &nbsp;| Desliza hacia abajo para dejar de grabar
                 </span>
               )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+        {/* Floating Lock Indicator — appears when swiping up while recording */}
+        <AnimatePresence>
+          {(isListening && !isLocked && lockSlideProgress > 0.05 && !isSwipeCanceling) && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.5, y: 10 }}
+              animate={{
+                opacity: lockSlideProgress >= 1 ? 1 : 0.3 + lockSlideProgress * 0.7,
+                scale: 0.7 + lockSlideProgress * 0.35,
+                y: -(5 + lockSlideProgress * 15),
+              }}
+              exit={{ opacity: 0, scale: 0.5, y: 10 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+              className="absolute -top-12 right-0 sm:-top-14 z-30"
+            >
+              <div
+                className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all duration-150 ${
+                  lockSlideProgress >= 1
+                    ? 'bg-emerald-500 shadow-lg shadow-emerald-500/50'
+                    : 'bg-gray-800/90 border-2 border-emerald-500/30 backdrop-blur-sm'
+                }`}
+              >
+                <Lock
+                  className={`w-3.5 h-3.5 sm:w-4.5 sm:h-4.5 transition-all ${
+                    lockSlideProgress >= 1 ? 'text-white' : 'text-emerald-400'
+                  }`}
+                  style={{
+                    transform: lockSlideProgress >= 1 ? 'scale(1.1)' : `scale(${0.7 + lockSlideProgress * 0.3})`,
+                    transition: 'transform 0.15s ease',
+                  }}
+                />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -3083,7 +3141,7 @@ export default function AtlasApp() {
           )}
         </AnimatePresence>
 
-        <form onSubmit={handleSubmit} className="flex items-center gap-2 max-w-3xl mx-auto">
+        <form onSubmit={handleSubmit} className="flex items-center gap-2 max-w-3xl mx-auto relative">
           <textarea
             ref={inputRef}
             id="chat-input"

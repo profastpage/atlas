@@ -201,11 +201,16 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
       setDeferredPrompt(null);
       setInstalling(false);
       setShow(false);
-    } else {
-      // No deferred prompt — show platform-specific guide
+    } else if (isIOS) {
+      // iOS — show Safari Add to Home Screen guide
       setShowIOSGuide(true);
+    } else {
+      // Android/Desktop — no deferred prompt available
+      // Try opening the browser's install menu (Chrome: three-dot menu → Install app)
+      // Show manual guide for Android
+      setShowIOSGuide(true); // reuse the guide view for Android too
     }
-  }, [deferredPrompt]);
+  }, [deferredPrompt, isIOS]);
 
   const handleDismiss = useCallback(() => {
     setShow(false);
@@ -362,6 +367,34 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
                         <p className="text-[12px] text-gray-300">
                           Toca <span className="font-semibold text-emerald-400">&quot;Agregar&quot;</span> y listo
                         </p>
+                      </div>
+                    </div>
+                  ) : isAndroid && showIOSGuide ? (
+                    /* Android — manual install guide when no deferred prompt */
+                    <div className="space-y-3 pb-2">
+                      <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                        <Smartphone className="w-5 h-5 text-emerald-400 shrink-0" />
+                        <p className="text-[12px] text-emerald-200 leading-relaxed">
+                          <span className="font-semibold">Instala Atlas en tu Android:</span> usa el menu del navegador para agregar la app a tu pantalla de inicio.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-800/50 border border-gray-700/30">
+                        <div className="w-8 h-8 rounded-lg bg-gray-700/50 flex items-center justify-center shrink-0">
+                          <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+                        </div>
+                        <p className="text-[12px] text-gray-300">
+                          Toca el <span className="font-semibold text-emerald-400">menu de tres puntos</span> en la esquina superior del navegador
+                        </p>
+                        <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
+                      </div>
+                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-800/50 border border-gray-700/30">
+                        <div className="w-8 h-8 rounded-lg bg-gray-700/50 flex items-center justify-center shrink-0">
+                          <Download className="w-4 h-4 text-emerald-400" />
+                        </div>
+                        <p className="text-[12px] text-gray-300">
+                          Selecciona <span className="font-semibold text-emerald-400">&quot;Instalar app&quot;</span> o &quot;Agregar a pantalla de inicio&quot;
+                        </p>
+                        <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
                       </div>
                     </div>
                   ) : !showIOSGuide ? (

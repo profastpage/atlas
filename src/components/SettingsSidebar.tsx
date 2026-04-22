@@ -145,73 +145,36 @@ export default function SettingsSidebar({
   const [citySaved, setCitySaved] = useState(false);
 
   // ---- PWA Install state ----
-  const [canInstallPWA, setCanInstallPWA] = useState(false);
-  const [pwaInstalling, setPwaInstalling] = useState(false);
-  const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [isSafari, setIsSafari] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
-  const deferredPromptRef = useRef<any>(null);
+  const [pwaInstalled, setPwaInstalled] = useState(false);
 
   const isEjecutivo = userPlanType === 'ejecutivo' || userPlanType === 'executive' || (isDemoUser && trialInfo?.plan === 'executive');
 
-  // ---- Listen for PWA install prompt ----
+  // ---- Detect iOS/Safari and PWA installed status ----
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    // Don't show install button if already installed as PWA
-    if (localStorage.getItem('atlas_pwa_installed') === 'true') return;
-    if (window.matchMedia('(display-mode: standalone)').matches) return;
-
-    // Detect iOS and browser
+    if (localStorage.getItem('atlas_pwa_installed') === 'true' || window.matchMedia('(display-mode: standalone)').matches) {
+      setPwaInstalled(true);
+      return;
+    }
     const ua = navigator.userAgent;
     const ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     setIsIOS(ios);
-    // Safari: has 'Safari' in UA but NOT CriOS/FxiOS/WhatsApp/Facebook/Line
     const safari = /Safari/i.test(ua) && !/CriOS|FxiOS|OPiOS|WhatsApp|FBAN|FB_IAB|Line|Twitter/i.test(ua);
     setIsSafari(safari);
-    // Auto-show install guide for iOS (non-Safari needs the warning)
-    if (ios) setShowInstallGuide(true);
-
-    const handler = (e: Event) => {
-      e.preventDefault();
-      deferredPromptRef.current = e;
-      setCanInstallPWA(true);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
 
     const handleInstalled = () => {
-      setCanInstallPWA(false);
+ setPwaInstalled(true);
       localStorage.setItem('atlas_pwa_installed', 'true');
-      deferredPromptRef.current = null;
     };
     window.addEventListener('appinstalled', handleInstalled);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handler);
-      window.removeEventListener('appinstalled', handleInstalled);
-    };
+    return () => { window.removeEventListener('appinstalled', handleInstalled); };
   }, []);
 
-  const handleInstallPWA = useCallback(async () => {
-    const prompt = deferredPromptRef.current;
-    if (prompt) {
-      // Native install prompt available (Android/Chrome) — trigger directly
-      setPwaInstalling(true);
-      try {
-        await prompt.prompt();
-        const { outcome } = await prompt.userChoice;
-        if (outcome === 'accepted') {
-          localStorage.setItem('atlas_pwa_installed', 'true');
-          setCanInstallPWA(false);
-        }
-      } catch {}
-      deferredPromptRef.current = null;
-      setPwaInstalling(false);
-    } else if (onRequestInstall) {
-      // No native prompt — request parent to re-show InstallPrompt bottom sheet
-      // This handles the case where beforeinstallprompt hasn't fired yet or was consumed
-      onRequestInstall();
-    }
+  const handleInstallPWA = useCallback(() => {
+    // Always delegate to parent's InstallPrompt bottom sheet — it owns the beforeinstallprompt event
+    if (onRequestInstall) onRequestInstall();
   }, [onRequestInstall]);
 
   // ---- QR Payment Modal state ----
@@ -606,54 +569,39 @@ export default function SettingsSidebar({
                 </p>
               </section>
 
-              {/* ===== INSTALL APP MOBILE (PWA) — Direct Button ===== */}
+              {/* ===== INSTALL APP MOBILE (PWA) ===== */}
               <section aria-label="Instalar App">
                 <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3 mt-5">
                   App Movil
                 </h3>
-
-                {isIOS ? (
-                  /* iOS — compact: one button to open install prompt (InstallPrompt bottom sheet) */
+                {pwaInstalled ? (
+                  <div className="flex items-center gap-3 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                    <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0">
+                      <CheckCircle className="w-5 h-5 text-emerald-400" />
+                    </div>
+                    <div className="text-left flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-white">App Instalada</p>
+                      <p className="text-[10px] text-emerald-400/60 mt-0.5">Atlas esta instalada en tu dispositivo</p>
+                    </div>
+                  </div>
+                ) : (
                   <button
-                    onClick={() => {
-                      if (onRequestInstall) onRequestInstall();
-                    }}
-                    className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/15 transition-all active:scale-[0.98] group/pwa"
+                    onClick={handleInstallPWA}
+                    className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/15 transition-all active:scale-[0.98] group/pwa"
                   >
-                    <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0 group-hover/pwa:bg-blue-500/30 transition-colors">
-                      <Download className="w-5 h-5 text-blue-400" />
+                    <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0 group-hover/pwa:bg-emerald-500/30 transition-colors">
+                      <Download className="w-5 h-5 text-emerald-400" />
                     </div>
                     <div className="text-left flex-1 min-w-0">
                       <p className="text-sm font-semibold text-white">Instalar App Atlas</p>
-                      <p className="text-[10px] text-gray-400 mt-0.5">Toca para instalar en tu iPhone</p>
-                    </div>
-                    <Smartphone className="w-4 h-4 text-gray-600 group-hover/pwa:text-blue-400 transition-colors shrink-0" />
-                  </button>
-                ) : (
-                  /* Android / Desktop — one direct install button */
-                  <button
-                    onClick={handleInstallPWA}
-                    disabled={pwaInstalling}
-                    className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/15 transition-all active:scale-[0.98] group/pwa disabled:opacity-50"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0 group-hover/pwa:bg-emerald-500/30 transition-colors">
-                      {pwaInstalling ? (
-                        <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
-                      ) : (
-                        <Download className="w-5 h-5 text-emerald-400" />
-                      )}
-                    </div>
-                    <div className="text-left flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-white">
-                        {pwaInstalling ? 'Instalando...' : 'Instalar App Atlas'}
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {isIOS ? 'Toca para ver instrucciones en iPhone' : 'Toca para instalar en tu dispositivo'}
                       </p>
-                      <p className="text-[10px] text-gray-400 mt-0.5">Toca para instalar en tu dispositivo</p>
                     </div>
                     <Smartphone className="w-4 h-4 text-gray-600 group-hover/pwa:text-emerald-400 transition-colors shrink-0" />
                   </button>
                 )}
-
-                {isIOS && !isSafari && (
+                {isIOS && !isSafari && !pwaInstalled && (
                   <p className="text-[10px] text-amber-400/70 mt-1.5 px-1">
                     Si estas en WhatsApp o Chrome, abre esta pagina en Safari primero
                   </p>
