@@ -342,7 +342,40 @@ export default function AdminPage() {
   const loadPlans = useCallback(async () => {
     try {
       const data = await adminFetch('plan_features');
-      setPlanFeatures(data.features || data);
+      const raw = data.features || data;
+
+      // Backend returns flat rows: { featureKey, plan_id, is_enabled } or { featureKey, basico, pro, executive }
+      // Group by featureKey to deduplicate (one row per feature with all plan booleans)
+      const grouped: Record<string, PlanFeature> = {};
+
+      for (const r of raw) {
+        const key = r.featureKey || r.feature_name || r.plan_id;
+        if (!key) continue;
+
+        if (!grouped[key]) {
+          grouped[key] = {
+            featureKey: key,
+            basico: false,
+            pro: false,
+            executive: false,
+          };
+        }
+
+        // If the row already has plan booleans (from grouped response)
+        if (r.basico !== undefined) grouped[key].basico = Boolean(r.basico);
+        if (r.pro !== undefined) grouped[key].pro = Boolean(r.pro);
+        if (r.executive !== undefined) grouped[key].executive = Boolean(r.executive);
+
+        // If the row is flat: { featureKey, plan_id, is_enabled }
+        if (r.plan_id && r.is_enabled !== undefined) {
+          const planId = r.plan_id;
+          if (planId === 'basico') grouped[key].basico = Boolean(r.is_enabled);
+          else if (planId === 'pro') grouped[key].pro = Boolean(r.is_enabled);
+          else if (planId === 'executive' || planId === 'ejecutivo') grouped[key].executive = Boolean(r.is_enabled);
+        }
+      }
+
+      setPlanFeatures(Object.values(grouped));
     } catch (err) {
       console.error('[ADMIN] Plans error:', err);
     }

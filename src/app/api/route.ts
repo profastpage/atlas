@@ -810,11 +810,15 @@ async function handleToggleFeature(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { planId, featureName, isEnabled } = body;
+
+  // Accept both old format (planId, featureName, isEnabled) and new format (featureKey, plan, value)
+  const planId = body.planId || body.plan;
+  const featureName = body.featureName || body.featureKey;
+  const isEnabled = body.isEnabled !== undefined ? body.isEnabled : body.value;
 
   if (!planId || !featureName || isEnabled === undefined) {
     return NextResponse.json(
-      { error: 'planId, featureName e isEnabled son obligatorios' },
+      { error: 'planId y featureName son obligatorios, junto con isEnabled/value' },
       { status: 400 }
     );
   }
