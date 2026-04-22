@@ -459,6 +459,23 @@ export default function AtlasApp() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const scrollToMessage = (msgId: string) => {
+    setShowFavoritesModal(false);
+    // Wait for DOM update after closing modal
+    setTimeout(() => {
+      const el = document.querySelector(`[data-msg-id="${msgId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Flash highlight effect
+        el.classList.add('ring-2', 'ring-amber-400/50');
+        setTimeout(() => el.classList.remove('ring-2', 'ring-amber-400/50'), 2000);
+      } else {
+        // Message not in current view — might be in a different session
+        scrollToBottom();
+      }
+    }, 100);
+  };
+
   // ========================================
   // AUTH LOGIC
   // ========================================
@@ -3285,18 +3302,40 @@ export default function AtlasApp() {
                                   key={msgId}
                                   className="p-2.5 rounded-xl bg-gray-800/40 border border-gray-700/30 group"
                                 >
-                                  <div className="flex items-start gap-2">
+                                  <div
+                                    className="flex items-start gap-2 cursor-pointer"
+                                    onClick={() => scrollToMessage(msgId)}
+                                  >
                                     <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0 mt-0.5" />
                                     <p className="text-[12px] text-gray-300 leading-relaxed line-clamp-3">{msg.content.substring(0, 150)}{msg.content.length > 150 ? '...' : ''}</p>
                                   </div>
                                   <div className="flex items-center justify-between mt-1.5 ml-5.5">
                                     <span className="text-[9px] text-gray-600">{formatTime(msg.timestamp)}</span>
-                                    <button
-                                      onClick={() => toggleFavoriteMessage(msgId)}
-                                      className="p-0.5 rounded hover:bg-red-500/10 transition-colors"
-                                    >
-                                      <X className="w-2.5 h-2.5 text-gray-600 hover:text-red-400" />
-                                    </button>
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        onClick={() => scrollToMessage(msgId)}
+                                        className="p-1 rounded hover:bg-emerald-500/10 transition-colors"
+                                        title="Ir al chat"
+                                      >
+                                        <Send className="w-2.5 h-2.5 text-gray-500 hover:text-emerald-400" />
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(msg.content).catch(() => {});
+                                        }}
+                                        className="p-1 rounded hover:bg-blue-500/10 transition-colors"
+                                        title="Copiar texto"
+                                      >
+                                        <Copy className="w-2.5 h-2.5 text-gray-500 hover:text-blue-400" />
+                                      </button>
+                                      <button
+                                        onClick={() => toggleFavoriteMessage(msgId)}
+                                        className="p-1 rounded hover:bg-red-500/10 transition-colors"
+                                        title="Quitar de favoritos"
+                                      >
+                                        <X className="w-2.5 h-2.5 text-gray-500 hover:text-red-400" />
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -3310,18 +3349,47 @@ export default function AtlasApp() {
                             {favoriteSessions.map(fav => (
                               <div
                                 key={fav.sessionId}
-                                className="flex items-center p-3 rounded-xl bg-gray-800/40 border border-gray-700/30 hover:border-gray-600/40 transition-all cursor-pointer group"
-                                onClick={() => {
-                                  loadSession(fav.sessionId);
-                                  setShowFavoritesModal(false);
-                                }}
+                                className="flex items-center p-3 rounded-xl bg-gray-800/40 border border-gray-700/30 hover:border-gray-600/40 transition-all group"
                               >
                                 <Star className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0 mr-2.5" />
-                                <div className="flex-1 min-w-0">
+                                <div
+                                  className="flex-1 min-w-0 cursor-pointer"
+                                  onClick={() => {
+                                    loadSession(fav.sessionId);
+                                    setShowFavoritesModal(false);
+                                  }}
+                                >
                                   <p className="text-[13px] text-gray-200 truncate font-medium">{fav.title}</p>
                                   <p className="text-[10px] text-gray-500 mt-0.5">{fav.messageCount} mensajes</p>
                                 </div>
-                                <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors shrink-0" />
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  <button
+                                    onClick={() => {
+                                      loadSession(fav.sessionId);
+                                      setShowFavoritesModal(false);
+                                    }}
+                                    className="p-1.5 rounded-lg hover:bg-emerald-500/10 transition-colors"
+                                    title="Reaccionar chat"
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5 text-gray-500 hover:text-emerald-400" />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(fav.title).catch(() => {});
+                                    }}
+                                    className="p-1.5 rounded-lg hover:bg-blue-500/10 transition-colors"
+                                    title="Copiar titulo"
+                                  >
+                                    <Copy className="w-3.5 h-3.5 text-gray-500 hover:text-blue-400" />
+                                  </button>
+                                  <button
+                                    onClick={() => toggleFavoriteSession(fav.sessionId, fav.title, fav.messageCount)}
+                                    className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
+                                    title="Quitar de favoritos"
+                                  >
+                                    <X className="w-3.5 h-3.5 text-gray-500 hover:text-red-400" />
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -3339,18 +3407,36 @@ export default function AtlasApp() {
                       highlights.sort((a, b) => a.number - b.number).map(hl => (
                         <div
                           key={hl.id}
-                          className="p-3 rounded-xl bg-gray-800/40 border border-gray-700/30"
+                          className="p-3 rounded-xl bg-gray-800/40 border border-gray-700/30 cursor-pointer hover:border-gray-600/40 transition-all"
+                          onClick={() => scrollToMessage(hl.messageId)}
                         >
                           <div className="flex items-center justify-between mb-1.5">
                             <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/40 text-[9px] font-bold text-amber-400">
                               {hl.number}
                             </span>
-                            <button
-                              onClick={() => removeHighlight(hl.id)}
-                              className="p-1 rounded hover:bg-red-500/10 transition-colors"
-                            >
-                              <X className="w-3 h-3 text-gray-600 hover:text-red-400" />
-                            </button>
+                            <div className="flex items-center gap-0.5">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); scrollToMessage(hl.messageId); }}
+                                className="p-1 rounded hover:bg-emerald-500/10 transition-colors"
+                                title="Ir al chat"
+                              >
+                                <Send className="w-2.5 h-2.5 text-gray-500 hover:text-emerald-400" />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(hl.text).catch(() => {}); }}
+                                className="p-1 rounded hover:bg-blue-500/10 transition-colors"
+                                title="Copiar texto"
+                              >
+                                <Copy className="w-2.5 h-2.5 text-gray-500 hover:text-blue-400" />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); removeHighlight(hl.id); }}
+                                className="p-1 rounded hover:bg-red-500/10 transition-colors"
+                                title="Eliminar"
+                              >
+                                <X className="w-3 h-3 text-gray-500 hover:text-red-400" />
+                              </button>
+                            </div>
                           </div>
                           <p className="text-[12px] text-gray-300 leading-relaxed line-clamp-3">{hl.text}</p>
                         </div>
