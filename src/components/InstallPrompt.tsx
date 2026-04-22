@@ -9,7 +9,7 @@ import {
 
 // ========================================
 // ATLAS PWA INSTALL PROMPT — Premium Bottom Sheet
-// - Shows on first visit (delayed 3s)
+// - Shows when triggered externally (after N responses or after login)
 // - Works on Android (beforeinstallprompt) AND iOS (manual guide)
 // - Compelling benefits, professional design
 // - Dismiss → shows again after 7 days
@@ -64,7 +64,11 @@ const BENEFITS = [
   },
 ];
 
-export default function InstallPrompt() {
+interface InstallPromptProps {
+  trigger: boolean;
+}
+
+export default function InstallPrompt({ trigger }: InstallPromptProps) {
   const [show, setShow] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
@@ -120,18 +124,28 @@ export default function InstallPrompt() {
       requestNotifications();
     });
 
-    // Show prompt with 3s delay (let the page load first)
-    const timer = setTimeout(() => {
-      if (shownRef.current) return;
-      shownRef.current = true;
-      setShow(true);
-    }, 3000);
+    // Show when triggered externally (after N responses or after login)
+    // The parent controls when to trigger
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
-      clearTimeout(timer);
     };
   }, []);
+
+  // Watch external trigger
+  useEffect(() => {
+    if (!trigger) return;
+    if (isInstalled) return;
+    // Check dismiss cooldown
+    const dismissedAt = localStorage.getItem(DISMISSED_TIME_KEY);
+    if (dismissedAt) {
+      const elapsed = Date.now() - parseInt(dismissedAt, 10);
+      if (elapsed < DISMISS_COOLDOWN_MS) return;
+    }
+    if (shownRef.current) return;
+    shownRef.current = true;
+    setShow(true);
+  }, [trigger, isInstalled]);
 
   const requestNotifications = useCallback(async () => {
     if (localStorage.getItem(NOTIFICATION_GRANTED_KEY) === 'true') return;

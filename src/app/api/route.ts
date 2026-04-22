@@ -561,26 +561,30 @@ function getDefaultFeatures() {
 // ========================================
 async function handleSettings() {
   if (!supabase) {
-    return NextResponse.json({ settings: [] });
+    return NextResponse.json({ settings: {} });
   }
 
-  const { data, error } = await supabase
-    .from('settings')
-    .select('*')
-    .order('key');
+  try {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('*')
+      .order('key');
 
-  if (error) {
-    console.error('[SETTINGS]', error);
-    return NextResponse.json({ error: 'Error al obtener configuración' }, { status: 500 });
+    if (error) {
+      console.warn('[SETTINGS] Table not available, using defaults:', error.message);
+      return NextResponse.json({ settings: {} });
+    }
+
+    const settings: Record<string, string | number | boolean> = {};
+    for (const r of (data || [])) {
+      settings[r.key] = r.value;
+    }
+
+    return NextResponse.json({ settings });
+  } catch (err) {
+    console.warn('[SETTINGS] Error, using defaults:', err);
+    return NextResponse.json({ settings: {} });
   }
-
-  const settings = (data || []).map((r: any) => ({
-    key: r.key,
-    value: r.value,
-    updated_at: r.updated_at,
-  }));
-
-  return NextResponse.json({ settings });
 }
 
 // ========================================

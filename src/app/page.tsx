@@ -183,6 +183,10 @@ export default function AtlasApp() {
   const inputValueRef = useRef(inputValue);
   inputValueRef.current = inputValue;
 
+  // ---- PWA Install Prompt State ----
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const loginPromptShownRef = useRef(false);
+
   // ---- Refs ----
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -386,6 +390,26 @@ export default function AtlasApp() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Show install prompt after 7 bot responses (guest) or after login (registered)
+  useEffect(() => {
+    // Don't trigger if already installed
+    if (typeof window !== 'undefined' && localStorage.getItem('atlas_pwa_installed') === 'true') return;
+    if (typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches) return;
+
+    if (!isAuthenticated) {
+      // Guest: trigger after 7 bot responses
+      if (trialBotResponses >= 7 && !loginPromptShownRef.current) {
+        loginPromptShownRef.current = true;
+        setShowInstallPrompt(true);
+      }
+    } else if (!loginPromptShownRef.current) {
+      // Registered: trigger shortly after login (1.5s delay for smooth UX)
+      loginPromptShownRef.current = true;
+      const timer = setTimeout(() => setShowInstallPrompt(true), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [messages.length, isAuthenticated, trialBotResponses]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -3288,7 +3312,7 @@ export default function AtlasApp() {
       </AnimatePresence>
 
       {/* ===== PWA INSTALL PROMPT ===== */}
-      <InstallPrompt />
+      <InstallPrompt trigger={showInstallPrompt} />
     </div>
   );
 }

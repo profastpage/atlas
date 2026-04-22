@@ -119,10 +119,7 @@ self.addEventListener('fetch', function(event) {
   ) {
     event.respondWith(
       fetch(event.request).catch(function() {
-        return caches.match(OFFLINE_URL) || new Response(
-          '<html><body><h1>Offline</h1><p>No connection available.</p></body></html>',
-          { headers: { 'Content-Type': 'text/html' }, status: 503 }
-        );
+        return new Response('Offline', { status: 503 });
       })
     );
     return;
