@@ -38,12 +38,9 @@ export const supabase = getClient();
 // SERVER-SIDE ONLY CLIENT — reads env at RUNTIME
 // Use this in API routes to avoid build-time caching issues.
 // Checks SUPABASE_URL first (runtime), then NEXT_PUBLIC_SUPABASE_URL (build-time).
+// NO singleton — fresh per call to avoid stale state in Edge Runtime.
 // ========================================
-let _serverClient: SupabaseClient | null = null;
-
 export function getSupabaseServer(): SupabaseClient | null {
-  if (_serverClient) return _serverClient;
-
   // Prefer runtime env vars (not baked at build time)
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -53,20 +50,21 @@ export function getSupabaseServer(): SupabaseClient | null {
     return null;
   }
 
-  _serverClient = createClient(url, key);
-  return _serverClient;
+  return createClient(url, key);
 }
 
 // ========================================
 // ADMIN CLIENT — Uses service_role key to BYPASS RLS
 // Required for admin operations that modify other users' profiles
 // Env var: SUPABASE_SERVICE_ROLE_KEY (set in Cloudflare Pages dashboard)
+//
+// IMPORTANT: NO singleton caching in Edge Runtime!
+// Edge function instances persist across requests. If the first call
+// cached a null or a stale client, all subsequent calls would fail
+// silently. Creating a fresh client per call is cheap and guarantees
+// the latest env vars + service_role key are always used.
 // ========================================
-let _adminClient: SupabaseClient | null = null;
-
 export function getSupabaseAdmin(): SupabaseClient | null {
-  if (_adminClient) return _adminClient;
-
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -80,6 +78,9 @@ export function getSupabaseAdmin(): SupabaseClient | null {
     return null;
   }
 
-  _adminClient = createClient(url, serviceKey);
-  return _adminClient;
+  // Log key prefix for debugging (never log the full key)
+  const keyPrefix = serviceKey.substring(0, 10);
+  console.log(`[SUPABASE ADMIN] Creando cliente admin con key ${keyPrefix}...`);
+
+  return createClient(url, serviceKey);
 }
