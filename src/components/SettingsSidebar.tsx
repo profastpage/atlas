@@ -27,6 +27,9 @@ interface SettingsSidebarProps {
   token: string;
   forcePaywall?: boolean;
   userPlanType?: string;
+  remainingMessages?: number;
+  messageLimit?: number;
+  userHasPlan?: boolean;
 }
 
 interface UserPlan {
@@ -110,6 +113,9 @@ export default function SettingsSidebar({
   user,
   forcePaywall = false,
   userPlanType = '',
+  remainingMessages = 20,
+  messageLimit = 20,
+  userHasPlan = false,
 }: SettingsSidebarProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
@@ -338,6 +344,44 @@ export default function SettingsSidebar({
                   </div>
                 </div>
               </section>
+
+              {/* ===== MESSAGE USAGE ===== */}
+              {!userHasPlan && (
+                <section aria-label="Uso de mensajes" className="mt-5">
+                  <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
+                    Uso este mes
+                  </h3>
+                  <div className="bg-gray-800/40 border border-gray-700/30 rounded-xl p-3.5">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[11px] text-gray-400">
+                        Respuestas de Atlas
+                      </span>
+                      <span className="text-[11px] font-semibold text-white">
+                        {remainingMessages} / {messageLimit}
+                      </span>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="w-full h-1.5 rounded-full bg-gray-700/50 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.max(0, Math.min(100, (remainingMessages / messageLimit) * 100))}%`,
+                          background: remainingMessages > messageLimit * 0.3
+                            ? 'linear-gradient(to right, #059669, #10b981)'
+                            : remainingMessages > messageLimit * 0.1
+                              ? 'linear-gradient(to right, #f59e0b, #fbbf24)'
+                              : 'linear-gradient(to right, #ef4444, #f87171)',
+                        }}
+                      />
+                    </div>
+                    {remainingMessages <= 5 && remainingMessages > 0 && (
+                      <p className="text-[10px] text-amber-400/80 mt-2">
+                        Te quedan pocas respuestas. Activa un plan para continuar.
+                      </p>
+                    )}
+                  </div>
+                </section>
+              )}
 
               {/* ===== LOCATION ===== */}
               <section aria-label="Ubicacion">

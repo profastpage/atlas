@@ -77,9 +77,11 @@ interface FavoriteSession {
 // CONSTANTS
 // ========================================
 
-const FREE_BOT_RESPONSES = 20;
+const GUEST_FREE_MESSAGES = 10;
+const REGISTERED_FREE_MESSAGES = 20;
 const GUEST_TENANT_KEY = 'atlas_guest_tenant_id';
 const TRIAL_BOT_KEY = 'atlas_trial_bot_count';
+const REG_MSGS_KEY_PREFIX = 'atlas_reg_msgs_'; // atlas_reg_msgs_YYYY-MM
 
 // ========================================
 // MAIN APP -- ATLAS COGNITIVE COACH
@@ -114,6 +116,7 @@ export default function AtlasApp() {
   // trialBotResponses: counts ONLY assistant messages. User messages never increment this.
   // isStreaming: true while fetch is in-flight. Paywall NEVER shows while true.
   const [trialBotResponses, setTrialBotResponses] = useState(0);
+  const [registeredMsgCount, setRegisteredMsgCount] = useState(0);
   const [streamDisconnectedId, setStreamDisconnectedId] = useState<string | null>(null);
 
   // ---- Plan Gate State ----
@@ -333,6 +336,10 @@ export default function AtlasApp() {
       const guestTenantId = localStorage.getItem(GUEST_TENANT_KEY);
       const savedBotCount = parseInt(localStorage.getItem(TRIAL_BOT_KEY) || '0', 10);
       setTrialBotResponses(savedBotCount);
+      // Load registered monthly counter
+      const monthKey = REG_MSGS_KEY_PREFIX + new Date().toISOString().slice(0, 7);
+      const savedRegCount = parseInt(localStorage.getItem(monthKey) || '0', 10);
+      setRegisteredMsgCount(savedRegCount);
 
       if (guestTenantId) {
         setTenantId(guestTenantId);
@@ -705,6 +712,16 @@ export default function AtlasApp() {
     }
   };
 
+  // Get current monthly key for registered users
+  const getRegMonthKey = () => REG_MSGS_KEY_PREFIX + new Date().toISOString().slice(0, 7);
+
+  // Reset registered monthly counter when month changes
+  useEffect(() => {
+    const monthKey = getRegMonthKey();
+    const saved = parseInt(localStorage.getItem(monthKey) || '0', 10);
+    setRegisteredMsgCount(saved);
+  }, []);
+
   const openPlanGate = () => {
     // Open settings sidebar directly to plan selection
     setShowPaywallModal(false);
@@ -888,14 +905,23 @@ export default function AtlasApp() {
   const sendMessage = useCallback(
     async (text: string) => {
       // ---- UNIFIED PAYWALL GATE ----
-      // Block if 20+ responses reached and no confirmed paid plan
-      if (trialBotResponses >= FREE_BOT_RESPONSES && hasActivePlan !== true) {
+      // Guest: 10 free messages, then register prompt
+      // Registered (no plan): 20/month, then plan selection
+      // Registered (with plan): unlimited
+      if (hasActivePlan !== true) {
         if (isAuthenticated) {
-          openPlanGate(); // Opens settings sidebar directly to plans
+          // Registered free user: check monthly limit (20)
+          if (registeredMsgCount >= REGISTERED_FREE_MESSAGES) {
+            setShowPaywallModal(true); // Show plan selection modal
+            return;
+          }
         } else {
-          setShowPaywallModal(true); // Shows modal with login CTA for guests
+          // Guest: check limit (10)
+          if (trialBotResponses >= GUEST_FREE_MESSAGES) {
+            setShowPaywallModal(true); // Show register prompt
+            return;
+          }
         }
-        return;
       }
 
       if (!text.trim() || isLoading || isStreaming) return;
@@ -1034,11 +1060,22 @@ export default function AtlasApp() {
 
           // ---- PASO 4: INCREMENT COUNTER ONLY ON SUCCESSFUL ASSISTANT RESPONSE ----
           if (fullText && fullText !== 'Sin respuesta.') {
-            setTrialBotResponses((prev) => {
-              const next = prev + 1;
-              localStorage.setItem(TRIAL_BOT_KEY, String(next));
-              return next;
-            });
+            if (isAuthenticated) {
+              // Registered user: increment monthly counter
+              setRegisteredMsgCount((prev) => {
+                const next = prev + 1;
+                const monthKey = getRegMonthKey();
+                localStorage.setItem(monthKey, String(next));
+                return next;
+              });
+            } else {
+              // Guest: increment guest counter
+              setTrialBotResponses((prev) => {
+                const next = prev + 1;
+                localStorage.setItem(TRIAL_BOT_KEY, String(next));
+                return next;
+              });
+            }
           }
 
           // ---- PASO 3: Desactivar streaming DESPUES de terminar ----
@@ -1057,11 +1094,20 @@ export default function AtlasApp() {
 
           // ---- PASO 4: INCREMENT COUNTER ONLY ON SUCCESSFUL ASSISTANT RESPONSE ----
           if (assistantMsg.content && assistantMsg.content !== 'Sin respuesta.' && assistantMsg.content !== 'Error de comunicacion.') {
-            setTrialBotResponses((prev) => {
-              const next = prev + 1;
-              localStorage.setItem(TRIAL_BOT_KEY, String(next));
-              return next;
-            });
+            if (isAuthenticated) {
+              setRegisteredMsgCount((prev) => {
+                const next = prev + 1;
+                const monthKey = getRegMonthKey();
+                localStorage.setItem(monthKey, String(next));
+                return next;
+              });
+            } else {
+              setTrialBotResponses((prev) => {
+                const next = prev + 1;
+                localStorage.setItem(TRIAL_BOT_KEY, String(next));
+                return next;
+              });
+            }
           }
 
           // ---- PASO 3: Desactivar streaming ----
@@ -1400,10 +1446,18 @@ export default function AtlasApp() {
   };
 
   // ---- INPUT BLOCKED: Unified paywall active ----
-  // Only block after 5 responses AND no active plan confirmed AND not checking
-  const isInputBlocked = !isStreaming && trialBotResponses >= FREE_BOT_RESPONSES && hasActivePlan !== true && !checkingPlan;
+  // Guest: block after 10. Registered free: block after 20/month. Plan users: never block.
+  const isInputBlocked = !isStreaming && !checkingPlan && hasActivePlan !== true && (
+    (!isAuthenticated && trialBotResponses >= GUEST_FREE_MESSAGES) ||
+    (isAuthenticated && registeredMsgCount >= REGISTERED_FREE_MESSAGES)
+  );
 
-  const remainingResponses = Math.max(0, FREE_BOT_RESPONSES - trialBotResponses);
+  // Remaining responses depends on auth state
+  const remainingResponses = isAuthenticated
+    ? Math.max(0, REGISTERED_FREE_MESSAGES - registeredMsgCount)
+    : Math.max(0, GUEST_FREE_MESSAGES - trialBotResponses);
+
+  const messageLimit = isAuthenticated ? REGISTERED_FREE_MESSAGES : GUEST_FREE_MESSAGES;
 
   // ---- POSTHOG: Track paywall cuando se muestra ----
   const paywallShownRef = useRef(false);
@@ -1731,6 +1785,9 @@ export default function AtlasApp() {
         token={token || ''}
         forcePaywall={false}
         userPlanType={userPlanType}
+        remainingMessages={remainingResponses}
+        messageLimit={messageLimit}
+        userHasPlan={hasActivePlan === true}
       />
 
       {/* ===== HEADER ===== */}
@@ -2257,15 +2314,23 @@ export default function AtlasApp() {
 
       {/* ===== INPUT AREA ===== */}
       <div className="shrink-0 border-t border-gray-800/20 bg-[#111111] px-2 sm:px-3 py-2 sm:py-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-10">
-        {/* Guest remaining responses bar */}
-        {!isAuthenticated && remainingResponses > 0 && (
+        {/* Remaining responses bar — guests AND registered free users */}
+        {remainingResponses > 0 && hasActivePlan !== true && !checkingPlan && (
           <div className="text-center mb-1.5 sm:mb-2">
             <span className="text-[9px] sm:text-[10px] text-gray-600">
-              Tienes <span className="text-emerald-400 font-semibold">{remainingResponses}</span> respuesta{remainingResponses !== 1 ? 's' : ''} gratuita{remainingResponses !== 1 ? 's' : ''} del asistente.{' '}
-              <a href="/login" className="text-emerald-400 hover:text-emerald-300 underline">
-                Inicia sesion
-              </a>{' '}
-              para obtener mas funciones profesionales.
+              {!isAuthenticated ? (
+                <>
+                  Tienes <span className="text-emerald-400 font-semibold">{remainingResponses}</span> de {messageLimit} respuestas gratis.{' '}
+                  <a href="/login" className="text-emerald-400 hover:text-emerald-300 underline">
+                    Registrate gratis
+                  </a>{' '}
+                  y obten 20 extra al mes.
+                </>
+              ) : (
+                <>
+                  Te quedan <span className="text-emerald-400 font-semibold">{remainingResponses}</span> de {messageLimit} respuestas este mes.
+                </>
+              )}
             </span>
           </div>
         )}
@@ -2518,11 +2583,10 @@ export default function AtlasApp() {
 
       {/* ====================================================================
           UNIFIED PAYWALL — Controlled modal, shown only on send attempt
-          REGLA: showPaywallModal === true (triggered by openPlanGate)
-          - Guest: sees plan selection + login CTA
-          - Logged-in no plan: sees plan selection + logout
+          REGLA: showPaywallModal === true (triggered by send)
+          - Guest (10 used): register CTA → get 20 extra/month
+          - Logged-in no plan (20 used): plan selection modal
           - Logged-in with plan: paywall NEVER shows (hasActivePlan === true)
-          - During plan check: loading overlay handles it (checkingPlan === true)
           - Close button returns to chat (user can read history)
           ==================================================================== */}
       {showPaywallModal && !isStreaming && !checkingPlan && (
@@ -2546,17 +2610,38 @@ export default function AtlasApp() {
                 <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-gradient-to-br from-amber-500/20 to-amber-600/5 border border-amber-500/20">
                   <AlertTriangle className="w-8 h-8 text-amber-400" />
                 </div>
-                <h2 className="text-xl font-bold text-white">
-                  Selecciona un plan para continuar
-                </h2>
-                <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-                  Has utilizado tus 20 mensajes de prueba. Activa una suscripcion para seguir usando tu Asesor Estrategico de Elite.
-                </p>
+                {!isAuthenticated ? (
+                  <>
+                    <h2 className="text-xl font-bold text-white">
+                      Quieres mas respuestas?
+                    </h2>
+                    <p className="text-sm text-gray-400 mt-2 leading-relaxed">
+                      Has usado tus {GUEST_FREE_MESSAGES} mensajes gratis. Registrate de forma gratuita y obtén <span className="text-emerald-400 font-semibold">20 respuestas extras al mes</span> de tu asesor Atlas.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="text-xl font-bold text-white">
+                      Selecciona un plan para continuar
+                    </h2>
+                    <p className="text-sm text-gray-400 mt-2 leading-relaxed">
+                      Has utilizado tus {REGISTERED_FREE_MESSAGES} mensajes este mes. Activa una suscripcion para obtener respuestas ilimitadas.
+                    </p>
+                  </>
+                )}
               </div>
 
               {/* Action Buttons */}
               <div className="space-y-3">
-                {isAuthenticated ? (
+                {!isAuthenticated ? (
+                  <a
+                    href="/login"
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
+                  >
+                    Registrate Gratis — Obten 20 Extra
+                    <LogIn className="w-4 h-4" />
+                  </a>
+                ) : (
                   <button
                     onClick={() => { setShowPaywallModal(false); setShowSettings(true); }}
                     className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-gray-950 text-sm font-bold transition-all active:scale-[0.98] shadow-lg shadow-amber-500/20"
@@ -2564,20 +2649,12 @@ export default function AtlasApp() {
                     <Settings className="w-4 h-4" />
                     Ver Planes
                   </button>
-                ) : (
-                  <a
-                    href="/login"
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
-                  >
-                    Iniciar Sesion y Ver Planes
-                    <LogIn className="w-4 h-4" />
-                  </a>
                 )}
               </div>
 
               {/* Subtle close hint */}
               <p className="text-center text-[11px] text-gray-600 mt-4">
-                Toca fuera o cierra para volver al chat
+                Toca fuera o cierra para volver a tu historial
               </p>
             </div>
           </div>
