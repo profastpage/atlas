@@ -209,7 +209,7 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
     let history: Array<{ role: string; content: string }> = [];
     try {
       const result = await db.execute(
-        `SELECT role, content FROM Message WHERE sessionId = ? ORDER BY timestamp ASC LIMIT 16`,
+        `SELECT role, content FROM Message WHERE sessionId = ? ORDER BY timestamp ASC LIMIT 30`,
         [sessionId]
       );
       history = result.rows.map((m) => ({
@@ -247,8 +247,8 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
     try {
       qwenStream = await streamChatCompletion({
         messages: llmMessages,
-        temperature: 0.7,
-        max_tokens: 300,
+        temperature: 0.75,
+        max_tokens: 500,
       });
     } catch (streamErr) {
       console.error('[CEREBRO] Streaming failed, trying non-streaming:', streamErr);
@@ -263,8 +263,8 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
     try {
       const completion = await createChatCompletion({
         messages: llmMessages,
-        temperature: 0.7,
-        max_tokens: 300,
+        temperature: 0.75,
+        max_tokens: 500,
       });
       const responseText = completion.choices?.[0]?.message?.content?.trim() || '';
 
@@ -320,11 +320,11 @@ async function handleExpandMode(
       contextSummary || 'Sin información previa. Es un nuevo usuario.'
     );
 
-  // Load chat history (last 16 messages)
+  // Load chat history (last 30 messages)
   let history: Array<{ role: string; content: string }> = [];
   try {
     const result = await db.execute(
-      `SELECT role, content FROM Message WHERE sessionId = ? ORDER BY timestamp ASC LIMIT 16`,
+      `SELECT role, content FROM Message WHERE sessionId = ? ORDER BY timestamp ASC LIMIT 30`,
       [sessionId]
     );
     history = result.rows.map((m) => ({
@@ -595,29 +595,34 @@ async function postResponseMemoryCycle(
   const topicPatterns = [
     { pattern: /(?:problema|situación|tema|asunto|conflicto|dificultad)\s+(?:es|con|sobre|de)\s+(.+?)(?:\.|,|$)/i, label: 'Problema' },
     { pattern: /(?:mi\s+)?(?:pareja|novi[oa]|espos[oa]|marido|mujer)\s+(.+?)(?:\.|,|$)/i, label: 'Relación de pareja' },
-    { pattern: /(?:trabajo|jefe|empleo|negocio|empresa)\s+(.+?)(?:\.|,|$)/i, label: 'Trabajo' },
+    { pattern: /(?:trabajo|jefe|empleo|negocio|empresa|freelance)\s+(.+?)(?:\.|,|$)/i, label: 'Trabajo' },
     { pattern: /(?:estres|ansiedad|miedo|depresión|angustia|frustración|trusteza)\s+(.+?)(?:\.|,|$)/i, label: 'Salud mental' },
     { pattern: /(?:no\s+(?:puedo|logro|sé|puedes))\s+(.+?)(?:\.|,|$)/i, label: 'Bloqueo' },
-    { pattern: /(?:quiero|necesito|aspiro|meta)\s+(.+?)(?:\.|,|$)/i, label: 'Objetivo' },
+    { pattern: /(?:quiero|necesito|aspiro|meta|objetivo)\s+(.+?)(?:\.|,|$)/i, label: 'Objetivo' },
     { pattern: /(?:me\s+siento|estoy\s+sintiendo)\s+(.+?)(?:\.|,|$)/i, label: 'Emoción' },
+    { pattern: /(?:juego|juegos|gaming|videojuego|smash|minecraft|fortnite|gta|fifa|lol|valorant|steam|playstation|xbox|nintendo|switch)\s+(.+?)(?:\.|,|$)/i, label: 'Gaming' },
+    { pattern: /(?:me gusta|amo|adoro|fan de|sigo)\s+(.+?)(?:\.|,|$)/i, label: 'Interés' },
+    { pattern: /(?:estudio|carrera|universidad|colegio|escuela|curso|clase)\s+(.+?)(?:\.|,|$)/i, label: 'Educación' },
+    { pattern: /(?:vivo en|soy de|mi ciudad|mi país)\s+(.+?)(?:\.|,|$)/i, label: 'Ubicación' },
   ];
 
   for (const { pattern, label } of topicPatterns) {
     const match = userMessage.match(pattern);
-    if (match && match[1] && match[1].trim().length > 5) {
-      const newTopic = `[${label}] ${match[1].trim().substring(0, 80)}`;
+    if (match && match[1] && match[1].trim().length > 3) {
+      const newTopic = `[${label}] ${match[1].trim().substring(0, 120)}`;
       if (!updatedSummary) {
         updatedSummary = newTopic;
       } else {
-        if (!updatedSummary.includes(newTopic.substring(0, 30))) {
+        if (!updatedSummary.includes(newTopic.substring(0, 20))) {
           const lines = updatedSummary.split(' | ');
-          if (lines.length >= 3) lines.shift();
+          // Keep up to 8 topics for richer memory
+          if (lines.length >= 8) lines.shift();
           lines.push(newTopic);
           updatedSummary = lines.join(' | ');
         }
       }
       needsUpdate = true;
-      break;
+      // Capture ALL matching topics, not just the first
     }
   }
 

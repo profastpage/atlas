@@ -18,7 +18,7 @@ const QWEN_CONFIG = {
   baseUrl: process.env.QWEN_BASE_URL || 'https://openrouter.ai/api/v1',
   apiKey: process.env.QWEN_API_KEY || '',
   model: process.env.QWEN_MODEL || 'qwen/qwen-turbo',
-  maxTokens: parseInt(process.env.LLM_MAX_TOKENS || '150', 10),
+  maxTokens: parseInt(process.env.LLM_MAX_TOKENS || '300', 10),
 };
 
 // PDF Pipeline Model — Llama 3.3 70B (free on OpenRouter)

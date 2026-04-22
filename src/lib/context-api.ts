@@ -131,9 +131,9 @@ export async function fetchWikipedia(topic: string): Promise<string | null> {
     const extract = data.extract;
     if (!extract || extract.length < 40) return null;
 
-    // Truncate to ~800 chars to capture more biographical/sports data
-    const truncated = extract.length > 800
-      ? extract.slice(0, 797) + '...'
+    // Truncate to ~1200 chars to capture more detailed info
+    const truncated = extract.length > 1200
+      ? extract.slice(0, 1197) + '...'
       : extract;
 
     return truncated;
@@ -173,6 +173,12 @@ const WIKI_TRIGGER_PATTERNS = [
   /(?:quien (?:es|fue|dirigio|entreno|jugo)|que equipo|donde nacio|cuando nacio|en que ano|que goles|cuantos titulo|que posicion|que seleccion|que nacionalidad)/i,
   /(?:datos de|biografia de|historia de|estadisticas de|trayectoria de|palmares de)/i,
   /(?:fecha de|donde jugo|cuando jugo|que edad tiene|que edad tiene|murio en)/i,
+  // Gaming triggers
+  /(?:smash bros|super smash|ssbu|ssbm|melee|ultimate)/i,
+  /(?:personajes? de|roster de|fighter|moveset|tier list)/i,
+  // Broader question patterns
+  /(?:cual fue|como surgio|por que se llama|donde se creo|cuando salio|que paso con|que paso en)/i,
+  /(?:hablemos (?:del|de la)|dime (?:de|sobre) |cuéntame (?:de|sobre) |información sobre |que(?: |>)(?:panel|sabes) de )/i,
 ];
 
 function containsKeyword(text: string, keywords: string[]): boolean {
@@ -198,15 +204,15 @@ function extractWikipediaTopic(text: string): string | null {
 
   // Extract the topic — remove question words and take the subject
   let topic = text.trim()
-    .replace(/^(que es|quien (?:es|fue|dirigio|entreno|jugo)|que (?:significa|quiere decir|fue|son|equipo|goles|titulo|posicion|seleccion|nacionalidad)|explica(?:r)?me?|cuentame sobre|que sabes de|hablemos de|dime sobre|como funciona|como fue|donde esta|cual es (?:el|la) (?:origen|historia|significado)|datos de|biografia de|historia de|estadisticas de|trayectoria de|palmares de|fecha de|donde jugo|cuando jugo|que edad tiene|murio en)\s*/i, '')
+    .replace(/^(que es|quien (?:es|fue|dirigio|entreno|jugo)|que (?:significa|quiere decir|fue|son|equipo|goles|titulo|posicion|seleccion|nacionalidad|paso con|paso en)|explica(?:r)?me?|cuentame sobre|que sabes de|hablemos (?:del|de la|de)|dime (?:de|sobre)|como funciona|como fue|donde esta|donde se creo|cuando (?:salio|jugo|nacio)|cual es (?:el|la) (?:origen|historia|significado)|datos de|biografia de|historia de|estadisticas de|trayectoria de|palmares de|fecha de|donde jugo|que edad tiene|murio en|por que se llama|como surgio|informacion sobre|que(?: |>)(?:panel|sabes) de )\s*/i, '')
     .replace(/[?!.]+$/, '')
     .trim();
 
   // Remove articles and prepositions at start
-  topic = topic.replace(/^(el |la |los |las |un |una |de |del |en |el entrenador |la entrenadora |el dt |el director tecnico |el jugador |la jugadora |el seleccionador )+/i, '').trim();
+  topic = topic.replace(/^(el |la |los |las |un |una |de |del |en |el entrenador |la entrenadora |el dt |el director tecnico |el jugador |la jugadora |el seleccionador |sobre |acerca de )+/i, '').trim();
 
-  // Must be at least 3 chars to be useful
-  if (topic.length < 3) return null;
+  // Must be at least 2 chars to be useful (for gaming terms like "smash")
+  if (topic.length < 2) return null;
 
   return topic;
 }
