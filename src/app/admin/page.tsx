@@ -468,16 +468,28 @@ export default function AdminPage() {
   // ACTION HANDLERS
   // ========================================
 
+  const [demoModalUser, setDemoModalUser] = useState<UserData | null>(null);
+  const [demoDays, setDemoDays] = useState<number>(3);
+  const [demoPlan, setDemoPlan] = useState<string>('pro');
+
   const handleGrantTrial = async (user: UserData) => {
+    setDemoModalUser(user);
+    setActiveDropdown(null);
+  };
+
+  const handleConfirmDemo = async () => {
+    if (!demoModalUser) return;
     setActionLoading(true);
     try {
+      const durationHours = demoDays * 24;
       await adminPost('grant_trial', {
-        tenantId: user.tenantId,
-        trialPlan: 'pro',
-        durationHours: 24,
+        tenantId: demoModalUser.tenantId,
+        trialPlan: demoPlan,
+        durationHours,
       });
-      showToast(`Prueba 24h activada para ${user.name || user.email}`);
-      setActiveDropdown(null);
+      const planLabel = PLAN_BADGE_CONFIG[demoPlan]?.label || demoPlan;
+      showToast(`Demo ${demoDays}d (${planLabel}) activada para ${demoModalUser.name || demoModalUser.email}`);
+      setDemoModalUser(null);
       loadUsers();
     } catch (err) {
       showToast(String(err), 'error');
@@ -1011,10 +1023,10 @@ export default function AdminPage() {
                               <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold shrink-0 ${badge.classes}`}>
                                 {badge.label}
                               </span>
-                              {/* Trial Badge */}
+                              {/* Trial/Demo Badge */}
                               {trialRemaining && user.trialPlan && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/15 text-emerald-400 shrink-0">
-                                  Prueba {user.trialPlan} — {trialRemaining}
+                                  Demo {user.trialPlan} — {trialRemaining}
                                 </span>
                               )}
                               {/* Admin Badge */}
@@ -1062,7 +1074,7 @@ export default function AdminPage() {
                                   className="w-full text-left px-3.5 py-2.5 text-xs text-gray-300 hover:bg-gray-800/60 transition-colors flex items-center gap-2.5 disabled:opacity-50"
                                 >
                                   <Gift className="w-3.5 h-3.5 text-amber-400" />
-                                  Otorgar Prueba 24h
+                                  Activar Demo
                                 </button>
                                 <button
                                   onClick={() => {
@@ -1551,6 +1563,134 @@ export default function AdminPage() {
                 >
                   {actionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                   {actionLoading ? 'Aplicando...' : 'Aplicar'}
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ======================================== */}
+      {/* MODAL: Demo Activation (3, 5, 7 days)    */}
+      {/* ======================================== */}
+      <AnimatePresence>
+        {demoModalUser && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+              onClick={() => !actionLoading && setDemoModalUser(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-sm mx-auto"
+            >
+              <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-5 shadow-2xl">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Gift className="w-4 h-4 text-amber-400" />
+                    Activar Demo
+                  </h3>
+                  <button
+                    onClick={() => !actionLoading && setDemoModalUser(null)}
+                    className="p-1 rounded-full hover:bg-gray-800/60"
+                  >
+                    <X className="w-4 h-4 text-gray-500" />
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-400 mb-4">
+                  Usuario: <span className="text-white font-medium">{demoModalUser.name || demoModalUser.email}</span>
+                </p>
+
+                {/* Duration selector: 3, 5, 7 days */}
+                <div className="mb-4">
+                  <label className="text-[11px] text-gray-500 uppercase tracking-wider font-semibold mb-2 block">
+                    Duracion de la Demo
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { days: 3, label: '3 dias' },
+                      { days: 5, label: '5 dias' },
+                      { days: 7, label: '7 dias' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.days}
+                        onClick={() => setDemoDays(opt.days)}
+                        className={`py-2.5 rounded-xl border text-xs font-semibold transition-all active:scale-[0.97] ${
+                          demoDays === opt.days
+                            ? 'bg-amber-500/15 border-amber-500/50 text-amber-400'
+                            : 'bg-gray-800/30 border-gray-700/50 text-gray-400 hover:border-gray-600/50'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Plan selector for demo */}
+                <div className="mb-4">
+                  <label className="text-[11px] text-gray-500 uppercase tracking-wider font-semibold mb-2 block">
+                    Plan de la Demo
+                  </label>
+                  <div className="space-y-2">
+                    {[
+                      { value: 'basico', label: 'Basico', price: 'S/20', color: 'text-gray-400' },
+                      { value: 'pro', label: 'Pro', price: 'S/40', color: 'text-blue-400' },
+                      { value: 'executive', label: 'Ejecutivo', price: 'S/60', color: 'text-amber-400' },
+                    ].map((plan) => (
+                      <label
+                        key={plan.value}
+                        className={`flex items-center justify-between cursor-pointer rounded-xl border p-3 transition-all ${
+                          demoPlan === plan.value
+                            ? 'bg-gray-800/60 border-amber-500/40'
+                            : 'bg-gray-800/30 border-gray-700/50 hover:border-gray-600/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                            demoPlan === plan.value ? 'border-amber-500' : 'border-gray-600'
+                          }`}>
+                            {demoPlan === plan.value && (
+                              <div className="w-2 h-2 rounded-full bg-amber-500" />
+                            )}
+                          </div>
+                          <span className={`text-sm font-medium ${plan.color}`}>{plan.label}</span>
+                        </div>
+                        <span className="text-xs text-gray-500">{plan.price}</span>
+                        <input
+                          type="radio"
+                          name="demoPlan"
+                          value={plan.value}
+                          className="sr-only"
+                          checked={demoPlan === plan.value}
+                          onChange={() => setDemoPlan(plan.value)}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Info note about image limits for demos */}
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2 mb-4">
+                  <p className="text-[11px] text-blue-300 flex items-start gap-1.5">
+                    <span className="shrink-0 mt-0.5">ℹ</span>
+                    Demo incluye todas las funciones del plan, pero maximo 5 imagenes generadas.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleConfirmDemo}
+                  disabled={actionLoading}
+                  className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:bg-gray-700 text-white text-sm font-semibold transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  {actionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  {actionLoading ? 'Activando...' : `Activar Demo ${demoDays} dias`}
                 </button>
               </div>
             </motion.div>

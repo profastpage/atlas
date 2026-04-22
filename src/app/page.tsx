@@ -97,7 +97,11 @@ const IMAGE_LIMITS: Record<string, number> = {
   pro: 50,
   executive: 100,
   free: 0,
+  suspended: 0,
 };
+
+// Demo/trial plans: max 5 images to avoid excessive costs
+const DEMO_IMAGE_LIMIT = 5;
 
 // ========================================
 // MAIN APP -- ATLAS COGNITIVE COACH
@@ -149,24 +153,25 @@ export default function AtlasApp() {
   const [alarmSaving, setAlarmSaving] = useState(false);
   const [sharedId, setSharedId] = useState<string | null>(null);
 
-  // ---- Auto-refresh trial badge every 10 minutes ----
+  // ---- Auto-refresh subscription/trial every 5 minutes for authenticated users ----
+  // Also refresh when user returns to the app (tab focus)
   useEffect(() => {
-    if (!trialInfo?.isActive || !tenantId || !isAuthenticated) return;
-    const interval = setInterval(async () => {
+    if (!tenantId || !isAuthenticated) return;
+    const refreshPlan = async () => {
       try {
-        const res = await fetch(`/api?action=trial_status&tenantId=${tenantId}`);
-        const data = await res.json();
-        if (data.trial?.isActive) {
-          setTrialInfo({ plan: data.trial.plan, hoursLeft: data.trial.hoursLeft, isActive: true });
-        } else {
-          // Trial expired while user was active — refresh plan status
-          setTrialInfo(null);
-          checkPlanAfterLogin(tenantId);
-        }
+        await checkPlanAfterLogin(tenantId);
       } catch {}
-    }, 10 * 60 * 1000); // Every 10 min
-    return () => clearInterval(interval);
-  }, [trialInfo?.isActive, tenantId, isAuthenticated]);
+    };
+    // Refresh every 5 minutes
+    const interval = setInterval(refreshPlan, 5 * 60 * 1000);
+    // Refresh when tab/window gets focus (user returns to app)
+    const onFocus = () => refreshPlan();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [tenantId, isAuthenticated]);
 
   // ---- Expand State ----
   const [expandingId, setExpandingId] = useState<string | null>(null);
@@ -986,22 +991,28 @@ export default function AtlasApp() {
       const sub = subData.subscription;
       const planType = sub?.status === 'active' ? 'active' : null;
 
-      // CHECK 1: Has paid plan?
+      // CHECK 1: Has paid plan? (Básico, Pro, Ejecutivo = unlimited chat)
       if (planType) {
         setHasActivePlan(true);
         setTrialInfo(null);
         // Store actual plan name for feature gating
-        const pName = sub?.planId || sub?.planName?.toLowerCase() || '';
-        setUserPlanType(pName);
+        const pName = sub?.planId?.replace('plan_', '') || sub?.planName?.toLowerCase() || '';
+        // Normalize plan names: 'ejecutivo' and 'elite' → 'ejecutivo'
+        const normalizedName = ['ejecutivo', 'elite', 'plan_ejecutivo'].includes(pName) ? 'ejecutivo'
+          : ['pro', 'profesional', 'plan_pro'].includes(pName) ? 'pro'
+          : ['basico', 'basico', 'plan_basico'].includes(pName) ? 'basico'
+          : pName;
+        setUserPlanType(normalizedName);
+        // Clear message counter — paid users don't need limits
+        const monthKey = getRegMonthKey();
+        localStorage.removeItem(monthKey);
+        setRegisteredMsgCount(0);
         // PostHog: Identify user with plan type
         const currentEmail = userInfo?.email || '';
         const currentName = userInfo?.name || '';
-        identifyUser({ id: tId, email: currentEmail, name: currentName, planType: pName, tenantId: tId });
-        return;
-      }
-
-      // CHECK 2: Has active trial?
-      if (trialData.trial?.isActive) {
+        identifyUser({ id: tId, email: currentEmail, name: currentName, planType: normalizedName, tenantId: tId });
+      } else if (trialData.trial?.isActive) {
+        // CHECK 2: Has active trial/demo? (unlimited chat during trial)
         setHasActivePlan(true);
         setTrialInfo({
           plan: trialData.trial.plan,
@@ -1010,18 +1021,23 @@ export default function AtlasApp() {
         });
         const trialPlan = trialData.trial.plan || 'pro';
         setUserPlanType(trialPlan);
+        // Clear message counter during trial
+        const monthKey = getRegMonthKey();
+        localStorage.removeItem(monthKey);
+        setRegisteredMsgCount(0);
         // PostHog: Identify user with trial plan
         const currentEmail = userInfo?.email || '';
         const currentName = userInfo?.name || '';
         identifyUser({ id: tId, email: currentEmail, name: currentName, planType: `trial_${trialPlan}`, tenantId: tId });
-        return;
+      } else {
+        // CHECK 3: No plan, no trial — let user use free messages first
+        setHasActivePlan(false);
+        setTrialInfo(null);
+        // Restore counter from localStorage
+        const monthKey = getRegMonthKey();
+        const saved = parseInt(localStorage.getItem(monthKey) || '0', 10);
+        setRegisteredMsgCount(saved);
       }
-
-      // CHECK 3: No plan, no trial — let user use free messages first
-      setHasActivePlan(false);
-      setTrialInfo(null);
-      // Don't auto-open settings/paywall. User starts with free messages.
-      // Plan modal appears only after exhausting the free limit (sendMessage gate).
     } catch {
       setHasActivePlan(false);
       setTrialInfo(null);
@@ -2414,6 +2430,7 @@ export default function AtlasApp() {
         remainingMessages={remainingResponses}
         messageLimit={messageLimit}
         userHasPlan={hasActivePlan === true}
+        trialInfo={trialInfo}
         onRequestInstall={() => {
           setShowSettings(false);
           // Reset trigger so InstallPrompt re-shows

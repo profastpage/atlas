@@ -32,6 +32,7 @@ interface SettingsSidebarProps {
   remainingMessages?: number;
   messageLimit?: number;
   userHasPlan?: boolean;
+  trialInfo?: { plan: string; hoursLeft: number; isActive: boolean } | null;
   onRequestInstall?: () => void;
 }
 
@@ -119,6 +120,7 @@ export default function SettingsSidebar({
   remainingMessages = 20,
   messageLimit = 20,
   userHasPlan = false,
+  trialInfo = null,
   onRequestInstall,
 }: SettingsSidebarProps) {
   const [isEditingName, setIsEditingName] = useState(false);
@@ -130,6 +132,7 @@ export default function SettingsSidebar({
   const [userPlan, setUserPlan] = useState<UserPlan | null>(null);
   const [loadingPlan, setLoadingPlan] = useState(false);
   const isAdmin = user?.isAdmin === true;
+  const isDemoUser = !!trialInfo?.isActive;
 
   // ---- Alarms state ----
   const [alarms, setAlarms] = useState<AlarmItem[]>([]);
@@ -150,7 +153,7 @@ export default function SettingsSidebar({
   const [linkCopied, setLinkCopied] = useState(false);
   const deferredPromptRef = useRef<any>(null);
 
-  const isEjecutivo = userPlanType === 'ejecutivo';
+  const isEjecutivo = userPlanType === 'ejecutivo' || userPlanType === 'executive' || (isDemoUser && trialInfo?.plan === 'executive');
 
   // ---- Listen for PWA install prompt ----
   useEffect(() => {

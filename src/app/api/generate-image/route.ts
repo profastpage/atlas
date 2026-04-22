@@ -15,6 +15,9 @@ const IMAGE_LIMITS: Record<string, number> = {
   suspended: 0,
 };
 
+// Demo/trial plans: max 5 images to avoid excessive costs
+const DEMO_IMAGE_LIMIT = 5;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -37,7 +40,7 @@ export async function POST(request: NextRequest) {
     // Fetch user profile to check plan and image count
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('plan_type, images_generated_month, extra_images_purchased, pending_image_payment')
+      .select('plan_type, trial_plan, trial_ends_at, images_generated_month, extra_images_purchased, pending_image_payment')
       .eq('id', tenantId)
       .single();
 
@@ -50,8 +53,14 @@ export async function POST(request: NextRequest) {
     }
 
     const planType = profile.plan_type || 'free';
-    const monthLimit = IMAGE_LIMITS[planType] || 0;
-    const extraImages = profile.extra_images_purchased || 0;
+    // Check if user is on an active demo/trial
+    const trialPlan = profile.trial_plan || null;
+    const trialEndsAt = profile.trial_ends_at ? new Date(profile.trial_ends_at) : null;
+    const isDemoUser = !!(trialPlan && trialEndsAt && trialEndsAt > new Date());
+
+    // Demo/trial users: max 5 images regardless of plan tier
+    const monthLimit = isDemoUser ? DEMO_IMAGE_LIMIT : (IMAGE_LIMITS[planType] || 0);
+    const extraImages = isDemoUser ? 0 : (profile.extra_images_purchased || 0);
     const totalAvailable = monthLimit + extraImages;
     const used = profile.images_generated_month || 0;
 
@@ -62,6 +71,7 @@ export async function POST(request: NextRequest) {
         message: 'Tu pago esta siendo verificado. Espera la aprobacion del admin.',
         used,
         totalAvailable,
+        is_demo: isDemoUser,
       }, { status: 402 });
     }
 
@@ -69,11 +79,14 @@ export async function POST(request: NextRequest) {
     if (used >= totalAvailable) {
       return NextResponse.json({
         error: 'limit_reached',
-        message: 'Has alcanzado tu limite de imagenes este mes.',
+        message: isDemoUser
+          ? `Tu demo permite maximo ${DEMO_IMAGE_LIMIT} imagenes. Adquiere un plan para mas.`
+          : 'Has alcanzado tu limite de imagenes este mes.',
         used,
         totalAvailable,
         monthLimit,
         extraImages,
+        is_demo: isDemoUser,
       }, { status: 402 });
     }
 
@@ -100,6 +113,7 @@ export async function POST(request: NextRequest) {
       image: imageDataUrl,
       used: newCount,
       remaining: Math.max(0, totalAvailable - newCount),
+      is_demo: isDemoUser,
     });
   } catch (error) {
     console.error('[IMAGE_GEN] Error:', error);
@@ -123,7 +137,7 @@ export async function GET(request: NextRequest) {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('plan_type, images_generated_month, extra_images_purchased, pending_image_payment')
+      .select('plan_type, trial_plan, trial_ends_at, images_generated_month, extra_images_purchased, pending_image_payment')
       .eq('id', tenantId)
       .single();
 
@@ -135,17 +149,25 @@ export async function GET(request: NextRequest) {
         total_available: 0,
         remaining: 0,
         pending_image_payment: false,
+        is_demo: false,
       });
     }
 
     const planType = profile.plan_type || 'free';
-    const monthLimit = IMAGE_LIMITS[planType] || 0;
-    const extraImages = profile.extra_images_purchased || 0;
+    // Check if user is on an active demo/trial
+    const trialPlan = profile.trial_plan || null;
+    const trialEndsAt = profile.trial_ends_at ? new Date(profile.trial_ends_at) : null;
+    const isDemoUser = !!(trialPlan && trialEndsAt && trialEndsAt > new Date());
+
+    // Demo/trial users: max 5 images regardless of plan tier
+    const monthLimit = isDemoUser ? DEMO_IMAGE_LIMIT : (IMAGE_LIMITS[planType] || 0);
+    const extraImages = isDemoUser ? 0 : (profile.extra_images_purchased || 0);
     const totalAvailable = monthLimit + extraImages;
     const used = profile.images_generated_month || 0;
 
     return NextResponse.json({
       plan_type: planType,
+      is_demo: isDemoUser,
       images_generated_month: used,
       extra_images_purchased: extraImages,
       total_available: totalAvailable,

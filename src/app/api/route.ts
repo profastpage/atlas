@@ -685,10 +685,10 @@ async function handleGrantTrial(request: NextRequest) {
     );
   }
 
-  const validPlans = ['pro', 'executive'];
+  const validPlans = ['basico', 'pro', 'executive'];
   if (!validPlans.includes(trialPlan)) {
     return NextResponse.json(
-      { error: 'trialPlan debe ser "pro" o "executive"' },
+      { error: 'trialPlan debe ser "basico", "pro" o "executive"' },
       { status: 400 }
     );
   }
@@ -760,10 +760,19 @@ async function handleChangePlan(request: NextRequest) {
       plan_type: planType,
     };
 
+    // When setting a real paid plan, clear demo/trial fields to avoid interference
+    if (planType !== 'free' && planType !== 'suspended') {
+      upsertData.trial_plan = null;
+      upsertData.trial_ends_at = null;
+    }
+
     // Preserve existing fields
     if (existing) {
-      if (existing.trial_plan) upsertData.trial_plan = existing.trial_plan;
-      if (existing.trial_ends_at) upsertData.trial_ends_at = existing.trial_ends_at;
+      // Only preserve trial fields if we're NOT setting a real plan
+      if (planType === 'free' || planType === 'suspended') {
+        if (existing.trial_plan) upsertData.trial_plan = existing.trial_plan;
+        if (existing.trial_ends_at) upsertData.trial_ends_at = existing.trial_ends_at;
+      }
       if (existing.is_admin !== undefined && existing.is_admin !== null) {
         upsertData.is_admin = existing.is_admin;
       }
