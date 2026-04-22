@@ -543,50 +543,82 @@ export default function AtlasApp() {
         const newTxt = finalTranscript.trim();
 
         if (acc.length > 0 && newTxt.length > 0) {
-          // WORD-LEVEL OVERLAP DEDUP: Split into words and find overlap
+          // Normalize words: lowercase, strip punctuation for robust comparison
+          const normWord = (w: string) => w.toLowerCase().replace(/[^a-záéíóúñü0-9]/g, '');
           const accWords = acc.trimEnd().split(/\s+/);
           const newWords = newTxt.split(/\s+/);
+          const accNorm = accWords.map(normWord);
+          const newNorm = newWords.map(normWord);
+
+          // 1) SUFFIX/PREFIX overlap detection with normalized words
           let overlapCount = 0;
-          const maxOverlap = Math.min(accWords.length, newWords.length, 10);
+          const maxOverlap = Math.min(accNorm.length, newNorm.length, 10);
           for (let w = maxOverlap; w >= 1; w--) {
-            const accTail = accWords.slice(-w);
-            const newHead = newWords.slice(0, w);
-            if (accTail.join(' ').toLowerCase() === newHead.join(' ').toLowerCase()) {
-              overlapCount = w;
-              break;
+            let match = true;
+            for (let i = 0; i < w; i++) {
+              if (accNorm[accNorm.length - w + i] !== newNorm[i]) { match = false; break; }
+            }
+            if (match) { overlapCount = w; break; }
+          }
+          let dedupedWords = newWords.slice(overlapCount);
+
+          // 2) SAFETY: skip first new word if it matches the very last accumulated word (normalized)
+          //    Handles cases where overlap detection missed due to punctuation/spacing differences
+          if (dedupedWords.length > 0 && accNorm.length > 0) {
+            const firstNewNorm = normWord(dedupedWords[0]);
+            const lastAccNorm = accNorm[accNorm.length - 1];
+            if (firstNewNorm && firstNewNorm === lastAccNorm) {
+              dedupedWords = dedupedWords.slice(1);
             }
           }
-          const dedupedWords = newWords.slice(overlapCount);
+
+          // 3) SAFETY: remove consecutive duplicate words (API artifact)
+          if (dedupedWords.length > 1) {
+            const filtered: string[] = [];
+            for (let i = 0; i < dedupedWords.length; i++) {
+              const curNorm = normWord(dedupedWords[i]);
+              const prevNorm = i > 0 ? normWord(dedupedWords[i - 1]) : '';
+              // Also check against last word of accumulated text
+              const boundaryNorm = filtered.length === 0 && accNorm.length > 0 ? accNorm[accNorm.length - 1] : '';
+              if (curNorm && curNorm !== prevNorm && curNorm !== boundaryNorm) {
+                filtered.push(dedupedWords[i]);
+              }
+            }
+            dedupedWords = filtered;
+          }
+
           if (dedupedWords.length > 0) {
             voiceTranscriptRef.current = (voiceTranscriptRef.current.trimEnd() + ' ' + dedupedWords.join(' ')).trim();
           }
         } else {
           voiceTranscriptRef.current = newTxt;
         }
-
-        // Debounce final results: ignore rapid-fire finals within 300ms
-        const now = Date.now();
-        lastFinalResultTimeRef.current = now;
       }
 
-      // Dedup interim against accumulated text
+      // Dedup interim against accumulated text (normalized comparison)
       if (interimTranscript) {
         const acc = voiceTranscriptRef.current.trimEnd();
         const interTrimmed = interimTranscript.trim();
         if (acc.length > 0 && interTrimmed.length > 0) {
-          const accWords = acc.split(/\s+/);
+          const normWord = (w: string) => w.toLowerCase().replace(/[^a-záéíóúñü0-9]/g, '');
+          const accNorm = acc.split(/\s+/).map(normWord);
           const interWords = interTrimmed.split(/\s+/);
+          const interNorm = interWords.map(normWord);
           let overlapCount = 0;
-          const maxOverlap = Math.min(accWords.length, interWords.length, 10);
+          const maxOverlap = Math.min(accNorm.length, interNorm.length, 10);
           for (let w = maxOverlap; w >= 1; w--) {
-            const accTail = accWords.slice(-w);
-            const interHead = interWords.slice(0, w);
-            if (accTail.join(' ').toLowerCase() === interHead.join(' ').toLowerCase()) {
-              overlapCount = w;
-              break;
+            let match = true;
+            for (let i = 0; i < w; i++) {
+              if (accNorm[accNorm.length - w + i] !== interNorm[i]) { match = false; break; }
             }
+            if (match) { overlapCount = w; break; }
           }
-          interimTranscript = interWords.slice(overlapCount).join(' ');
+          let deduped = interWords.slice(overlapCount);
+          // Safety: skip first if it matches last accumulated word
+          if (deduped.length > 0 && accNorm.length > 0 && normWord(deduped[0]) === accNorm[accNorm.length - 1]) {
+            deduped = deduped.slice(1);
+          }
+          interimTranscript = deduped.join(' ');
         }
       }
 
@@ -802,27 +834,36 @@ export default function AtlasApp() {
   const handleLockedSend = useCallback(() => {
     // CRITICAL: Clear any pending restart timer to prevent ghost recognition sessions
     if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null; }
-    // Prevent double-send
-    if (sendingVoiceRef.current) return;
-    sendingVoiceRef.current = true;
+    // Prevent double-fire: don't start if already sending or auto-send pending
+    if (sendingVoiceRef.current || shouldAutoSendRef.current) return;
+    // DO NOT set sendingVoiceRef here — let onend handle it to avoid blocking the send
     shouldAutoSendRef.current = true;
     isLockedRef.current = false;
     setIsLocked(false);
     setIsSwipeCanceling(false);
     try { recognitionRef.current?.stop(); } catch {}
-    // Safety net: if onend never fires, force reset after 2s
+    // Safety net: if onend never fires, force send after 2s
     setTimeout(() => {
       if (shouldAutoSendRef.current) {
         shouldAutoSendRef.current = false;
         setIsListening(false);
+        const text = voiceTranscriptRef.current.trim();
         resetVoiceAccumulation();
-        sendingVoiceRef.current = false;
+        if (text && !sendingVoiceRef.current) {
+          sendingVoiceRef.current = true;
+          setInputValue('');
+          sendMessageRef.current?.(text);
+          setTimeout(() => { sendingVoiceRef.current = false; }, 500);
+        } else {
+          sendingVoiceRef.current = false;
+        }
       }
     }, 2000);
     // Actual send happens in onend handler
   }, []);
 
-  // Cancel voice recording from locked state (swipe down or X)
+  // Cancel voice recording from locked state (swipe down or X button)
+  // KEEPS the transcribed text in inputValue so user can manually send or edit
   const handleLockedCancel = useCallback(() => {
     // CRITICAL: Clear any pending restart timer to prevent ghost recognition sessions
     if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null; }
@@ -831,7 +872,9 @@ export default function AtlasApp() {
     setIsLocked(false);
     setIsSwipeCanceling(false);
     sendingVoiceRef.current = false;
-    resetVoiceAccumulation();
+    // NOTE: We do NOT clear inputValue here — the transcribed text stays in the input
+    // so the user can review it and send manually or edit it
+    resetVoiceAccumulation(); // Only clears voiceTranscriptRef, not inputValue
     try { recognitionRef.current?.stop(); } catch {}
     setIsListening(false);
   }, [resetVoiceAccumulation]);
@@ -2616,15 +2659,28 @@ export default function AtlasApp() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.95 }}
               transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              className="mb-2 mx-auto max-w-xs px-4 py-2.5 rounded-xl bg-emerald-600/20 border border-emerald-500/30 backdrop-blur-sm"
+              className="mb-2 mx-auto max-w-xs px-3 py-2.5 rounded-xl bg-emerald-600/20 border border-emerald-500/30 backdrop-blur-sm"
             >
-              <div className="flex items-center justify-center gap-2">
-                <span className={`w-2.5 h-2.5 rounded-full animate-pulse ${isSwipeCanceling ? 'bg-red-500' : 'bg-emerald-500'}`} />
-                <span className={`text-[12px] sm:text-[13px] font-semibold transition-colors ${isSwipeCanceling ? 'text-red-300' : 'text-emerald-300'}`}>
-                  {isSwipeCanceling
-                    ? 'Suelta para cancelar grabacion'
-                    : 'Toca para enviar. Desliza hacia abajo para cancelar.'}
-                </span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-center gap-2 flex-1 min-w-0">
+                  <span className={`w-2.5 h-2.5 rounded-full animate-pulse shrink-0 ${isSwipeCanceling ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                  <span className={`text-[12px] sm:text-[13px] font-semibold transition-colors truncate ${isSwipeCanceling ? 'text-red-300' : 'text-emerald-300'}`}>
+                    {isSwipeCanceling
+                      ? 'Suelta para cancelar grabacion'
+                      : 'Toca para enviar. Desliza abajo para cancelar.'}
+                  </span>
+                </div>
+                {/* X cancel button — keeps transcribed text in input */}
+                {!isSwipeCanceling && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleLockedCancel(); }}
+                    className="w-7 h-7 rounded-full bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 flex items-center justify-center shrink-0 transition-colors active:scale-90"
+                    aria-label="Cancelar grabacion"
+                  >
+                    <X className="w-3.5 h-3.5 text-red-400" />
+                  </button>
+                )}
               </div>
             </motion.div>
           )}
