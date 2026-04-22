@@ -7,8 +7,8 @@ import {
   X, LogOut, LogIn, Settings, Lock, ShieldCheck, XCircle,
   Pencil, Archive, ArchiveRestore, Check, AlertTriangle,
   Paperclip, FileText, XCircle as XCircleIcon, Loader2,
-  Copy, Share2, Bell, Star, Heart, Hash, PencilLine,
-  Sparkles, RotateCcw, ChevronRight
+  Copy, Share2, Bell, Star, Hash, PencilLine,
+  Sparkles, RotateCcw, ChevronRight, Wand2
 } from 'lucide-react';
 import {
   trackMessageSent,
@@ -189,6 +189,8 @@ export default function AtlasApp() {
   const [showFavoritesModal, setShowFavoritesModal] = useState(false);
   const [favoriteSessions, setFavoriteSessions] = useState<FavoriteSession[]>([]);
   const [favoritesTab, setFavoritesTab] = useState<'favorites' | 'numbers'>('favorites');
+  const [favoriteMessageIds, setFavoriteMessageIds] = useState<Set<string>>(new Set());
+  const [showSuggestions, setShowSuggestions] = useState(true);
 
   // ---- Numbered Highlights State ----
   const [highlights, setHighlights] = useState<Highlight[]>([]);
@@ -205,12 +207,15 @@ export default function AtlasApp() {
 
   // ---- Favorites & Highlights: Load from localStorage ----
   const FAV_KEY = 'atlas_favorites';
+  const FAV_MSG_KEY = 'atlas_favorite_messages';
   const HL_KEY = 'atlas_highlights';
 
   useEffect(() => {
     try {
       const savedFavs = localStorage.getItem(FAV_KEY);
       if (savedFavs) setFavoriteSessions(JSON.parse(savedFavs));
+      const savedFavMsgs = localStorage.getItem(FAV_MSG_KEY);
+      if (savedFavMsgs) setFavoriteMessageIds(new Set(JSON.parse(savedFavMsgs)));
       const savedHl = localStorage.getItem(HL_KEY);
       if (savedHl) setHighlights(JSON.parse(savedHl));
     } catch {}
@@ -220,6 +225,11 @@ export default function AtlasApp() {
   useEffect(() => {
     try { localStorage.setItem(FAV_KEY, JSON.stringify(favoriteSessions)); } catch {}
   }, [favoriteSessions]);
+
+  // Persist favorite messages
+  useEffect(() => {
+    try { localStorage.setItem(FAV_MSG_KEY, JSON.stringify([...favoriteMessageIds])); } catch {}
+  }, [favoriteMessageIds]);
 
   // Persist highlights
   useEffect(() => {
@@ -432,8 +442,8 @@ export default function AtlasApp() {
         const newTxt = finalTranscript.trim();
         if (acc.length > 0 && newTxt.length > 0) {
           const accTail = acc.trimEnd();
-          // Find maximum overlap (up to 40 chars) to avoid O(n²)
-          const maxCheck = Math.min(accTail.length, newTxt.length, 40);
+          // Find maximum overlap (up to 60 chars) to avoid O(n²)
+          const maxCheck = Math.min(accTail.length, newTxt.length, 60);
           let overlap = 0;
           for (let l = maxCheck; l >= 1; l--) {
             if (accTail.endsWith(newTxt.slice(0, l))) {
@@ -447,6 +457,22 @@ export default function AtlasApp() {
           }
         } else {
           voiceTranscriptRef.current += finalTranscript;
+        }
+      }
+      // Also dedup interim — remove overlap with accumulated text
+      if (interimTranscript) {
+        const acc = voiceTranscriptRef.current.trimEnd();
+        const interTrimmed = interimTranscript.trim();
+        if (acc.length > 0 && interTrimmed.length > 0) {
+          const maxInterim = Math.min(acc.length, interTrimmed.length, 60);
+          let interOverlap = 0;
+          for (let l = maxInterim; l >= 1; l--) {
+            if (acc.endsWith(interTrimmed.slice(0, l))) {
+              interOverlap = l;
+              break;
+            }
+          }
+          interimTranscript = interTrimmed.slice(interOverlap);
         }
       }
       // Show accumulated final + current interim in real-time
@@ -1498,7 +1524,7 @@ export default function AtlasApp() {
   );
 
   // ========================================
-  // FAVORITES — Heart icon, save sessions
+  // FAVORITES — Star icon, save sessions + messages
   // ========================================
 
   const toggleFavoriteSession = useCallback((sId: string, sTitle: string, msgCount: number) => {
@@ -1515,6 +1541,20 @@ export default function AtlasApp() {
   const isSessionFavorited = useCallback((sId: string) => {
     return favoriteSessions.some(f => f.sessionId === sId);
   }, [favoriteSessions]);
+
+  // Per-message favorite toggle
+  const toggleFavoriteMessage = useCallback((msgId: string) => {
+    setFavoriteMessageIds(prev => {
+      const next = new Set(prev);
+      if (next.has(msgId)) {
+        next.delete(msgId);
+      } else {
+        next.add(msgId);
+      }
+      return next;
+    });
+    trackActionButton({ action: 'favorite_message' });
+  }, []);
 
   // ========================================
   // HIGHLIGHTS — Number system (1-99)
@@ -1652,6 +1692,7 @@ export default function AtlasApp() {
     }
 
     setSuggestions(suggestionsList.slice(0, 3));
+    setShowSuggestions(true);
   }, []);
 
   // Generate suggestions after each response
@@ -1744,17 +1785,17 @@ export default function AtlasApp() {
               </a>
             </>
           )}
-          {/* Favorites Heart */}
+          {/* Favorites Star */}
           <button
             onClick={() => setShowFavoritesModal(true)}
             className="p-2 rounded-full hover:bg-gray-800/60 transition-colors relative"
             aria-label="Favoritos"
             title="Favoritos y destacados"
           >
-            <Heart className={`w-5 h-5 ${favoriteSessions.length > 0 || highlights.length > 0 ? 'text-red-400 fill-red-400' : 'text-gray-400'}`} />
-            {(favoriteSessions.length > 0 || highlights.length > 0) && (
-              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-red-500 rounded-full text-[8px] text-white flex items-center justify-center font-bold">
-                {favoriteSessions.length + highlights.length}
+            <Star className={`w-5 h-5 ${favoriteSessions.length > 0 || highlights.length > 0 || favoriteMessageIds.size > 0 ? 'text-amber-400 fill-amber-400' : 'text-gray-400'}`} />
+            {(favoriteSessions.length > 0 || highlights.length > 0 || favoriteMessageIds.size > 0) && (
+              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-amber-500 rounded-full text-[8px] text-white flex items-center justify-center font-bold">
+                {favoriteSessions.length + highlights.length + favoriteMessageIds.size}
               </span>
             )}
           </button>
@@ -1912,7 +1953,7 @@ export default function AtlasApp() {
                                   className="p-1.5 rounded-lg hover:bg-gray-700/40 transition-colors"
                                   title={isSessionFavorited(session.id) ? 'Quitar de favoritos' : 'Agregar a favoritos'}
                                 >
-                                  <Heart className={`w-3 h-3 ${isSessionFavorited(session.id) ? 'text-red-400 fill-red-400' : 'text-gray-500 hover:text-red-400'}`} />
+                                  <Star className={`w-3 h-3 ${isSessionFavorited(session.id) ? 'text-amber-400 fill-amber-400' : 'text-gray-500 hover:text-amber-400'}`} />
                                 </button>
                                 {/* Archive / Unarchive */}
                                 <button
@@ -2055,41 +2096,32 @@ export default function AtlasApp() {
                   {formatTime(msg.timestamp)}
                 </p>
 
-                {/* Action buttons — always visible, subtle until hover */}
+                {/* Action buttons — icon-only, subtle until hover */}
                 {msg.role === 'assistant' && msg.id !== streamingId && msg.content && !msg.content.startsWith('Error') && (
-                  <div className="flex items-center flex-wrap gap-2 opacity-40 hover:opacity-100 transition-opacity mt-1.5 ml-0.5">
+                  <div className="flex items-center gap-1.5 opacity-30 hover:opacity-100 transition-opacity mt-1.5 ml-0.5">
                     {/* Copy */}
                     <button
                       onClick={() => copyMessage(msg.id, msg.content)}
-                      className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all active:scale-95 cursor-pointer select-none"
-                      title={copiedId === msg.id ? 'Copiado' : 'Copiar texto'}
+                      className="p-1 rounded-lg text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all active:scale-90 cursor-pointer select-none"
+                      title={copiedId === msg.id ? 'Copiado' : 'Copiar'}
                     >
                       {copiedId === msg.id ? (
                         <Check className="w-3.5 h-3.5 text-emerald-400" />
                       ) : (
                         <Copy className="w-3.5 h-3.5" />
                       )}
-                      <span>
-                        {copiedId === msg.id ? 'Copiado' : 'Copiar'}
-                      </span>
                     </button>
 
                     {/* Share */}
                     <button
                       onClick={() => shareMessage(msg.id, msg.content)}
-                      className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all active:scale-95 cursor-pointer select-none"
-                      title="Compartir consejo"
+                      className="p-1 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all active:scale-90 cursor-pointer select-none"
+                      title={sharedId === msg.id ? 'Enlace copiado' : 'Compartir'}
                     >
                       {sharedId === msg.id ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-blue-400" />
-                          <span className="text-blue-400">Enlace copiado</span>
-                        </>
+                        <Check className="w-3.5 h-3.5 text-blue-400" />
                       ) : (
-                        <>
-                          <Share2 className="w-3.5 h-3.5" />
-                          <span>Compartir</span>
-                        </>
+                        <Share2 className="w-3.5 h-3.5" />
                       )}
                     </button>
 
@@ -2097,33 +2129,21 @@ export default function AtlasApp() {
                     {wordCount(msg.content) > 50 && (
                       <button
                         onClick={() => handleAlarmClick(msg.content)}
-                        className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all active:scale-95 cursor-pointer select-none"
+                        className="p-1 rounded-lg text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all active:scale-90 cursor-pointer select-none"
                         title="Programar alarma"
                       >
                         <Bell className="w-3.5 h-3.5" />
-                        <span>Alarma</span>
                       </button>
                     )}
 
-                    {/* Expand — only for short responses (15-90 words) */}
-                    {msg.id !== expandingId && isShortResponse(msg.content) && (
-                      <ExpandButton
-                        onExpand={() => expandMessage(msg.id)}
-                        isExpanding={false}
-                      />
-                    )}
-
-                    {/* Edit Response */}
-                    {msg.id !== editingMessageId && msg.id !== streamingId && msg.id !== expandingId && (
-                      <button
-                        onClick={() => startEditResponse(msg.id, msg.content)}
-                        className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all active:scale-95 cursor-pointer select-none"
-                        title="Editar respuesta"
-                      >
-                        <PencilLine className="w-3.5 h-3.5" />
-                        <span>Editar</span>
-                      </button>
-                    )}
+                    {/* Star Favorite — per message */}
+                    <button
+                      onClick={() => toggleFavoriteMessage(msg.id)}
+                      className="p-1 rounded-lg transition-all active:scale-90 cursor-pointer select-none"
+                      title={favoriteMessageIds.has(msg.id) ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+                    >
+                      <Star className={`w-3.5 h-3.5 ${favoriteMessageIds.has(msg.id) ? 'text-amber-400 fill-amber-400' : 'text-gray-400 hover:text-amber-400'}`} />
+                    </button>
 
                     {/* Highlight / Number */}
                     {msg.id !== streamingId && msg.id !== expandingId && (
@@ -2133,12 +2153,30 @@ export default function AtlasApp() {
                           setSelectedText(plainText);
                           setShowNumberPicker({ messageId: msg.id, msgContent: plainText, rect: { top: 0, left: 0, bottom: 0, right: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => '' } });
                         }}
-                        className="inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-medium text-gray-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all active:scale-95 cursor-pointer select-none"
+                        className="p-1 rounded-lg text-gray-400 hover:text-purple-400 hover:bg-purple-500/10 transition-all active:scale-90 cursor-pointer select-none"
                         title="Numerar / Destacar"
                       >
                         <Hash className="w-3.5 h-3.5" />
-                        <span>Numero</span>
                       </button>
+                    )}
+
+                    {/* Edit Response */}
+                    {msg.id !== editingMessageId && msg.id !== streamingId && msg.id !== expandingId && (
+                      <button
+                        onClick={() => startEditResponse(msg.id, msg.content)}
+                        className="p-1 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all active:scale-90 cursor-pointer select-none"
+                        title="Editar respuesta"
+                      >
+                        <PencilLine className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    {/* Expand — only for short responses (15-90 words) — FULL BUTTON, the only one with text */}
+                    {msg.id !== expandingId && isShortResponse(msg.content) && (
+                      <ExpandButton
+                        onExpand={() => expandMessage(msg.id)}
+                        isExpanding={false}
+                      />
                     )}
                   </div>
                 )}
@@ -2347,32 +2385,52 @@ export default function AtlasApp() {
           )}
         </form>
 
-        {/* Suggestions Chips */}
+        {/* Suggestions — single line each, slide right→left, dismissible */}
         <AnimatePresence>
-          {suggestions.length > 0 && !isLoading && !isStreaming && !isLocked && (
+          {suggestions.length > 0 && !isLoading && !isStreaming && !isLocked && showSuggestions && (
             <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              className="flex flex-wrap gap-1.5 mt-2 mx-auto max-w-3xl px-1"
+              initial={{ opacity: 0, x: 40 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -40 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="mt-2 mx-auto max-w-3xl px-1"
             >
-              <Sparkles className="w-3 h-3 text-amber-400 mt-1.5 shrink-0" />
-              {suggestions.map((sug, i) => (
-                <button
-                  key={i}
-                  onClick={() => sendMessage(sug)}
-                  className="px-2.5 py-1 rounded-full bg-gray-800/60 border border-gray-700/30 text-[11px] text-gray-400 hover:text-emerald-400 hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all active:scale-95 whitespace-nowrap"
-                >
-                  {sug}
-                </button>
-              ))}
-              <button
-                onClick={() => setSuggestions([])}
-                className="p-1 rounded-full hover:bg-gray-800/60 transition-colors shrink-0"
-                title="Ocultar sugerencias"
-              >
-                <X className="w-3 h-3 text-gray-600" />
-              </button>
+              <div className="flex items-start gap-2">
+                <div className="flex-1 space-y-1">
+                  {suggestions.map((sug, i) => (
+                    <motion.button
+                      key={i}
+                      initial={{ opacity: 0, x: 30 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.08, type: 'spring', damping: 25, stiffness: 300 }}
+                      onClick={() => { setSuggestions([]); sendMessage(sug); }}
+                      className="block w-full text-left px-3 py-1.5 rounded-lg bg-gray-800/50 border border-gray-700/20 text-[12px] text-gray-400 hover:text-emerald-400 hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all active:scale-[0.98] truncate cursor-pointer"
+                    >
+                      {sug}
+                    </motion.button>
+                  ))}
+                </div>
+                <div className="flex flex-col gap-1 shrink-0 mt-0.5">
+                  <button
+                    onClick={() => {
+                      const lastBot = [...messages].reverse().find(m => m.role === 'assistant');
+                      const lastUser = [...messages].reverse().find(m => m.role === 'user');
+                      if (lastBot && lastUser) generateSuggestions(lastUser.content, lastBot.content);
+                    }}
+                    className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all active:scale-90"
+                    title="Regenerar sugerencias"
+                  >
+                    <Wand2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => { setShowSuggestions(false); setSuggestions([]); }}
+                    className="p-1.5 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-gray-800/60 transition-all active:scale-90"
+                    title="Ocultar sugerencias"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -2828,7 +2886,7 @@ export default function AtlasApp() {
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-gray-800/40 shrink-0">
                   <div className="flex items-center gap-2">
-                    <Heart className="w-4 h-4 text-red-400 fill-red-400" />
+                    <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
                     <h2 className="text-sm font-semibold text-white">Mis Destacados</h2>
                   </div>
                   <button
@@ -2845,12 +2903,12 @@ export default function AtlasApp() {
                     onClick={() => setFavoritesTab('favorites')}
                     className={`flex-1 py-2.5 text-[12px] font-semibold transition-all ${
                       favoritesTab === 'favorites'
-                        ? 'text-emerald-400 border-b-2 border-emerald-400'
+                        ? 'text-amber-400 border-b-2 border-amber-400'
                         : 'text-gray-500 hover:text-gray-300'
                     }`}
                   >
-                    <Heart className="w-3 h-3 inline mr-1" />
-                    Favoritos ({favoriteSessions.length})
+                    <Star className="w-3 h-3 inline mr-1" />
+                    Favoritos ({favoriteSessions.length + favoriteMessageIds.size})
                   </button>
                   <button
                     onClick={() => setFavoritesTab('numbers')}
@@ -2868,30 +2926,68 @@ export default function AtlasApp() {
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-3 space-y-2">
                   {favoritesTab === 'favorites' ? (
-                    favoriteSessions.length === 0 ? (
+                    (favoriteSessions.length === 0 && favoriteMessageIds.size === 0) ? (
                       <div className="text-center py-8">
-                        <Heart className="w-8 h-8 text-gray-700 mx-auto mb-2" />
-                        <p className="text-xs text-gray-500">Sin chats favoritos</p>
-                        <p className="text-[10px] text-gray-600 mt-1">Toca el corazon en cualquier conversacion</p>
+                        <Star className="w-8 h-8 text-gray-700 mx-auto mb-2" />
+                        <p className="text-xs text-gray-500">Sin favoritos</p>
+                        <p className="text-[10px] text-gray-600 mt-1">Toca la estrella en cualquier mensaje o conversacion</p>
                       </div>
                     ) : (
-                      favoriteSessions.map(fav => (
-                        <div
-                          key={fav.sessionId}
-                          className="flex items-center p-3 rounded-xl bg-gray-800/40 border border-gray-700/30 hover:border-gray-600/40 transition-all cursor-pointer group"
-                          onClick={() => {
-                            loadSession(fav.sessionId);
-                            setShowFavoritesModal(false);
-                          }}
-                        >
-                          <Heart className="w-4 h-4 text-red-400 fill-red-400 shrink-0 mr-2.5" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[13px] text-gray-200 truncate font-medium">{fav.title}</p>
-                            <p className="text-[10px] text-gray-500 mt-0.5">{fav.messageCount} mensajes</p>
+                      <>
+                        {/* Favorited messages */}
+                        {favoriteMessageIds.size > 0 && (
+                          <div className="space-y-1.5">
+                            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider px-1">Mensajes destacados</p>
+                            {[...favoriteMessageIds].map(msgId => {
+                              const msg = messages.find(m => m.id === msgId);
+                              if (!msg) return null;
+                              return (
+                                <div
+                                  key={msgId}
+                                  className="p-2.5 rounded-xl bg-gray-800/40 border border-gray-700/30 group"
+                                >
+                                  <div className="flex items-start gap-2">
+                                    <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0 mt-0.5" />
+                                    <p className="text-[12px] text-gray-300 leading-relaxed line-clamp-3">{msg.content.substring(0, 150)}{msg.content.length > 150 ? '...' : ''}</p>
+                                  </div>
+                                  <div className="flex items-center justify-between mt-1.5 ml-5.5">
+                                    <span className="text-[9px] text-gray-600">{formatTime(msg.timestamp)}</span>
+                                    <button
+                                      onClick={() => toggleFavoriteMessage(msgId)}
+                                      className="p-0.5 rounded hover:bg-red-500/10 transition-colors"
+                                    >
+                                      <X className="w-2.5 h-2.5 text-gray-600 hover:text-red-400" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                          <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors shrink-0" />
-                        </div>
-                      ))
+                        )}
+                        {/* Favorited sessions */}
+                        {favoriteSessions.length > 0 && (
+                          <div className="space-y-1.5">
+                            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider px-1 pt-1">Chats favoritos</p>
+                            {favoriteSessions.map(fav => (
+                              <div
+                                key={fav.sessionId}
+                                className="flex items-center p-3 rounded-xl bg-gray-800/40 border border-gray-700/30 hover:border-gray-600/40 transition-all cursor-pointer group"
+                                onClick={() => {
+                                  loadSession(fav.sessionId);
+                                  setShowFavoritesModal(false);
+                                }}
+                              >
+                                <Star className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0 mr-2.5" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[13px] text-gray-200 truncate font-medium">{fav.title}</p>
+                                  <p className="text-[10px] text-gray-500 mt-0.5">{fav.messageCount} mensajes</p>
+                                </div>
+                                <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors shrink-0" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )
                   ) : (
                     highlights.length === 0 ? (
