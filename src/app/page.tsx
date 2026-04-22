@@ -2419,7 +2419,7 @@ export default function AtlasApp() {
       />
 
       {/* ===== HEADER ===== */}
-      <header className="flex items-center justify-between px-3 sm:px-4 py-1 sm:py-1.5 bg-[#111111] border-b border-gray-800/30 z-20 shrink-0">
+      <header className="flex items-center justify-between px-3 sm:px-4 py-1.5 sm:py-2 bg-[#161616] border-b border-gray-700/40 z-20 shrink-0" style={{ paddingTop: 'max(0.375rem, env(safe-area-inset-top, 0px))' }}>
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={() => setShowSessions(!showSessions)}
