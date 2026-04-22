@@ -2996,22 +2996,20 @@ export default function AtlasApp() {
       </div>
 
       {/* ===== INPUT AREA ===== */}
-      <div className="shrink-0 border-t border-gray-800/20 bg-[#111111] px-2 sm:px-3 py-2 sm:py-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-10 relative">
+      <div className="shrink-0 bg-[#0f0f0f] px-2 sm:px-3 pt-1 pb-[max(0.375rem,env(safe-area-inset-bottom))] z-10 relative">
         {/* Remaining responses bar — guests AND registered free users */}
         {remainingResponses > 0 && hasActivePlan !== true && !checkingPlan && (
-          <div className="text-center mb-1.5 sm:mb-2">
+          <div className="text-center mb-1">
             <span className="text-[9px] sm:text-[10px] text-gray-600">
               {!isAuthenticated ? (
                 <>
-                  Tienes <span className="text-emerald-400 font-semibold">{remainingResponses}</span> de {messageLimit} respuestas gratis.{' '}
-                  <a href="/login" className="text-emerald-400 hover:text-emerald-300 underline">
-                    Registrate gratis
-                  </a>{' '}
-                  y obten 20 extra al mes.
+                  <span className="text-emerald-400/60 font-medium">{remainingResponses}</span>/{messageLimit} gratis.{' '}
+                  <a href="/login" className="text-emerald-400/50 hover:text-emerald-400 underline">Registrate</a>
                 </>
               ) : (
                 <>
-                  Te quedan <span className="text-emerald-400 font-semibold">{remainingResponses}</span> de {messageLimit} respuestas este mes.
+                  <span className="text-emerald-400/60 font-medium">{remainingResponses}</span>/{messageLimit} este mes.{' '}
+                  <span className="text-emerald-400/50">Mejora tu plan</span>
                 </>
               )}
             </span>
@@ -3058,21 +3056,16 @@ export default function AtlasApp() {
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
-              className="flex items-center justify-center gap-2 mb-2"
+              className="flex items-center justify-center gap-1.5 mb-1"
             >
-              <span className={`w-2 h-2 rounded-full animate-pulse ${isSwipeCanceling ? 'bg-red-400' : 'bg-red-500'}`} />
-              <span className={`text-[11px] font-medium transition-colors ${isSwipeCanceling ? 'text-orange-400' : 'text-red-400'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${isSwipeCanceling ? 'bg-red-400' : 'bg-red-500'}`} />
+              <span className={`text-[10px] font-medium transition-colors ${isSwipeCanceling ? 'text-orange-400' : 'text-red-400'}`}>
                 {isSwipeCanceling
                   ? 'Suelta para cancelar'
                   : lockSlideProgress >= 1
-                    ? 'Bloqueado — suelta para grabar sin mantener'
-                    : 'Mantener pulsado para grabar'}
+                    ? 'Bloqueado'
+                    : 'Grabando...'}
               </span>
-              {!isSwipeCanceling && lockSlideProgress < 0.5 && (
-                <span className="text-[9px] text-red-400/50">
-                  &nbsp;| Desliza hacia abajo para dejar de grabar
-                </span>
-              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -3088,7 +3081,7 @@ export default function AtlasApp() {
               }}
               exit={{ opacity: 0, scale: 0.5, y: 10 }}
               transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              className="absolute -top-12 right-0 sm:-top-14 z-30"
+              className="absolute -top-10 right-2 sm:-top-12 z-30"
             >
               <div
                 className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all duration-150 ${
@@ -3141,32 +3134,8 @@ export default function AtlasApp() {
           )}
         </AnimatePresence>
 
-        <form onSubmit={handleSubmit} className="flex items-center gap-2 max-w-3xl mx-auto relative">
-          <textarea
-            ref={inputRef}
-            id="chat-input"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={'Escribe o habla tu mensaje...'}
-            rows={1}
-            className={`flex-1 min-w-0 bg-[#1a1a1a] border border-gray-800/40 rounded-full px-4 py-2.5 sm:py-3 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 focus:border-emerald-500/30 transition-all disabled:opacity-50 resize-none overflow-y-auto max-h-28 leading-5 ${isListening ? 'border-red-500/40 ring-1 ring-red-500/20' : ''}`}
-            disabled={isLoading || isStreaming}
-          />
-
-          {/* Send — hidden when voice locked (locked send button replaces it) */}
-          {!isLocked && (
-            <button
-              type="submit"
-              disabled={(!inputValue.trim() && !imageBase64) || isLoading || isStreaming || isListening}
-              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700/50 disabled:opacity-30 flex items-center justify-center transition-all active:scale-90 shrink-0"
-              aria-label="Enviar"
-            >
-              <Send className="w-[18px] h-[18px] text-white" />
-            </button>
-          )}
-
-          {/* Paperclip — Document Upload (Pro/Ejecutivo only) */}
+        <form onSubmit={handleSubmit} className="flex items-end gap-1.5 max-w-3xl mx-auto relative">
+          {/* Hidden file input */}
           <input
             ref={fileInputRef}
             type="file"
@@ -3174,51 +3143,113 @@ export default function AtlasApp() {
             onChange={handleFileUpload}
             className="hidden"
           />
-          <button
-            type="button"
-            onClick={() => {
-              trackActionButton({ action: 'attach' });
-              fileInputRef.current?.click();
-            }}
-            disabled={isLoading || isStreaming || isAnalyzingDocument}
-            className={`w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 disabled:opacity-30 ${
-              isAnalyzingDocument
-                ? 'bg-blue-500/15 border-2 border-blue-500/40'
-                : documentText || imageBase64
-                  ? 'bg-blue-500/10 border-2 border-blue-500/30'
-                  : 'bg-gray-800 hover:bg-gray-700/80 border-2 border-gray-700/30 hover:border-blue-500/40'
-            }`}
-            aria-label="Adjuntar archivo (PDF, TXT, Imagen)"
-            title="Adjuntar archivo"
-          >
-            {isAnalyzingDocument ? (
-              <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400 animate-spin" />
-            ) : documentText || imageBase64 ? (
-              <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
-            ) : (
-              <Paperclip className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-            )}
-          </button>
 
-          {/* Image Generation — Pro/Executive only */}
-          {(IMAGE_LIMITS[userPlanType?.toLowerCase()] > 0 || userPlanType?.startsWith('trial_') || hasPaidExtraImages) && (
-            <button
-              type="button"
-              onClick={handleGenerateImage}
-              disabled={isLoading || isStreaming || isGeneratingImage || !inputValue.trim()}
-              className="w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 disabled:opacity-30 bg-gray-800 hover:bg-purple-500/20 border-2 border-gray-700/30 hover:border-purple-500/40"
-              aria-label="Generar imagen con IA"
-              title="Generar imagen"
-            >
-              {isGeneratingImage ? (
-                <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 text-purple-400 animate-spin" />
-              ) : (
-                <Image className="w-4 h-4 sm:w-5 sm:h-5 text-purple-400" />
+          {/* ===== Integrated input container ===== */}
+          <div className={`flex-1 flex items-end bg-[#1a1a1a] rounded-[22px] border transition-all min-h-[42px] sm:min-h-[46px] ${
+            isListening && !isLocked 
+              ? 'border-red-500/40 ring-1 ring-red-500/20' 
+              : 'border-gray-800/40'
+          }`}>
+            {/* Left: Action buttons inside container */}
+            <div className="flex items-center shrink-0 gap-0.5 p-1 pl-1.5 self-end">
+              {/* Paperclip — Document Upload */}
+              <button
+                type="button"
+                onClick={() => {
+                  trackActionButton({ action: 'attach' });
+                  fileInputRef.current?.click();
+                }}
+                disabled={isLoading || isStreaming || isAnalyzingDocument}
+                className={`p-1.5 rounded-full transition-all active:scale-90 disabled:opacity-30 ${
+                  isAnalyzingDocument
+                    ? 'bg-blue-500/15'
+                    : documentText || imageBase64
+                      ? 'bg-blue-500/10'
+                      : 'hover:bg-gray-700/50'
+                }`}
+                aria-label="Adjuntar archivo (PDF, TXT, Imagen)"
+                title="Adjuntar archivo"
+              >
+                {isAnalyzingDocument ? (
+                  <Loader2 className="w-[18px] h-[18px] text-blue-400 animate-spin" />
+                ) : documentText || imageBase64 ? (
+                  <FileText className="w-[18px] h-[18px] text-blue-400" />
+                ) : (
+                  <Paperclip className="w-[18px] h-[18px] text-gray-500 hover:text-gray-300" />
+                )}
+              </button>
+
+              {/* Image Generation — Pro/Executive only */}
+              {(IMAGE_LIMITS[userPlanType?.toLowerCase()] > 0 || userPlanType?.startsWith('trial_') || hasPaidExtraImages) && (
+                <button
+                  type="button"
+                  onClick={handleGenerateImage}
+                  disabled={isLoading || isStreaming || isGeneratingImage || !inputValue.trim()}
+                  className="p-1.5 rounded-full hover:bg-purple-500/10 transition-all active:scale-90 shrink-0 disabled:opacity-30"
+                  aria-label="Generar imagen con IA"
+                  title="Generar imagen"
+                >
+                  {isGeneratingImage ? (
+                    <Loader2 className="w-[18px] h-[18px] text-purple-400 animate-spin" />
+                  ) : (
+                    <Image className="w-[18px] h-[18px] text-purple-400" />
+                  )}
+                </button>
               )}
-            </button>
-          )}
+            </div>
 
-          {/* Microphone — Slide-to-Lock + Auto-Send */}
+            {/* Textarea */}
+            <textarea
+              ref={inputRef}
+              id="chat-input"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={'Escribe o habla tu mensaje...'}
+              rows={1}
+              className="flex-1 min-w-0 bg-transparent py-2.5 px-1 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none resize-none overflow-y-auto max-h-28 leading-5 disabled:opacity-50"
+              disabled={isLoading || isStreaming}
+            />
+
+            {/* Right: Send button inside container */}
+            {!isLocked ? (
+              <button
+                type="submit"
+                disabled={(!inputValue.trim() && !imageBase64) || isLoading || isStreaming || isListening}
+                className="p-2 m-1 mr-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700/40 disabled:opacity-30 flex items-center justify-center transition-all active:scale-90 shrink-0 self-end"
+                aria-label="Enviar"
+              >
+                <Send className="w-[18px] h-[18px] text-white" />
+              </button>
+            ) : (
+              <motion.button
+                key="locked-send-inline"
+                type="button"
+                onClick={handleLockedSend}
+                onTouchStart={handleLockedTouchStart}
+                onTouchMove={handleLockedTouchMove}
+                onTouchEnd={handleLockedTouchEnd}
+                onTouchCancel={handleLockedTouchEnd}
+                onPointerDown={handleLockedPointerDown}
+                onPointerMove={handleLockedPointerMove}
+                onPointerUp={handleLockedPointerUp}
+                onPointerCancel={handleLockedPointerUp}
+                disabled={isLoading || isStreaming}
+                className={`p-2 m-1 mr-1.5 rounded-full shrink-0 self-end select-none touch-none transition-all active:scale-90 ${
+                  isSwipeCanceling ? 'bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'
+                }`}
+                aria-label="Enviar mensaje de voz"
+              >
+                {isSwipeCanceling ? (
+                  <X className="w-[18px] h-[18px] text-white" />
+                ) : (
+                  <Send className="w-[18px] h-[18px] text-white" />
+                )}
+              </motion.button>
+            )}
+          </div>
+
+          {/* Microphone — Outside the container, separate circle */}
           {speechSupported && (
             isLocked ? (
               /* LOCKED STATE — Send button (swipe down to cancel) */
@@ -3235,10 +3266,10 @@ export default function AtlasApp() {
                 onPointerUp={handleLockedPointerUp}
                 onPointerCancel={handleLockedPointerUp}
                 initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: isSwipeCanceling ? 1.1 : 1, opacity: 1, backgroundColor: isSwipeCanceling ? '#ef4444' : '#059669' }}
+                animate={{ scale: isSwipeCanceling ? 1.1 : 1, opacity: 1 }}
                 transition={{ type: 'spring', damping: 15, stiffness: 300 }}
                 disabled={isLoading || isStreaming}
-                className={`w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full shadow-xl flex items-center justify-center transition-all active:scale-90 shrink-0 select-none touch-none ${
+                className={`w-10 h-10 rounded-full shadow-xl flex items-center justify-center transition-all active:scale-90 shrink-0 select-none touch-none self-end ${
                   isSwipeCanceling
                     ? 'bg-red-500 shadow-red-500/40'
                     : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/40'
@@ -3246,9 +3277,9 @@ export default function AtlasApp() {
                 aria-label="Enviar mensaje de voz"
               >
                 {isSwipeCanceling ? (
-                  <X className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
+                  <X className="w-4 h-4 text-white" />
                 ) : (
-                  <Send className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
+                  <Send className="w-4 h-4 text-white" />
                 )}
               </motion.button>
             ) : (
@@ -3256,32 +3287,30 @@ export default function AtlasApp() {
               <button
                 key="mic-normal"
                 type="button"
-                // Touch events (mobile-first)
                 onTouchStart={handleMicTouchStart}
                 onTouchMove={handleMicTouchMove}
                 onTouchEnd={handleMicTouchEnd}
                 onTouchCancel={handleMicTouchEnd}
-                // Pointer events (desktop fallback)
                 onPointerDown={handleMicPointerDown}
                 onPointerMove={handleMicPointerMove}
                 onPointerUp={handleMicPointerUp}
                 onPointerCancel={handleMicPointerUp}
                 onContextMenu={(e) => e.preventDefault()}
                 disabled={isLoading || isStreaming || isAnalyzingDocument}
-                className={`w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full flex items-center justify-center transition-all duration-200 shrink-0 select-none touch-none ${
+                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 select-none touch-none self-end ${
                   isListening
                     ? 'bg-red-500 hover:bg-red-400 shadow-xl shadow-red-500/40 scale-110'
-                    : 'bg-gray-800 hover:bg-gray-700/80 border-2 border-emerald-500/30 hover:border-emerald-500/60'
+                    : 'bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-500/20'
                 }`}
                 aria-label="Hablar (manten presionado, desliza arriba para bloquear)"
               >
                 {isListening ? (
-                  <span className="relative flex h-4 w-4 sm:h-6 sm:w-6">
+                  <span className="relative flex h-4 w-4">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                    <Mic className="relative inline-flex h-4 w-4 sm:h-6 sm:w-6 text-white" />
+                    <Mic className="relative inline-flex h-4 w-4 text-white" />
                   </span>
                 ) : (
-                  <Mic className="w-4 h-4 sm:w-6 sm:h-6 text-emerald-400" />
+                  <Mic className="w-4 h-4 text-white" />
                 )}
               </button>
             )
@@ -3296,7 +3325,7 @@ export default function AtlasApp() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 6 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="mt-2 mx-auto max-w-3xl"
+              className="mt-1.5 mx-auto max-w-3xl"
             >
               <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide px-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                 {/* Visible suggestion chips (3 at a time) */}
@@ -3360,7 +3389,7 @@ export default function AtlasApp() {
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
-              className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 max-w-[400px]"
+              className="flex items-center gap-2 mt-1.5 px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 max-w-[400px]"
             >
               {imageBase64 ? (
                 <img src={imageBase64} alt="Preview" className="w-6 h-6 rounded object-cover shrink-0" />
