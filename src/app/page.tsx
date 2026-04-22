@@ -1393,7 +1393,7 @@ export default function AtlasApp() {
   // ========================================
 
   return (
-    <div className="flex flex-col h-dvh bg-gray-950 text-white overflow-hidden">
+    <div className="flex flex-col h-[100dvh] max-h-[100dvh] w-full bg-[#0a0a0a] text-white overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
       {/* ===== SETTINGS SIDEBAR ===== */}
       <SettingsSidebar
         isOpen={showSettings}
@@ -1409,7 +1409,7 @@ export default function AtlasApp() {
       />
 
       {/* ===== HEADER ===== */}
-      <header className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-900/90 backdrop-blur-md border-b border-gray-800/40 z-20 shrink-0">
+      <header className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 bg-[#111111] border-b border-gray-800/30 z-20 shrink-0">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={() => setShowSessions(!showSessions)}
@@ -1667,7 +1667,7 @@ export default function AtlasApp() {
       </AnimatePresence>
 
       {/* ===== CHAT AREA ===== */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div className="flex-1 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3 space-y-2.5" style={{ WebkitOverflowScrolling: 'touch' }}>
         {messages.length === 0 && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 flex items-center justify-center mb-5 border border-emerald-500/10">
@@ -1696,10 +1696,10 @@ export default function AtlasApp() {
               }`}
             >
               <div
-                className={`relative max-w-[85%] sm:max-w-[70%] px-4 py-2.5 rounded-2xl shadow-sm ${
+                className={`relative max-w-[85%] sm:max-w-[70%] px-3.5 py-2 sm:py-2.5 shadow-sm ${
                   msg.role === 'user'
-                    ? 'bg-emerald-600 text-white rounded-br-md'
-                    : 'bg-gray-800/70 text-gray-100 rounded-bl-md border border-gray-700/40'
+                    ? 'bg-[#005c4b] text-white rounded-2xl rounded-br-sm'
+                    : 'bg-[#1f2722] text-gray-100 rounded-2xl rounded-bl-sm'
                 }`}
               >
                 {msg.role === 'assistant' && (
@@ -1832,7 +1832,7 @@ export default function AtlasApp() {
       </div>
 
       {/* ===== INPUT AREA ===== */}
-      <div className="shrink-0 border-t border-gray-800/40 bg-gray-900/90 backdrop-blur-md px-2.5 sm:px-3 py-2 sm:py-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-10">
+      <div className="shrink-0 border-t border-gray-800/20 bg-[#111111] px-2 sm:px-3 py-2 sm:py-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-10">
         {/* Guest remaining responses bar */}
         {!isAuthenticated && remainingResponses > 0 && (
           <div className="text-center mb-1.5 sm:mb-2">
@@ -1855,7 +1855,7 @@ export default function AtlasApp() {
             onKeyDown={handleKeyDown}
             placeholder={'Escribe o habla tu mensaje...'}
             rows={1}
-            className={`flex-1 min-w-0 bg-gray-800/50 border border-gray-700/40 rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/30 transition-all disabled:opacity-50 resize-none overflow-y-auto max-h-28 leading-5 ${isListening ? 'border-red-500/50 ring-1 ring-red-500/20' : ''}`}
+            className={`flex-1 min-w-0 bg-[#1a1a1a] border border-gray-800/40 rounded-full px-4 py-2.5 sm:py-3 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 focus:border-emerald-500/30 transition-all disabled:opacity-50 resize-none overflow-y-auto max-h-28 leading-5 ${isListening ? 'border-red-500/40 ring-1 ring-red-500/20' : ''}`}
             disabled={isLoading || isStreaming}
           />
 
