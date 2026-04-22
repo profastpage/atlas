@@ -415,11 +415,7 @@ export default function AtlasApp() {
 
   // Keep isLockedRef in sync
   useEffect(() => { isLockedRef.current = isLocked; }, [isLocked]);
-
-  // Keep sendMessageRef current — fixes stale closure in recognition.onend
-  useEffect(() => {
-    sendMessageRef.current = sendMessage;
-  }, [sendMessage]);
+  // NOTE: sendMessageRef sync is after sendMessage declaration (line ~969) to avoid TDZ
 
   // ========================================
   // MIC: Touch events (mobile) + Pointer events (desktop)
@@ -967,6 +963,12 @@ export default function AtlasApp() {
     },
     [sessionId, tenantId, isLoading, isStreaming, createNewSession, isAuthenticated, documentText]
   );
+
+  // Keep sendMessageRef current — fixes stale closure in recognition.onend
+  // MUST be AFTER sendMessage declaration to avoid Temporal Dead Zone (TDZ)
+  useEffect(() => {
+    sendMessageRef.current = sendMessage;
+  }, [sendMessage]);
 
   // ---- Form Handlers ----
   const handleSubmit = useCallback((e: React.FormEvent) => {
