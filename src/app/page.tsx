@@ -239,7 +239,7 @@ export default function AtlasApp() {
   const [favoriteSessions, setFavoriteSessions] = useState<FavoriteSession[]>([]);
   const [favoritesTab, setFavoritesTab] = useState<'favorites' | 'numbers'>('favorites');
   const [favoriteMessages, setFavoriteMessages] = useState<FavoriteMessage[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(true);
+  const [showSuggestionsModal, setShowSuggestionsModal] = useState(false);
 
   // ---- Numbered Highlights State ----
   const [highlights, setHighlights] = useState<Highlight[]>([]);
@@ -254,6 +254,8 @@ export default function AtlasApp() {
   // ---- Suggestions State ----
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionOffset, setSuggestionOffset] = useState(0);
+  const [lastUserMsgForSug, setLastUserMsgForSug] = useState('');
+  const [lastBotMsgForSug, setLastBotMsgForSug] = useState('');
 
   // ---- Favorites & Highlights: Load from localStorage ----
   const FAV_KEY = 'atlas_favorites';
@@ -2448,13 +2450,15 @@ export default function AtlasApp() {
     // Show 3 at a time, store all for "more" cycling
     setSuggestions(suggestionsList);
     setSuggestionOffset(0);
-    setShowSuggestions(true);
+    setLastUserMsgForSug(lastUserMsg);
+    setLastBotMsgForSug(lastBotMsg);
   }, []);
 
   // Generate suggestions after each response
   useEffect(() => {
     if (messages.length < 2 || isStreaming || isLoading) {
       setSuggestions([]);
+      setShowSuggestionsModal(false);
       return;
     }
 
@@ -3177,7 +3181,7 @@ export default function AtlasApp() {
           />
 
           {/* ===== Integrated input container ===== */}
-          <div className={`flex-1 flex items-end bg-[#1a1a1a] rounded-[22px] border transition-all min-h-[42px] sm:min-h-[46px] ${
+          <div className={`flex-1 flex items-end bg-[#1a1a1a] rounded-[22px] border transition-all min-h-[56px] sm:min-h-[60px] ${
             isListening && !isLocked 
               ? 'border-red-500/40 ring-1 ring-red-500/20' 
               : 'border-gray-800/40'
@@ -3228,9 +3232,22 @@ export default function AtlasApp() {
                   )}
                 </button>
               )}
+
+              {/* Suggestions lightbulb — opens mini modal */}
+              {suggestions.length > 0 && !isLoading && !isStreaming && !isLocked && (
+                <button
+                  type="button"
+                  onClick={() => setShowSuggestionsModal(true)}
+                  className="p-1.5 rounded-full hover:bg-amber-500/10 transition-all active:scale-90 shrink-0"
+                  aria-label="Sugerencias"
+                  title="Sugerencias"
+                >
+                  <Wand2 className="w-[16px] h-[16px] text-amber-400/60 hover:text-amber-400" />
+                </button>
+              )}
             </div>
 
-            {/* Textarea */}
+            {/* Textarea — taller for more chat space */}
             <textarea
               ref={inputRef}
               id="chat-input"
@@ -3238,8 +3255,8 @@ export default function AtlasApp() {
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={'Escribe o habla tu mensaje...'}
-              rows={1}
-              className="flex-1 min-w-0 bg-transparent py-2.5 px-1 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none resize-none overflow-y-auto max-h-28 leading-5 disabled:opacity-50"
+              rows={2}
+              className="flex-1 min-w-0 bg-transparent py-2.5 px-1 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none resize-none overflow-y-auto max-h-36 leading-5 disabled:opacity-50"
               disabled={isLoading || isStreaming}
             />
 
@@ -3349,71 +3366,6 @@ export default function AtlasApp() {
           )}
         </form>
 
-        {/* Suggestions — horizontal chips, scrollable, side by side */}
-        <AnimatePresence>
-          {suggestions.length > 0 && !isLoading && !isStreaming && !isLocked && showSuggestions && (
-            <motion.div
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 6 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="mt-1.5 mx-auto max-w-3xl"
-            >
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide px-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                {/* Visible suggestion chips (3 at a time) */}
-                {suggestions.slice(suggestionOffset, suggestionOffset + 3).map((sug, i) => (
-                  <motion.button
-                    key={`${suggestionOffset}-${i}`}
-                    initial={{ opacity: 0, x: 20, scale: 0.95 }}
-                    animate={{ opacity: 1, x: 0, scale: 1 }}
-                    transition={{ delay: i * 0.06, type: 'spring', damping: 25, stiffness: 300 }}
-                    onClick={() => { if (isLoading || isStreaming) return; setShowSuggestions(false); setSuggestions([]); sendMessage(sug); }}
-                    className="shrink-0 text-left px-3 py-1.5 rounded-full bg-gray-800/60 border border-gray-700/25 text-[12px] text-gray-300 hover:text-emerald-400 hover:border-emerald-500/40 hover:bg-emerald-500/10 transition-all active:scale-95 whitespace-nowrap cursor-pointer max-w-[200px] truncate"
-                  >
-                    {sug}
-                  </motion.button>
-                ))}
-                {/* More suggestions button */}
-                {suggestions.length > 3 && (
-                  <motion.button
-                    key="more-sug"
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.15, type: 'spring', damping: 25, stiffness: 300 }}
-                    onClick={() => {
-                      setSuggestionOffset((prev) => (prev + 3) % suggestions.length);
-                    }}
-                    className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-medium text-amber-400/80 hover:text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
-                  >
-                    <Wand2 className="w-3 h-3" />
-                    Mas
-                  </motion.button>
-                )}
-                {/* Regenerate suggestions */}
-                <button
-                  onClick={() => {
-                    const lastBot = [...messages].reverse().find(m => m.role === 'assistant');
-                    const lastUser = [...messages].reverse().find(m => m.role === 'user');
-                    if (lastBot && lastUser) generateSuggestions(lastUser.content, lastBot.content);
-                  }}
-                  className="shrink-0 p-1.5 rounded-full text-gray-600 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all active:scale-90 cursor-pointer"
-                  title="Regenerar sugerencias"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                </button>
-                {/* Close suggestions */}
-                <button
-                  onClick={() => { setShowSuggestions(false); setSuggestions([]); }}
-                  className="shrink-0 p-1.5 rounded-full text-gray-600 hover:text-gray-300 hover:bg-gray-800/60 transition-all active:scale-90 cursor-pointer"
-                  title="Ocultar sugerencias"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         {/* Document / Image attached chip */}
         <AnimatePresence>
           {(documentText || imageBase64) && (documentName || imageName) && !isAnalyzingDocument && (
@@ -3444,6 +3396,79 @@ export default function AtlasApp() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* ===== SUGGESTIONS MINI MODAL ===== */}
+      <AnimatePresence>
+        {showSuggestionsModal && suggestions.length > 0 && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
+              onClick={() => setShowSuggestionsModal(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+              className="fixed inset-x-4 bottom-24 sm:bottom-20 z-50 max-w-md mx-auto"
+            >
+              <div className="bg-gray-900/95 border border-gray-700/40 rounded-2xl p-4 shadow-2xl backdrop-blur-xl">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Wand2 className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs font-semibold text-gray-300">Sugerencias</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        if (lastBotMsgForSug && lastUserMsgForSug) generateSuggestions(lastUserMsgForSug, lastBotMsgForSug);
+                      }}
+                      className="p-1.5 rounded-full text-gray-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all active:scale-90 cursor-pointer"
+                      title="Regenerar"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setShowSuggestionsModal(false)}
+                      className="p-1.5 rounded-full text-gray-500 hover:text-gray-300 hover:bg-gray-800/60 transition-all active:scale-90 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+                {/* Suggestion list */}
+                <div className="space-y-1.5">
+                  {suggestions.slice(suggestionOffset, suggestionOffset + 4).map((sug, i) => (
+                    <motion.button
+                      key={`${suggestionOffset}-${i}`}
+                      initial={{ opacity: 0, x: 10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      onClick={() => { if (isLoading || isStreaming) return; setShowSuggestionsModal(false); setSuggestions([]); sendMessage(sug); }}
+                      className="w-full text-left px-3.5 py-2.5 rounded-xl bg-gray-800/50 border border-gray-700/20 text-[13px] text-gray-300 hover:text-emerald-400 hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all active:scale-[0.98] cursor-pointer"
+                    >
+                      {sug}
+                    </motion.button>
+                  ))}
+                </div>
+                {/* More suggestions */}
+                {suggestions.length > 4 && (
+                  <button
+                    onClick={() => setSuggestionOffset((prev) => (prev + 4) % suggestions.length)}
+                    className="w-full mt-2 py-2 rounded-xl text-[12px] font-medium text-amber-400/70 hover:text-amber-400 bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/15 transition-all active:scale-[0.98] cursor-pointer"
+                  >
+                    Ver mas sugerencias
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* ====================================================================
           UNIFIED PAYWALL — Controlled modal, shown only on send attempt
