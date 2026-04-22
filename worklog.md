@@ -276,3 +276,24 @@ Stage Summary:
 - Voice repetition fix deployed (overlap dedup + debounced restart)
 - Build script was already correct from prior session
 - Pushed to GitHub, Cloudflare Pages deployment triggered
+
+---
+Task ID: 2
+Agent: main
+Task: Gold star favorites, icon-only actions, slide suggestions, voice dedup v2
+
+Work Log:
+- Replaced all Heart icons with Star (gold/amber) across the app: top menu bar, session list, favorites modal, per-message buttons
+- Added per-message favorite toggle: `favoriteMessageIds` state (Set<string>), persisted to localStorage via `atlas_favorite_messages` key
+- Added `toggleFavoriteMessage(msgId)` callback function
+- Refactored action buttons on bot responses: Copy, Share, Alarma, Favorito (star), Numero, Editar → all icon-only (no text labels). Only "Ver análisis expandido" (ExpandButton) retains full text
+- Redesigned suggestions section: 3 questions displayed one per line (stacked), each truncated in single line, with slide-in animation (right→left via framer-motion x: 40→0)
+- Added magic wand button (Wand2) to regenerate suggestions on demand
+- Added X button to dismiss suggestions (showSuggestions state), auto-resets on new messages
+- Updated Favorites modal: Star icons throughout, shows both "Mensajes destacados" (per-message) and "Chats favoritos" (per-session) sections
+- Enhanced voice dedup v2: increased overlap window from 40→60 chars, added interim result dedup (removes overlap between accumulated text and interim transcript before display)
+
+Stage Summary:
+- All UI changes deployed: gold star system, minimalist icon actions, slide suggestions, dismissible
+- Voice repetition further reduced with interim dedup
+- Commit 9a504b1 pushed to GitHub → Cloudflare Pages deploying
