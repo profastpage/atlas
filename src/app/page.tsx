@@ -2608,6 +2608,65 @@ export default function AtlasApp() {
           </div>
         )}
 
+        {/* Listening / Locked / Document analyzing indicator — ABOVE the input */}
+        <AnimatePresence>
+          {isLocked && (
+            <motion.div
+              initial={{ opacity: 0, y: 8, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.95 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+              className="mb-2 mx-auto max-w-xs px-4 py-2.5 rounded-xl bg-emerald-600/20 border border-emerald-500/30 backdrop-blur-sm"
+            >
+              <div className="flex items-center justify-center gap-2">
+                <span className={`w-2.5 h-2.5 rounded-full animate-pulse ${isSwipeCanceling ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                <span className={`text-[12px] sm:text-[13px] font-semibold transition-colors ${isSwipeCanceling ? 'text-red-300' : 'text-emerald-300'}`}>
+                  {isSwipeCanceling
+                    ? 'Suelta para cancelar grabacion'
+                    : 'Toca para enviar. Desliza hacia abajo para cancelar.'}
+                </span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {(isListening && !isLocked) && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              className="flex items-center justify-center gap-2 mb-2"
+            >
+              <span className={`w-2 h-2 rounded-full animate-pulse ${isSwipeCanceling ? 'bg-red-400' : 'bg-red-500'}`} />
+              <span className={`text-[11px] font-medium transition-colors ${isSwipeCanceling ? 'text-orange-400' : 'text-red-400'}`}>
+                {isSwipeCanceling
+                  ? 'Suelta para cancelar'
+                  : 'Desliza arriba para bloquear, suelta para enviar'}
+              </span>
+              {!isSwipeCanceling && (
+                <span className="text-[9px] text-red-400/50">
+                  &nbsp;| Desliza hacia abajo para dejar de grabar
+                </span>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {isAnalyzingDocument && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              className="flex items-center justify-center gap-2 mb-2"
+            >
+              <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+              <span className="text-[11px] font-medium text-blue-400">
+                Atlas esta analizando el documento...
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <form onSubmit={handleSubmit} className="flex items-center gap-2 max-w-3xl mx-auto">
           <textarea
             ref={inputRef}
@@ -2804,65 +2863,6 @@ export default function AtlasApp() {
                   <X className="w-3 h-3" />
                 </button>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Listening / Locked / Document analyzing indicator */}
-        <AnimatePresence>
-          {isLocked && (
-            <motion.div
-              initial={{ opacity: 0, y: 8, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.95 }}
-              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              className="mt-2 mx-auto max-w-xs px-4 py-2.5 rounded-xl bg-emerald-600/20 border border-emerald-500/30 backdrop-blur-sm"
-            >
-              <div className="flex items-center justify-center gap-2">
-                <span className={`w-2.5 h-2.5 rounded-full animate-pulse ${isSwipeCanceling ? 'bg-red-500' : 'bg-emerald-500'}`} />
-                <span className={`text-[12px] sm:text-[13px] font-semibold transition-colors ${isSwipeCanceling ? 'text-red-300' : 'text-emerald-300'}`}>
-                  {isSwipeCanceling
-                    ? 'Suelta para cancelar grabacion'
-                    : 'Toca para enviar. Desliza hacia abajo para cancelar.'}
-                </span>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        <AnimatePresence>
-          {(isListening && !isLocked) && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              className="flex items-center justify-center gap-2 mt-2"
-            >
-              <span className={`w-2 h-2 rounded-full animate-pulse ${isSwipeCanceling ? 'bg-red-400' : 'bg-red-500'}`} />
-              <span className={`text-[11px] font-medium transition-colors ${isSwipeCanceling ? 'text-orange-400' : 'text-red-400'}`}>
-                {isSwipeCanceling
-                  ? 'Suelta para cancelar'
-                  : 'Desliza arriba para bloquear, suelta para enviar'}
-              </span>
-              {!isSwipeCanceling && (
-                <span className="text-[9px] text-red-400/50">
-                  &nbsp;| Desliza hacia abajo para dejar de grabar
-                </span>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-        <AnimatePresence>
-          {isAnalyzingDocument && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              className="flex items-center justify-center gap-2 mt-2"
-            >
-              <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-              <span className="text-[11px] font-medium text-blue-400">
-                Atlas esta analizando el documento...
-              </span>
             </motion.div>
           )}
         </AnimatePresence>
