@@ -593,17 +593,63 @@ async function postResponseMemoryCycle(
   }
 
   const topicPatterns = [
+    // Personal
     { pattern: /(?:problema|situación|tema|asunto|conflicto|dificultad)\s+(?:es|con|sobre|de)\s+(.+?)(?:\.|,|$)/i, label: 'Problema' },
-    { pattern: /(?:mi\s+)?(?:pareja|novi[oa]|espos[oa]|marido|mujer)\s+(.+?)(?:\.|,|$)/i, label: 'Relación de pareja' },
-    { pattern: /(?:trabajo|jefe|empleo|negocio|empresa|freelance)\s+(.+?)(?:\.|,|$)/i, label: 'Trabajo' },
-    { pattern: /(?:estres|ansiedad|miedo|depresión|angustia|frustración|trusteza)\s+(.+?)(?:\.|,|$)/i, label: 'Salud mental' },
-    { pattern: /(?:no\s+(?:puedo|logro|sé|puedes))\s+(.+?)(?:\.|,|$)/i, label: 'Bloqueo' },
-    { pattern: /(?:quiero|necesito|aspiro|meta|objetivo)\s+(.+?)(?:\.|,|$)/i, label: 'Objetivo' },
+    { pattern: /(?:tengo|mi)\s+(?:edad|anos|cumpleaños)\s+(?:de\s+)?(\d+)/i, label: 'Edad' },
+    { pattern: /(?:vivo en|soy de|mi ciudad|mi país|resido)\s+(.+?)(?:\.|,|$)/i, label: 'Ubicación' },
+    { pattern: /(?:mi\s+)?(?:profesion|ocupacion|trabajo como|soy)\s+(.+?)(?:\.|,|$)/i, label: 'Profesión' },
+    // Relaciones
+    { pattern: /(?:mi\s+)?(?:pareja|novi[oa]|espos[oa]|marido|mujer|pololo|polola)\s+(.+?)(?:\.|,|$)/i, label: 'Pareja' },
+    { pattern: /(?:mi\s+)?(?:hij[oa]|niñ[oa]|bebe|familia|herman[oa]|mamá|papá|mami|papi|padre|madre)\s+(.+?)(?:\.|,|$)/i, label: 'Familia' },
+    { pattern: /(?:mi\s+)?(?:amig[oa]|grupo|cuates|compañeros)\s+(.+?)(?:\.|,|$)/i, label: 'Amigos' },
+    { pattern: /(?:mi\s+)?(?:perro|gato|mascota|perrito|gatito|dog|cat)\s+(.+?)(?:\.|,|$)/i, label: 'Mascota' },
+    // Trabajo y carrera
+    { pattern: /(?:trabajo|jefe|empleo|negocio|empresa|freelance|oficina|sueldo|salario)\s+(.+?)(?:\.|,|$)/i, label: 'Trabajo' },
+    { pattern: /(?:mi\s+)?(?:emprendimiento|startup|proyecto|negocio propio)\s+(.+?)(?:\.|,|$)/i, label: 'Emprendimiento' },
+    { pattern: /(?:client[ea]s?|ventas|marketing|publicidad|redes sociales)\s+(.+?)(?:\.|,|$)/i, label: 'Ventas/Marketing' },
+    // Educación
+    { pattern: /(?:estudio|carrera|universidad|colegio|escuela|curso|clase|certificacion|título|titulo|grado)\s+(.+?)(?:\.|,|$)/i, label: 'Educación' },
+    { pattern: /(?:aprendo|estoy aprendiendo|quiero aprender|idioma|inglés|español|portugués|francés|programación|python|javascript)\s+(.+?)(?:\.|,|$)/i, label: 'Aprendizaje' },
+    // Finanzas
+    { pattern: /(?:mis\s+)?(?:ingresos|dinero|ahorro|deuda|prestamo|crédito|inversiones|inversión|presupuesto)\s+(.+?)(?:\.|,|$)/i, label: 'Finanzas' },
+    { pattern: /(?:dolar|dolares|compra|venta|precio|cuesta|costo)\s+(.+?)(?:\.|,|$)/i, label: 'Compras/Finanzas' },
+    // Salud física
+    { pattern: /(?:ejercicio|gimnasio|rutina|entreno|pesas|cardio|correr|maraton)\s+(.+?)(?:\.|,|$)/i, label: 'Ejercicio' },
+    { pattern: /(?:dieta|comida|alimentación|nutrición|calorías|proteina|suplemento|creatina|vitamina)\s+(.+?)(?:\.|,|$)/i, label: 'Nutrición' },
+    { pattern: /(?:lesion|dolor|cadera|rodilla|espalda|hombro|músculo|lastimad|operac|cirugía)\s+(.+?)(?:\.|,|$)/i, label: 'Salud física' },
+    { pattern: /(?:peso|bajar|subir|kilos|kg|imc|grasa corporal)\s+(.+?)(?:\.|,|$)/i, label: 'Peso/Fitness' },
+    // Salud mental
+    { pattern: /(?:estres|ansiedad|miedo|depresión|angustia|frustración|tristeza|soledad|panic|ataque)\s+(.+?)(?:\.|,|$)/i, label: 'Salud mental' },
+    { pattern: /(?:sueño|dormir|insomnio|descanso|cansancio|fatiga|noche)\s+(.+?)(?:\.|,|$)/i, label: 'Sueño' },
+    { pattern: /(?:meditación|meditacion|mindfulness|yoga|respiración|relajacion)\s+(.+?)(?:\.|,|$)/i, label: 'Bienestar' },
+    // Gaming
+    { pattern: /(?:juego|juegos|gaming|videojuego|smash|minecraft|fortnite|gta|fifa|lol|valorant|steam|playstation|xbox|nintendo|switch|pc gaming)\s+(.+?)(?:\.|,|$)/i, label: 'Gaming' },
+    { pattern: /(?:ranking|rango|tier|diamond|platinum|gold| Ranked|competitivo|torneo)\s+(.+?)(?:\.|,|$)/i, label: 'Gaming competitivo' },
+    // Deportes
+    { pattern: /(?:fútbol|futbol|soccer|baloncesto|basket|beisbol|tenis|natación|boxeo|mma|ufc)\s+(.+?)(?:\.|,|$)/i, label: 'Deportes' },
+    { pattern: /(?:mi\s+)?(?:equipo|selección|club|hincha|fan|barcelona|real madrid|river|boca|alianza|universitario| selects)\s+(.+?)(?:\.|,|$)/i, label: 'Equipo favorito' },
+    // Música
+    { pattern: /(?:musica|música|cancion|cantante|banda|artista|concierto|guitarra|piano|batería|rap|reggaeton|rock|pop|trap|kpop)\s+(.+?)(?:\.|,|$)/i, label: 'Música' },
+    // Cine y series
+    { pattern: /(?:pelicula|película|serie|anime|manga|netflix|disney|hbo|prime|director|actor|actriz)\s+(.+?)(?:\.|,|$)/i, label: 'Cine/Series' },
+    // Tecnología
+    { pattern: /(?:mi\s+)?(?:celular|phone|iphone|android|laptop|computadora|pc|mac|ipad|tablet|gadget|airpods|monitor)\s+(.+?)(?:\.|,|$)/i, label: 'Tecnología' },
+    { pattern: /(?:programo|programacion|python|javascript|react|node|django|flask|codigo|desarrollo|software|app|ia|inteligencia artificial)\s+(.+?)(?:\.|,|$)/i, label: 'Programación' },
+    // Viajes
+    { pattern: /(?:viaje|viajar|vuelo|hotel|destino|turismo|maleta|pasaporte|pais extranjero)\s+(.+?)(?:\.|,|$)/i, label: 'Viajes' },
+    // Comida y recetas
+    { pattern: /(?:receta|cocinar|cocina|restaurante|comida favorita|postre|cerveza|vino|cafe|café)\s+(.+?)(?:\.|,|$)/i, label: 'Cocina' },
+    // Automoviles
+    { pattern: /(?:mi\s+)?(?:auto|carro|coche|moto|vehiculo|toyota| honda|hyundai|kia|bmw|mercedes|tesla)\s+(.+?)(?:\.|,|$)/i, label: 'Automóvil' },
+    // Moda
+    { pattern: /(?:ropa|zapatillas|tenis|marca|nike|adidas|outfit|estilo|moda)\s+(.+?)(?:\.|,|$)/i, label: 'Moda' },
+    // Emociones y objetivos
     { pattern: /(?:me\s+siento|estoy\s+sintiendo)\s+(.+?)(?:\.|,|$)/i, label: 'Emoción' },
-    { pattern: /(?:juego|juegos|gaming|videojuego|smash|minecraft|fortnite|gta|fifa|lol|valorant|steam|playstation|xbox|nintendo|switch)\s+(.+?)(?:\.|,|$)/i, label: 'Gaming' },
-    { pattern: /(?:me gusta|amo|adoro|fan de|sigo)\s+(.+?)(?:\.|,|$)/i, label: 'Interés' },
-    { pattern: /(?:estudio|carrera|universidad|colegio|escuela|curso|clase)\s+(.+?)(?:\.|,|$)/i, label: 'Educación' },
-    { pattern: /(?:vivo en|soy de|mi ciudad|mi país)\s+(.+?)(?:\.|,|$)/i, label: 'Ubicación' },
+    { pattern: /(?:no\s+(?:puedo|logro|sé|puedes))\s+(.+?)(?:\.|,|$)/i, label: 'Bloqueo' },
+    { pattern: /(?:quiero|necesito|aspiro|meta|objetivo|sueño|proposito)\s+(.+?)(?:\.|,|$)/i, label: 'Objetivo' },
+    { pattern: /(?:me gusta|amo|adoro|fan de|sigo|encanta|disfruto)\s+(.+?)(?:\.|,|$)/i, label: 'Interés' },
+    // Decisiones importantes
+    { pattern: /(?:compr[ea]|mudar[se]|cambiar de|renunciar|empezar|dejar|terminar|iniciar)\s+(.+?)(?:\.|,|$)/i, label: 'Decisión' },
   ];
 
   for (const { pattern, label } of topicPatterns) {
@@ -615,8 +661,8 @@ async function postResponseMemoryCycle(
       } else {
         if (!updatedSummary.includes(newTopic.substring(0, 20))) {
           const lines = updatedSummary.split(' | ');
-          // Keep up to 8 topics for richer memory
-          if (lines.length >= 8) lines.shift();
+          // Keep up to 15 topics for richer memory
+          if (lines.length >= 15) lines.shift();
           lines.push(newTopic);
           updatedSummary = lines.join(' | ');
         }

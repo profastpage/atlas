@@ -2060,7 +2060,10 @@ export default function AtlasApp() {
       /\u2022/g,
       '<span class="text-emerald-400 mr-1">\u2022</span>'
     );
+    // Double asterisk bold: **text** → <strong>text</strong>
     formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // Single asterisk bold fallback (in case model outputs *text* instead of **text**)
+    formatted = formatted.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, '<strong>$1</strong>');
     formatted = formatted.replace(/\n/g, '<br/>');
     return formatted;
   };
