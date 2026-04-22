@@ -8,7 +8,7 @@ import {
   Pencil, Archive, ArchiveRestore, Check, AlertTriangle,
   Paperclip, FileText, XCircle as XCircleIcon, Loader2,
   Copy, Share2, Bell, Star, Hash, PencilLine,
-  Sparkles, RotateCcw, ChevronRight, Wand2
+  Sparkles, RotateCcw, ChevronRight, Wand2, RefreshCw
 } from 'lucide-react';
 import {
   trackMessageSent,
@@ -210,6 +210,7 @@ export default function AtlasApp() {
 
   // ---- Suggestions State ----
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionOffset, setSuggestionOffset] = useState(0);
 
   // ---- Favorites & Highlights: Load from localStorage ----
   const FAV_KEY = 'atlas_favorites';
@@ -1834,30 +1835,63 @@ export default function AtlasApp() {
   // ========================================
 
   const generateSuggestions = useCallback((lastUserMsg: string, lastBotMsg: string) => {
-    const topic = lastUserMsg.toLowerCase();
+    const topic = (lastUserMsg + ' ' + lastBotMsg).toLowerCase();
     const suggestionsList: string[] = [];
 
-    // Context-aware suggestions based on keywords
+    // Context-aware suggestions based on keywords from both user and bot
     if (topic.includes('estrategia') || topic.includes('plan') || topic.includes('negocio')) {
-      suggestionsList.push('Dame un plan de accion paso a paso', 'Que riesgos debo considerar?', 'Como mido el progreso?');
-    } else if (topic.includes('estres') || topic.includes('ansiedad') || topic.includes('miedo')) {
-      suggestionsList.push('Dame una tecnica de respiracion rapida', 'Como manejo esto en el trabajo?', 'Que habito diario me ayudaria?');
-    } else if (topic.includes('estudio') || topic.includes('aprender') || topic.includes('examen')) {
-      suggestionsList.push('Hazme un cronograma de estudio', 'Que tecnica de aprendizaje me recomiendas?', 'Como evito la procrastinacion?');
-    } else if (topic.includes('pareja') || topic.includes('relacion') || topic.includes('amor')) {
-      suggestionsList.push('Como mejoro la comunicacion?', 'Que puedo hacer yo ahora mismo?', 'Como manejo las diferencias?');
-    } else if (topic.includes('dinero') || topic.includes('ahorro') || topic.includes('presupuesto')) {
-      suggestionsList.push('Hazme un presupuesto mensual', 'Como genero ingreso extra?', 'Que debo priorizar pagar primero?');
-    } else if (topic.includes('trabajo') || topic.includes('jefe') || topic.includes('empleo')) {
-      suggestionsList.push('Como negocio un aumento?', 'Que hago si quiero renunciar?', 'Como destaco en mi trabajo?');
+      suggestionsList.push(
+        'Dame un plan de accion paso a paso', 'Que riesgos debo considerar?', 'Como mido el progreso?',
+        'Cuales son los KPIs clave?', 'Como lo diferencio de la competencia?', 'Que inversor deberia buscar?'
+      );
+    } else if (topic.includes('estres') || topic.includes('ansiedad') || topic.includes('miedo') || topic.includes('panico')) {
+      suggestionsList.push(
+        'Dame una tecnica de respiracion rapida', 'Como manejo esto en el trabajo?', 'Que habito diario me ayudaria?',
+        'Que ejercicio físico me recomiendas?', 'Como afecta mi sueño?', 'Cuando deberia buscar ayuda profesional?'
+      );
+    } else if (topic.includes('estudio') || topic.includes('aprender') || topic.includes('examen') || topic.includes('universidad')) {
+      suggestionsList.push(
+        'Hazme un cronograma de estudio', 'Que tecnica de aprendizaje me recomiendas?', 'Como evito la procrastinacion?',
+        'Que metodo de toma de notas es mejor?', 'Como manejo el tiempo en examenes?', 'Que recursos online me sugieres?'
+      );
+    } else if (topic.includes('pareja') || topic.includes('relacion') || topic.includes('amor') || topic.includes('matrimonio')) {
+      suggestionsList.push(
+        'Como mejoro la comunicacion?', 'Que puedo hacer yo ahora mismo?', 'Como manejo las diferencias?',
+        'Como reconstruyo la confianza?', 'Que lenguaje del amor usa?', 'Como evito discusiones repetitivas?'
+      );
+    } else if (topic.includes('dinero') || topic.includes('ahorro') || topic.includes('presupuesto') || topic.includes('deuda')) {
+      suggestionsList.push(
+        'Hazme un presupuesto mensual', 'Como genero ingreso extra?', 'Que debo priorizar pagar primero?',
+        'Como inicio un fondo de emergencia?', 'Que inversiones me recomiendas?', 'Como elimino deudas rapido?'
+      );
+    } else if (topic.includes('trabajo') || topic.includes('jefe') || topic.includes('empleo') || topic.includes('sueldo')) {
+      suggestionsList.push(
+        'Como negocio un aumento?', 'Que hago si quiero renunciar?', 'Como destaco en mi trabajo?',
+        'Como prepuro una entrevista?', 'Que habilidades debo aprender?', 'Como manejo el burnout laboral?'
+      );
+    } else if (topic.includes('salud') || topic.includes('dieta') || topic.includes('ejercicio') || topic.includes('peso')) {
+      suggestionsList.push(
+        'Hazme una rutina semanal de ejercicio', 'Que dieta me recomiendas?', 'Como mantengo la motivacion?',
+        'Cuantas horas de sueño necesito?', 'Que suplementos son esenciales?', 'Como evito lesiones entrenando?'
+      );
+    } else if (topic.includes('ventas') || topic.includes('marketing') || topic.includes('cliente') || topic.includes('negocio')) {
+      suggestionsList.push(
+        'Como atraigo mas clientes?', 'Que estrategia de precios uso?', 'Como cierro mas ventas?',
+        'Que canales de marketing son mejores?', 'Como fidelizo a mis clientes?', 'Como creo una marca personal?'
+      );
     }
 
     // Default suggestions
     if (suggestionsList.length === 0) {
-      suggestionsList.push('Dame un ejemplo practico', 'Que hago si no funciona?', 'Cual es el siguiente paso?');
+      suggestionsList.push(
+        'Dame un ejemplo practico', 'Que hago si no funciona?', 'Cual es el siguiente paso?',
+        'Que alternativas tengo?', 'Como aplico esto en mi vida?', 'Que recursos necesito?'
+      );
     }
 
-    setSuggestions(suggestionsList.slice(0, 3));
+    // Show 3 at a time, store all for "more" cycling
+    setSuggestions(suggestionsList);
+    setSuggestionOffset(0);
     setShowSuggestions(true);
   }, []);
 
@@ -2207,17 +2241,22 @@ export default function AtlasApp() {
             >
               <div
                 data-msg-id={msg.id}
-                className={`relative max-w-[85%] sm:max-w-[70%] px-3.5 py-2 sm:py-2.5 shadow-sm ${
+                className={`relative max-w-[85%] sm:max-w-[70%] px-3.5 py-2 sm:py-2.5 shadow-sm min-w-[120px] ${
                   msg.role === 'user'
                     ? 'bg-[#005c4b] text-white rounded-2xl rounded-br-sm'
                     : 'bg-[#1f2722] text-gray-100 rounded-2xl rounded-bl-sm'
                 }`}
               >
                 {msg.role === 'assistant' && (
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <span className="text-xs">{'\uD83E\uDDED'}</span>
-                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest">
-                      Atlas
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs">{'\uD83E\uDDED'}</span>
+                      <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest">
+                        Atlas
+                      </span>
+                    </div>
+                    <span className="text-[9px] text-gray-600">
+                      {formatTime(msg.timestamp)}
                     </span>
                   </div>
                 )}
@@ -2253,19 +2292,15 @@ export default function AtlasApp() {
                     Conexion interrumpida. La respuesta se corto.
                   </p>
                 )}
-                <p
-                  className={`text-[9px] mt-1.5 ${
-                    msg.role === 'user'
-                      ? 'text-emerald-200/50'
-                      : 'text-gray-600'
-                  }`}
-                >
-                  {formatTime(msg.timestamp)}
-                </p>
+                {msg.role === 'user' && (
+                  <p className="text-[9px] text-emerald-200/50 mt-1 text-right">
+                    {formatTime(msg.timestamp)}
+                  </p>
+                )}
 
                 {/* Action buttons — icon-only, subtle until hover */}
                 {msg.role === 'assistant' && msg.id !== streamingId && msg.content && !msg.content.startsWith('Error') && (
-                  <div className="flex items-center gap-1.5 opacity-30 hover:opacity-100 transition-opacity mt-1.5 ml-0.5">
+                  <div className="flex items-center gap-1 opacity-0 hover:opacity-100 transition-opacity duration-200 mt-1.5 ml-0.5">
                     {/* Copy */}
                     <button
                       onClick={() => copyMessage(msg.id, msg.content)}
@@ -2576,51 +2611,66 @@ export default function AtlasApp() {
           )}
         </form>
 
-        {/* Suggestions — single line each, slide right→left, dismissible */}
+        {/* Suggestions — horizontal chips, scrollable, side by side */}
         <AnimatePresence>
           {suggestions.length > 0 && !isLoading && !isStreaming && !isLocked && showSuggestions && (
             <motion.div
-              initial={{ opacity: 0, x: 40 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -40 }}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="mt-2 mx-auto max-w-3xl px-1"
+              className="mt-2 mx-auto max-w-3xl"
             >
-              <div className="flex items-start gap-2">
-                <div className="flex-1 space-y-1">
-                  {suggestions.map((sug, i) => (
-                    <motion.button
-                      key={i}
-                      initial={{ opacity: 0, x: 30 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.08, type: 'spring', damping: 25, stiffness: 300 }}
-                      onClick={() => { setSuggestions([]); sendMessage(sug); }}
-                      className="block w-full text-left px-3 py-1.5 rounded-lg bg-gray-800/50 border border-gray-700/20 text-[12px] text-gray-400 hover:text-emerald-400 hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all active:scale-[0.98] truncate cursor-pointer"
-                    >
-                      {sug}
-                    </motion.button>
-                  ))}
-                </div>
-                <div className="flex flex-col gap-1 shrink-0 mt-0.5">
-                  <button
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide px-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                {/* Visible suggestion chips (3 at a time) */}
+                {suggestions.slice(suggestionOffset, suggestionOffset + 3).map((sug, i) => (
+                  <motion.button
+                    key={`${suggestionOffset}-${i}`}
+                    initial={{ opacity: 0, x: 20, scale: 0.95 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    transition={{ delay: i * 0.06, type: 'spring', damping: 25, stiffness: 300 }}
+                    onClick={() => { setShowSuggestions(false); setSuggestions([]); sendMessage(sug); }}
+                    className="shrink-0 text-left px-3 py-1.5 rounded-full bg-gray-800/60 border border-gray-700/25 text-[12px] text-gray-300 hover:text-emerald-400 hover:border-emerald-500/40 hover:bg-emerald-500/10 transition-all active:scale-95 whitespace-nowrap cursor-pointer max-w-[200px] truncate"
+                  >
+                    {sug}
+                  </motion.button>
+                ))}
+                {/* More suggestions button */}
+                {suggestions.length > 3 && (
+                  <motion.button
+                    key="more-sug"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.15, type: 'spring', damping: 25, stiffness: 300 }}
                     onClick={() => {
-                      const lastBot = [...messages].reverse().find(m => m.role === 'assistant');
-                      const lastUser = [...messages].reverse().find(m => m.role === 'user');
-                      if (lastBot && lastUser) generateSuggestions(lastUser.content, lastBot.content);
+                      setSuggestionOffset((prev) => (prev + 3) % suggestions.length);
                     }}
-                    className="p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all active:scale-90"
-                    title="Regenerar sugerencias"
+                    className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-medium text-amber-400/80 hover:text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
                   >
-                    <Wand2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => { setShowSuggestions(false); setSuggestions([]); }}
-                    className="p-1.5 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-gray-800/60 transition-all active:scale-90"
-                    title="Ocultar sugerencias"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                    <Wand2 className="w-3 h-3" />
+                    Mas
+                  </motion.button>
+                )}
+                {/* Regenerate suggestions */}
+                <button
+                  onClick={() => {
+                    const lastBot = [...messages].reverse().find(m => m.role === 'assistant');
+                    const lastUser = [...messages].reverse().find(m => m.role === 'user');
+                    if (lastBot && lastUser) generateSuggestions(lastUser.content, lastBot.content);
+                  }}
+                  className="shrink-0 p-1.5 rounded-full text-gray-600 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all active:scale-90 cursor-pointer"
+                  title="Regenerar sugerencias"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+                {/* Close suggestions */}
+                <button
+                  onClick={() => { setShowSuggestions(false); setSuggestions([]); }}
+                  className="shrink-0 p-1.5 rounded-full text-gray-600 hover:text-gray-300 hover:bg-gray-800/60 transition-all active:scale-90 cursor-pointer"
+                  title="Ocultar sugerencias"
+                >
+                  <X className="w-3 h-3" />
+                </button>
               </div>
             </motion.div>
           )}
