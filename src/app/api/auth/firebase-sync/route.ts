@@ -4,15 +4,17 @@ export const runtime = 'edge';
 // FIREBASE SYNC — Exchange Firebase ID token for Turso auth
 // Used by client-side Firebase Google Auth (signInWithPopup)
 //
-// VERIFICATION METHOD: Google tokeninfo endpoint
-// - 100% Edge compatible (no Buffer, no crypto imports)
-// - Simple fetch to https://oauth2.googleapis.com/tokeninfo?id_token=XXX
-// - Returns email, name, picture, sub directly
+// VERIFICATION METHOD: Firebase Identity Toolkit REST API
+// - 100% Edge compatible
+// - Uses POST https://identitytoolkit.googleapis.com/v1/accounts:lookup
+// - Designed specifically for Firebase ID tokens (unlike tokeninfo which is for Google OAuth2)
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/sql';
 import { generateToken, hashPassword } from '@/lib/password';
+
+const FIREBASE_API_KEY = 'AIzaSyA3INDSDZ7Ab5SsG4Uu9YHG7cCMG1mpcLg';
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,7 +26,8 @@ export async function POST(request: NextRequest) {
     }
 
     // ---- VERIFY FIREBASE ID TOKEN ----
-    // Use Google's tokeninfo endpoint — simple, reliable, Edge compatible
+    // Use Firebase Identity Toolkit REST API — the official way to verify Firebase tokens on Edge
+    // https://identitytoolkit.googleapis.com/v1/accounts:lookup
     let email: string;
     let name: string;
     let googleId: string;
@@ -32,33 +35,53 @@ export async function POST(request: NextRequest) {
 
     try {
       const verifyResponse = await fetch(
-        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
+        `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken }),
+        }
       );
 
       if (!verifyResponse.ok) {
         const errData = await verifyResponse.json().catch(() => ({}));
-        console.error('[FIREBASE_SYNC] tokeninfo error:', verifyResponse.status, errData);
+        console.error('[FIREBASE_SYNC] identitytoolkit error:', verifyResponse.status, errData);
         return NextResponse.json(
           { error: 'Token de Firebase invalido o expirado' },
           { status: 401 }
         );
       }
 
-      const tokenInfo = await verifyResponse.json();
+      const verifyData = await verifyResponse.json();
 
-      // Validate audience matches our Firebase project
-      if (tokenInfo.aud !== 'asistente-ia-atlas-23dac') {
-        console.error('[FIREBASE_SYNC] Wrong audience:', tokenInfo.aud);
+      if (!verifyData.users || verifyData.users.length === 0) {
+        console.error('[FIREBASE_SYNC] No users returned for token');
         return NextResponse.json(
-          { error: 'Token no pertenece a este proyecto' },
+          { error: 'Token no corresponde a un usuario valido' },
           { status: 401 }
         );
       }
 
-      email = tokenInfo.email?.toLowerCase().trim() || '';
-      name = tokenInfo.name || tokenInfo.given_name || email.split('@')[0] || 'Usuario';
-      googleId = tokenInfo.sub || '';
-      avatarUrl = tokenInfo.picture || null;
+      const firebaseUser = verifyData.users[0];
+
+      // Validate the token's provider info — must be a Google sign-in
+      const providerInfo = firebaseUser.providerUserInfo || [];
+      const hasGoogleProvider = providerInfo.some(
+        (p: { providerId: string }) => p.providerId === 'google.com'
+      );
+
+      if (!hasGoogleProvider && !firebaseUser.email) {
+        console.error('[FIREBASE_SYNC] User has no Google provider and no email');
+        return NextResponse.json(
+          { error: 'Se requiere autenticacion con Google' },
+          { status: 401 }
+        );
+      }
+
+      email = (firebaseUser.email || '').toLowerCase().trim();
+      name = firebaseUser.displayName || email.split('@')[0] || 'Usuario';
+      googleId = firebaseUser.localId || '';
+      avatarUrl = firebaseUser.photoUrl || null;
 
       if (!email) {
         return NextResponse.json({ error: 'No se pudo obtener el email de Firebase' }, { status: 400 });
