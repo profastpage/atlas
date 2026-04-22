@@ -258,3 +258,21 @@ Stage Summary:
 - Removed `position: fixed` from body in globals.css (overscroll-behavior: none already handles rubber-band prevention)
 - Build verified locally (both next build and pages:build succeed)
 - Commit: f0930d3 pushed to origin/main
+
+---
+Task ID: 1
+Agent: main
+Task: Fix voice word repetition bug + deploy to Cloudflare Pages
+
+Work Log:
+- Diagnosed voice repetition: `continuous=true` + manual `recognition.start()` in `onend` causes the browser to re-process the audio buffer tail, delivering the last word/phrase multiple times as final results.
+- Implemented overlap detection in `onresult`: Before appending `finalTranscript` to `voiceTranscriptRef`, finds maximum overlap (up to 40 chars) between end of accumulated text and start of new text. Only appends non-overlapping portion.
+- Added debounced restart (300ms) in `onend` for locked mode: Prevents race condition between browser's auto-restart and our manual restart.
+- Added cleanup for `restartTimer` in useEffect cleanup function.
+- Verified build succeeds (`npx next build --webpack`).
+- Committed as `baefaa1` and pushed to `origin/main` → Cloudflare Pages auto-deploys.
+
+Stage Summary:
+- Voice repetition fix deployed (overlap dedup + debounced restart)
+- Build script was already correct from prior session
+- Pushed to GitHub, Cloudflare Pages deployment triggered
