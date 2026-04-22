@@ -7,7 +7,7 @@ export const runtime = 'edge';
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createChatCompletion, streamChatCompletion } from '@/lib/ai-client';
+import { createChatCompletion, streamChatCompletion, extractPdfStructured, describeImage } from '@/lib/ai-client';
 import {
   ATLAS_SYSTEM_PROMPT,
   ATLAS_SYSTEM_PROMPT_EXPANDED,
@@ -29,7 +29,7 @@ const supabase = getSupabaseServer();
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sessionId, message, tenantId, expandedMode, messageId, documentText } = body;
+    const { sessionId, message, tenantId, expandedMode, messageId, documentText, imageBase64 } = body;
 
     if (!sessionId || !tenantId) {
       return NextResponse.json(
@@ -129,6 +129,53 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ================================================================
+    // ROUTER INTELIGENTE MULTIMODAL
+    // - Plain text -> Qwen directly (cheapest)
+    // - PDF (documentText) -> Llama extracts -> Qwen responds
+    // - Image (imageBase64) -> Gemini describes -> Qwen responds
+    // ================================================================
+
+    let enrichedMessage = message;
+
+    // ---- PIPELINE DE PDF: Llama extrae datos estructurados ----
+    if (documentText) {
+      console.log('[ROUTER] PDF detected -> Llama extraction pipeline');
+      try {
+        const extractedData = await extractPdfStructured(documentText);
+        // Replace message with extracted context for Qwen
+        enrichedMessage = `[El usuario subió un documento y un asistente preliminar extrajo estos datos]:
+${extractedData}
+
+[Pregunta del usuario sobre el documento]:
+${message || 'Analiza este documento.'}`;
+        console.log('[ROUTER] Llama extraction done, passing to Qwen');
+      } catch (pdfErr) {
+        console.error('[ROUTER] Llama extraction failed, falling back to raw text:', pdfErr);
+        // Fallback: use raw document text (original behavior)
+        enrichedMessage = message;
+      }
+    }
+
+    // ---- PIPELINE DE IMAGEN: Gemini describe -> Qwen responde ----
+    if (imageBase64 && !documentText) {
+      console.log('[ROUTER] Image detected -> Gemini description pipeline');
+      try {
+        const imageDescription = await describeImage(imageBase64);
+        enrichedMessage = `[El usuario subió una imagen. Descripción generada]:
+${imageDescription}
+
+[Pregunta del usuario sobre la imagen]:
+${message || 'Describe lo que ves en esta imagen.'}`;
+        console.log('[ROUTER] Gemini description done, passing to Qwen');
+      } catch (imgErr) {
+        console.error('[ROUTER] Gemini description failed:', imgErr);
+        return NextResponse.json({
+          error: 'No se pudo procesar la imagen. Intenta de nuevo con otro formato (JPG, PNG, WebP).',
+        }, { status: 422 });
+      }
+    }
+
     // ---- PASO 3: CONSTRUIR MENSAJES ----
     const basePrompt = ATLAS_SYSTEM_PROMPT;
     let systemPrompt = basePrompt
@@ -138,10 +185,16 @@ export async function POST(request: NextRequest) {
         contextSummary || 'Sin información previa. Es un nuevo usuario.'
       );
 
-    // If document attached, append document context to system prompt
+    // If document was processed by Llama, add Qwen-specific instructions
     if (documentText) {
-      const docPrompt = `\n\n[CONTEXTO DE DOCUMENTO ADJUNTO]\nEl usuario ha adjuntado un documento. Aqui esta el texto extraido:\n---\n${documentText}\n---\nINSTRUCCIONES SOBRE EL DOCUMENTO:\n- Responde estrictamente basandote en este texto.\n- Si la respuesta no esta en el texto, dile 'La informacion no se encuentra en el documento'.\n- Manten tu tono de Atlas, usa vinetas y negritas.\n- Sé conciso y directo.`;
+      const docPrompt = `\n\n[CONTEXTO DE DOCUMENTO ADJUNTO]\nEl usuario subió un documento. Los datos extraidos ya estan incluidos en el mensaje del usuario. Responde como Atlas de manera directa y estratégica basandote en los datos extraidos. Manten tu tono habitual, usa vinetas y negritas.`;
       systemPrompt += docPrompt;
+    }
+
+    // If image was described by Gemini, add context instructions
+    if (imageBase64) {
+      const imgPrompt = `\n\n[CONTEXTO DE IMAGEN ADJUNTA]\nEl usuario subió una imagen. La descripción generada ya esta incluida en el mensaje del usuario. Responde como Atlas de manera directa basandote en la descripción. Manten tu tono habitual.`;
+      systemPrompt += imgPrompt;
     }
 
     // If weather/news context detected, append to system prompt
@@ -172,6 +225,19 @@ export async function POST(request: NextRequest) {
     for (const msg of history) {
       if (msg.role === 'user' || msg.role === 'assistant') {
         llmMessages.push({ role: msg.role, content: msg.content });
+      }
+    }
+
+    // ---- ROUTER: Replace last user message with enriched content ----
+    // If PDF/Image pipeline processed, the last user message in DB is raw,
+    // but we want Qwen to see the enriched version (Llama extraction or Gemini description)
+    if (enrichedMessage !== message) {
+      // Replace the last 'user' message in llmMessages with enriched version
+      for (let i = llmMessages.length - 1; i >= 0; i--) {
+        if (llmMessages[i].role === 'user') {
+          llmMessages[i] = { role: 'user', content: enrichedMessage };
+          break;
+        }
       }
     }
 

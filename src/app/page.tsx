@@ -165,6 +165,9 @@ export default function AtlasApp() {
   const [documentName, setDocumentName] = useState<string>('');
   const [isAnalyzingDocument, setIsAnalyzingDocument] = useState(false);
   const [showPdfPaywall, setShowPdfPaywall] = useState(false);
+  // ---- Image Upload State (Base64, no Supabase) ----
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const [imageName, setImageName] = useState<string>('');
   const [showPaywallModal, setShowPaywallModal] = useState(false); // Controlled paywall modal
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1263,6 +1266,7 @@ export default function AtlasApp() {
             message: text.trim(),
             tenantId,
             ...(documentText ? { documentText } : {}),
+            ...(imageBase64 ? { imageBase64 } : {}),
           }),
         });
 
@@ -1396,10 +1400,12 @@ export default function AtlasApp() {
           setIsStreaming(false);
         }
 
-        // Clear document after sending
-        if (documentText) {
+        // Clear document/image after sending
+        if (documentText || imageBase64) {
           setDocumentText(null);
           setDocumentName('');
+          setImageBase64(null);
+          setImageName('');
         }
 
         if (tenantId && isAuthenticated) fetchSessions(tenantId);
@@ -1428,7 +1434,7 @@ export default function AtlasApp() {
         inputRef.current?.focus();
       }
     },
-    [sessionId, tenantId, isLoading, isStreaming, createNewSession, isAuthenticated, documentText]
+    [sessionId, tenantId, isLoading, isStreaming, createNewSession, isAuthenticated, documentText, imageBase64]
   );
 
   // Keep sendMessageRef current — fixes stale closure in recognition.onend
@@ -1489,7 +1495,56 @@ export default function AtlasApp() {
     // Reset file input so same file can be re-selected
     e.target.value = '';
 
-    // Check plan
+    // Detect image files — no plan check needed for images
+    const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif)$/i.test(file.name);
+
+    if (isImage) {
+      // IMAGE PIPELINE: Convert to Base64, no Supabase upload
+      if (file.size > 10 * 1024 * 1024) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            role: 'assistant',
+            content: 'La imagen excede el limite de 10 MB. Reduce el tamano e intenta de nuevo.',
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        return;
+      }
+
+      setIsAnalyzingDocument(true);
+      setImageName(file.name);
+
+      try {
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error('No se pudo leer la imagen'));
+        });
+        reader.readAsDataURL(file);
+        const dataUrl = await base64Promise;
+        setImageBase64(dataUrl);
+        inputRef.current?.focus();
+      } catch (error) {
+        console.error('[IMG] Error al procesar imagen:', error);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            role: 'assistant',
+            content: 'Error al procesar la imagen. Intenta con otro archivo.',
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        setImageName('');
+      } finally {
+        setIsAnalyzingDocument(false);
+      }
+      return;
+    }
+
+    // PDF / TXT pipeline — requires Pro plan
     const isPro = await checkUserPlan();
     if (!isPro) {
       setShowPdfPaywall(true);
@@ -1587,6 +1642,8 @@ export default function AtlasApp() {
   const clearDocument = () => {
     setDocumentText(null);
     setDocumentName('');
+    setImageBase64(null);
+    setImageName('');
   };
 
   // ========================================
@@ -2740,7 +2797,7 @@ export default function AtlasApp() {
           {!isLocked && (
             <button
               type="submit"
-              disabled={!inputValue.trim() || isLoading || isStreaming || isListening}
+              disabled={(!inputValue.trim() && !imageBase64) || isLoading || isStreaming || isListening}
               className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700/50 disabled:opacity-30 flex items-center justify-center transition-all active:scale-90 shrink-0"
               aria-label="Enviar"
             >
@@ -2752,36 +2809,30 @@ export default function AtlasApp() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.txt,application/pdf,text/plain"
+            accept=".pdf,.txt,.jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,application/pdf,text/plain"
             onChange={handleFileUpload}
             className="hidden"
           />
           <button
             type="button"
             onClick={() => {
-              const plan = (userPlanType || '').toLowerCase();
-              if (plan === 'pro' || plan === 'ejecutivo' || plan === 'elite') {
-                trackActionButton({ action: 'attach' });
-                fileInputRef.current?.click();
-              } else {
-                trackPaywallShown({ reason: 'pdf_gate', messagesSent: trialBotResponses, isAuthenticated: !!isAuthenticated });
-                setShowPdfPaywall(true);
-              }
+              trackActionButton({ action: 'attach' });
+              fileInputRef.current?.click();
             }}
             disabled={isLoading || isStreaming || isAnalyzingDocument}
             className={`w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 disabled:opacity-30 ${
               isAnalyzingDocument
                 ? 'bg-blue-500/15 border-2 border-blue-500/40'
-                : documentText
+                : documentText || imageBase64
                   ? 'bg-blue-500/10 border-2 border-blue-500/30'
                   : 'bg-gray-800 hover:bg-gray-700/80 border-2 border-gray-700/30 hover:border-blue-500/40'
             }`}
-            aria-label="Adjuntar documento (PDF/TXT)"
-            title="Adjuntar documento"
+            aria-label="Adjuntar archivo (PDF, TXT, Imagen)"
+            title="Adjuntar archivo"
           >
             {isAnalyzingDocument ? (
               <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400 animate-spin" />
-            ) : documentText ? (
+            ) : documentText || imageBase64 ? (
               <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
             ) : (
               <Paperclip className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
@@ -2923,21 +2974,25 @@ export default function AtlasApp() {
           )}
         </AnimatePresence>
 
-        {/* Document attached chip */}
+        {/* Document / Image attached chip */}
         <AnimatePresence>
-          {documentText && documentName && !isAnalyzingDocument && (
+          {(documentText || imageBase64) && (documentName || imageName) && !isAnalyzingDocument && (
             <motion.div
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 max-w-[400px]"
             >
-              <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              {imageBase64 ? (
+                <img src={imageBase64} alt="Preview" className="w-6 h-6 rounded object-cover shrink-0" />
+              ) : (
+                <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              )}
               <span className="text-[11px] text-blue-300 truncate flex-1">
-                {documentName}
+                {documentName || imageName}
               </span>
               <span className="text-[9px] text-blue-400/60 shrink-0">
-                Listo
+                {imageBase64 ? 'Imagen' : 'Listo'}
               </span>
               <button
                 onClick={clearDocument}
