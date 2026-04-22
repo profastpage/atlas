@@ -179,6 +179,10 @@ export default function AtlasApp() {
   const [showPaywallModal, setShowPaywallModal] = useState(false); // Controlled paywall modal
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ---- Attach Prompt State ----
+  const [showAttachPrompt, setShowAttachPrompt] = useState(false);
+  const [attachPromptType, setAttachPromptType] = useState<'login' | 'image' | 'pdf' | null>(null);
+
   // ---- Image Generation State ----
   const [showBuyImagesModal, setShowBuyImagesModal] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -1252,11 +1256,19 @@ export default function AtlasApp() {
 
       // Auto-crear sesion si no existe
       let currentSessionId = sessionId;
+      let currentTenantId = tenantId;
       if (!currentSessionId) {
         const sessionData = await createNewSession();
         if (!sessionData) return;
         currentSessionId = sessionData.sessionId;
+        currentTenantId = sessionData.tenantId;
         await new Promise((r) => setTimeout(r, 500));
+      }
+
+      // Safety: if tenantId is still empty (race condition on first load), block send
+      if (!currentTenantId) {
+        console.warn('[SEND] tenantId vacio, esperando inicializacion...');
+        return;
       }
 
       const userMsg: Message = {
@@ -1288,7 +1300,7 @@ export default function AtlasApp() {
           body: JSON.stringify({
             sessionId: currentSessionId,
             message: text.trim(),
-            tenantId,
+            tenantId: currentTenantId,
             ...(documentText ? { documentText } : {}),
             ...(imageBase64 ? { imageBase64 } : {}),
           }),
@@ -1673,10 +1685,24 @@ export default function AtlasApp() {
     // Reset file input so same file can be re-selected
     e.target.value = '';
 
-    // Detect image files — no plan check needed for images
+    // ---- GATE: Must be authenticated to upload files ----
+    if (!isAuthenticated) {
+      setAttachPromptType('login');
+      setShowAttachPrompt(true);
+      return;
+    }
+
+    // Detect image files
     const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif)$/i.test(file.name);
 
     if (isImage) {
+      // ---- GATE: Free users cannot upload images ----
+      if (hasActivePlan !== true) {
+        setAttachPromptType('image');
+        setShowAttachPrompt(true);
+        return;
+      }
+
       // IMAGE PIPELINE: Convert to Base64, no Supabase upload
       if (file.size > 10 * 1024 * 1024) {
         setMessages((prev) => [
@@ -1722,10 +1748,17 @@ export default function AtlasApp() {
       return;
     }
 
-    // PDF / TXT pipeline — requires Pro plan
+    // PDF / TXT pipeline — requires active plan (Pro/Ejecutivo)
+    if (hasActivePlan !== true) {
+      setAttachPromptType('pdf');
+      setShowAttachPrompt(true);
+      return;
+    }
+
     const isPro = await checkUserPlan();
     if (!isPro) {
-      setShowPdfPaywall(true);
+      setAttachPromptType('pdf');
+      setShowAttachPrompt(true);
       return;
     }
 
@@ -3532,6 +3565,139 @@ export default function AtlasApp() {
                   </button>
                   <button
                     onClick={() => setShowPdfPaywall(false)}
+                    className="w-full py-2.5 rounded-xl text-gray-500 text-sm hover:text-gray-400 transition-colors"
+                  >
+                    Despues
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ===== ATTACH PROMPT MODAL — Login / Plan required ===== */}
+      <AnimatePresence>
+        {showAttachPrompt && attachPromptType && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50"
+              onClick={() => { setShowAttachPrompt(false); setAttachPromptType(null); }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-sm mx-auto"
+            >
+              <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
+                {/* Close button */}
+                <div className="flex justify-end mb-1">
+                  <button
+                    onClick={() => { setShowAttachPrompt(false); setAttachPromptType(null); }}
+                    className="p-1.5 rounded-full hover:bg-gray-800 transition-colors"
+                    aria-label="Cerrar"
+                  >
+                    <X className="w-5 h-5 text-gray-400" />
+                  </button>
+                </div>
+
+                {/* Icon */}
+                <div className="text-center mb-5">
+                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-gradient-to-br from-blue-500/20 to-blue-600/5 border border-blue-500/20">
+                    <Paperclip className="w-8 h-8 text-blue-400" />
+                  </div>
+
+                  {attachPromptType === 'login' && (
+                    <>
+                      <h2 className="text-xl font-bold text-white">
+                        Registrate o inicia sesion
+                      </h2>
+                      <p className="text-sm text-gray-400 mt-2 leading-relaxed">
+                        Para acceder a mejores beneficios como subir imagenes, analizar PDFs y mas, necesitas tener una cuenta.
+                      </p>
+                      <p className="text-sm text-emerald-400/80 mt-2">
+                        Al registrarte obtienes <span className="font-semibold">20 mensajes gratis al mes</span>.
+                      </p>
+                    </>
+                  )}
+
+                  {attachPromptType === 'image' && (
+                    <>
+                      <h2 className="text-xl font-bold text-white">
+                        Sube imagenes con Plan Basico
+                      </h2>
+                      <p className="text-sm text-gray-400 mt-2 leading-relaxed">
+                        Para enviar imagenes y obtener respuestas visuales de Atlas, necesitas un <span className="text-emerald-400 font-semibold">Plan Basico o superior</span>.
+                      </p>
+                      <div className="space-y-1.5 mt-3 text-sm text-gray-400">
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-400">{'\u2713'}</span>
+                          <span>Sube imagenes y recibe respuestas visuales</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-400">{'\u2713'}</span>
+                          <span>Mensajes ilimitados</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-400">{'\u2713'}</span>
+                          <span>Genera hasta 20 imagenes al mes</span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {attachPromptType === 'pdf' && (
+                    <>
+                      <h2 className="text-xl font-bold text-white">
+                        Analiza PDFs con Plan Pro
+                      </h2>
+                      <p className="text-sm text-gray-400 mt-2 leading-relaxed">
+                        Para adjuntar y analizar documentos PDF, necesitas el <span className="text-blue-400 font-semibold">Plan Pro (S/40)</span> o superior.
+                      </p>
+                      <div className="space-y-1.5 mt-3 text-sm text-gray-400">
+                        <div className="flex items-center gap-2">
+                          <span className="text-blue-400">{'\u2713'}</span>
+                          <span>Extrae informacion clave de cualquier PDF</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-blue-400">{'\u2713'}</span>
+                          <span>Analisis profundo de documentos</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-blue-400">{'\u2713'}</span>
+                          <span>Preguntas basadas en el contenido</span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="space-y-2">
+                  {attachPromptType === 'login' ? (
+                    <a
+                      href="/login"
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
+                    >
+                      Iniciar Sesion o Registrarse
+                      <LogIn className="w-4 h-4" />
+                    </a>
+                  ) : (
+                    <button
+                      onClick={() => { setShowAttachPrompt(false); setAttachPromptType(null); setShowSettings(true); }}
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/15"
+                    >
+                      <Settings className="w-4 h-4" />
+                      Ver Planes Disponibles
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { setShowAttachPrompt(false); setAttachPromptType(null); }}
                     className="w-full py-2.5 rounded-xl text-gray-500 text-sm hover:text-gray-400 transition-colors"
                   >
                     Despues
