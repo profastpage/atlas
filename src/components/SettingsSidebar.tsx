@@ -32,6 +32,7 @@ interface SettingsSidebarProps {
   remainingMessages?: number;
   messageLimit?: number;
   userHasPlan?: boolean;
+  onRequestInstall?: () => void;
 }
 
 interface UserPlan {
@@ -118,6 +119,7 @@ export default function SettingsSidebar({
   remainingMessages = 20,
   messageLimit = 20,
   userHasPlan = false,
+  onRequestInstall,
 }: SettingsSidebarProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
@@ -202,11 +204,11 @@ export default function SettingsSidebar({
       } catch {}
       deferredPromptRef.current = null;
       setPwaInstalling(false);
-    } else {
-      // No native prompt — show inline platform-specific guide
-      setShowInstallGuide(true);
+    } else if (onRequestInstall) {
+      // No native prompt — trigger InstallPrompt bottom sheet from parent
+      onRequestInstall();
     }
-  }, []);
+  }, [onRequestInstall]);
 
   // ---- QR Payment Modal state ----
   const [paymentModal, setPaymentModal] = useState<{
@@ -600,177 +602,58 @@ export default function SettingsSidebar({
                 </p>
               </section>
 
-              {/* ===== INSTALL APP MOBILE (PWA) ===== */}
+              {/* ===== INSTALL APP MOBILE (PWA) — Direct Button ===== */}
               <section aria-label="Instalar App">
                 <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3 mt-5">
                   App Movil
                 </h3>
 
-                {/* ---- INLINE INSTALL GUIDE (always shown on iOS, toggle on others) ---- */}
-              <div className="space-y-2">
-                {isIOS && !isSafari && (
-                  /* NOT Safari on iOS — must open in Safari first */
-                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
-                    <p className="text-[12px] font-semibold text-amber-300 mb-1 flex items-center gap-1.5">
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      Abre en Safari para instalar
-                    </p>
-                    <p className="text-[10.5px] text-gray-400 mb-2.5">
-                      Apple solo permite instalar apps desde Safari. Si estas en WhatsApp, Chrome u otro navegador, primero abre esta pagina en Safari:
-                    </p>
-                    <div className="space-y-2 mb-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0 text-[10px] font-bold text-amber-400">1</div>
-                        <p className="text-[11px] text-gray-300 flex-1">Toca y mantene presionado este enlace:</p>
-                      </div>
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0 text-[10px] font-bold text-amber-400">2</div>
-                        <p className="text-[11px] text-gray-300 flex-1">Selecciona <span className="font-semibold text-amber-400">&quot;Copiar enlace&quot;</span> o <span className="font-semibold text-amber-400">&quot;Abrir en Safari&quot;</span></p>
-                      </div>
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0 text-[10px] font-bold text-amber-400">3</div>
-                        <p className="text-[11px] text-gray-300 flex-1">Abre <span className="font-semibold text-amber-400">Safari</span> → pega el enlace → instala desde Safari</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(window.location.href);
-                          setLinkCopied(true);
-                          setTimeout(() => setLinkCopied(false), 2500);
-                        } catch {}
-                      }}
-                      className="w-full py-2 rounded-lg bg-amber-500/15 text-amber-300 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-[0.97] border border-amber-500/20 hover:bg-amber-500/25"
-                    >
-                      {linkCopied ? (
-                        <><CheckCircle className="w-3.5 h-3.5" /> Enlace copiado</>
-                      ) : (
-                        <><Share2 className="w-3.5 h-3.5" /> Copiar enlace de Atlas</>
-                      )}
-                    </button>
-                  </div>
-                )}
-
-                {isIOS && isSafari && (
-                  /* Safari on iOS — Add to Home Screen guide */
-                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
-                    <p className="text-[12px] font-semibold text-blue-300 mb-2.5 flex items-center gap-1.5">
-                      <Smartphone className="w-3.5 h-3.5" />
-                      Instalar en iPhone / iPad
-                    </p>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-6 h-6 rounded-md bg-gray-700/50 flex items-center justify-center shrink-0">
-                          <Share2 className="w-3 h-3 text-blue-400" />
-                        </div>
-                        <p className="text-[11px] text-gray-300 flex-1">
-                          Toca el icono <span className="font-semibold text-blue-400">Compartir</span> (cuadro con flecha) en la barra inferior
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-6 h-6 rounded-md bg-gray-700/50 flex items-center justify-center shrink-0">
-                          <span className="text-[11px] font-bold text-emerald-400">+</span>
-                        </div>
-                        <p className="text-[11px] text-gray-300 flex-1">
-                          Desliza hacia abajo y selecciona <span className="font-semibold text-emerald-400">&quot;Agregar a pantalla de inicio&quot;</span>
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-6 h-6 rounded-md bg-gray-700/50 flex items-center justify-center shrink-0">
-                          <CheckCircle className="w-3 h-3 text-emerald-400" />
-                        </div>
-                        <p className="text-[11px] text-gray-300 flex-1">
-                          Toca <span className="font-semibold text-emerald-400">&quot;Agregar&quot;</span> arriba a la derecha y listo
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {!isIOS && (
-                  /* Android / Desktop Chrome */
-                  <>
-                    {canInstallPWA ? (
-                      <button
-                        onClick={handleInstallPWA}
-                        disabled={pwaInstalling}
-                        className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/15 transition-all active:scale-[0.98] group/pwa"
-                      >
-                        <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0 group-hover/pwa:bg-emerald-500/30 transition-colors">
-                          {pwaInstalling ? (
-                            <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
-                          ) : (
-                            <Download className="w-5 h-5 text-emerald-400" />
-                          )}
-                        </div>
-                        <div className="text-left flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-white">
-                            {pwaInstalling ? 'Instalando...' : 'Instalar App Atlas'}
-                          </p>
-                          <p className="text-[10px] text-gray-400 mt-0.5">Toca para instalar en tu dispositivo</p>
-                        </div>
-                        <Smartphone className="w-4 h-4 text-gray-600 group-hover/pwa:text-emerald-400 transition-colors shrink-0" />
-                      </button>
-                    ) : showInstallGuide ? (
-                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">
-                        <p className="text-[12px] font-semibold text-emerald-300 mb-2.5 flex items-center gap-1.5">
-                          <Smartphone className="w-3.5 h-3.5" />
-                          Instalar en Android / Chrome
-                        </p>
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-6 h-6 rounded-md bg-gray-700/50 flex items-center justify-center shrink-0">
-                              <ExternalLink className="w-3 h-3 text-emerald-400" />
-                            </div>
-                            <p className="text-[11px] text-gray-300 flex-1">
-                              Abre el menu de Chrome (tres puntos arriba a la derecha)
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-6 h-6 rounded-md bg-gray-700/50 flex items-center justify-center shrink-0">
-                              <Download className="w-3 h-3 text-emerald-400" />
-                            </div>
-                            <p className="text-[11px] text-gray-300 flex-1">
-                              Busca <span className="font-semibold text-emerald-400">&quot;Instalar app&quot;</span> o <span className="font-semibold text-emerald-400">&quot;Agregar a pantalla de inicio&quot;</span>
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-6 h-6 rounded-md bg-gray-700/50 flex items-center justify-center shrink-0">
-                              <CheckCircle className="w-3 h-3 text-emerald-400" />
-                            </div>
-                            <p className="text-[11px] text-gray-300 flex-1">
-                              Confirma tocando <span className="font-semibold text-emerald-400">&quot;Instalar&quot;</span>
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setShowInstallGuide(true)}
-                        className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/15 transition-all active:scale-[0.98] group/pwa"
-                      >
-                        <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0 group-hover/pwa:bg-emerald-500/30 transition-colors">
-                          <Download className="w-5 h-5 text-emerald-400" />
-                        </div>
-                        <div className="text-left flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-white">Instalar App Atlas</p>
-                          <p className="text-[10px] text-gray-400 mt-0.5">Acceso rapido desde tu pantalla de inicio</p>
-                        </div>
-                        <Smartphone className="w-4 h-4 text-gray-600 group-hover/pwa:text-emerald-400 transition-colors shrink-0" />
-                      </button>
-                    )}
-                  </>
-                )}
-
-                {!isIOS && showInstallGuide && (
+                {isIOS ? (
+                  /* iOS — compact: one button to open install prompt (InstallPrompt bottom sheet) */
                   <button
-                    onClick={() => setShowInstallGuide(false)}
-                    className="w-full py-2 rounded-lg text-[11px] text-gray-500 hover:text-gray-300 transition-colors"
+                    onClick={() => {
+                      if (onRequestInstall) onRequestInstall();
+                    }}
+                    className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/15 transition-all active:scale-[0.98] group/pwa"
                   >
-                    Ocultar instrucciones
+                    <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0 group-hover/pwa:bg-blue-500/30 transition-colors">
+                      <Download className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <div className="text-left flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-white">Instalar App Atlas</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">Toca para instalar en tu iPhone</p>
+                    </div>
+                    <Smartphone className="w-4 h-4 text-gray-600 group-hover/pwa:text-blue-400 transition-colors shrink-0" />
+                  </button>
+                ) : (
+                  /* Android / Desktop — one direct install button */
+                  <button
+                    onClick={handleInstallPWA}
+                    disabled={pwaInstalling}
+                    className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/15 transition-all active:scale-[0.98] group/pwa disabled:opacity-50"
+                  >
+                    <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0 group-hover/pwa:bg-emerald-500/30 transition-colors">
+                      {pwaInstalling ? (
+                        <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+                      ) : (
+                        <Download className="w-5 h-5 text-emerald-400" />
+                      )}
+                    </div>
+                    <div className="text-left flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-white">
+                        {pwaInstalling ? 'Instalando...' : 'Instalar App Atlas'}
+                      </p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">Toca para instalar en tu dispositivo</p>
+                    </div>
+                    <Smartphone className="w-4 h-4 text-gray-600 group-hover/pwa:text-emerald-400 transition-colors shrink-0" />
                   </button>
                 )}
-              </div>
+
+                {isIOS && !isSafari && (
+                  <p className="text-[10px] text-amber-400/70 mt-1.5 px-1">
+                    Si estas en WhatsApp o Chrome, abre esta pagina en Safari primero
+                  </p>
+                )}
               </section>
 
               <div className="border-t border-gray-800/40 my-5" />

@@ -76,6 +76,12 @@ interface FavoriteSession {
   messageCount: number;
 }
 
+interface FavoriteMessage {
+  msgId: string;
+  sessionId: string;
+  preview: string;
+}
+
 // ========================================
 // CONSTANTS
 // ========================================
@@ -225,7 +231,7 @@ export default function AtlasApp() {
   const [showFavoritesModal, setShowFavoritesModal] = useState(false);
   const [favoriteSessions, setFavoriteSessions] = useState<FavoriteSession[]>([]);
   const [favoritesTab, setFavoritesTab] = useState<'favorites' | 'numbers'>('favorites');
-  const [favoriteMessageIds, setFavoriteMessageIds] = useState<Set<string>>(new Set());
+  const [favoriteMessages, setFavoriteMessages] = useState<FavoriteMessage[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(true);
 
   // ---- Numbered Highlights State ----
@@ -252,7 +258,16 @@ export default function AtlasApp() {
       const savedFavs = localStorage.getItem(FAV_KEY);
       if (savedFavs) setFavoriteSessions(JSON.parse(savedFavs));
       const savedFavMsgs = localStorage.getItem(FAV_MSG_KEY);
-      if (savedFavMsgs) setFavoriteMessageIds(new Set(JSON.parse(savedFavMsgs)));
+      if (savedFavMsgs) {
+        const parsed = JSON.parse(savedFavMsgs);
+        // Migration: old format was string[], new format is FavoriteMessage[]
+        if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
+          // Old format - convert to new (will lose session info but keep msgIds)
+          setFavoriteMessages(parsed.map((id: string) => ({ msgId: id, sessionId: '', preview: '' })));
+        } else {
+          setFavoriteMessages(parsed);
+        }
+      }
       const savedHl = localStorage.getItem(HL_KEY);
       if (savedHl) setHighlights(JSON.parse(savedHl));
     } catch {}
@@ -265,8 +280,8 @@ export default function AtlasApp() {
 
   // Persist favorite messages
   useEffect(() => {
-    try { localStorage.setItem(FAV_MSG_KEY, JSON.stringify([...favoriteMessageIds])); } catch {}
-  }, [favoriteMessageIds]);
+    try { localStorage.setItem(FAV_MSG_KEY, JSON.stringify(favoriteMessages)); } catch {}
+  }, [favoriteMessages]);
 
   // Persist highlights
   useEffect(() => {
@@ -484,16 +499,32 @@ export default function AtlasApp() {
 
   const scrollToMessage = (msgId: string) => {
     setShowFavoritesModal(false);
-    // Wait for DOM update after closing modal
+    // Check if this message needs a session switch
+    const favMsg = favoriteMessages.find(f => f.msgId === msgId);
+    if (favMsg && favMsg.sessionId && favMsg.sessionId !== sessionId) {
+      // Load the correct session first, then scroll
+      loadSession(favMsg.sessionId).then(() => {
+        setTimeout(() => {
+          const el = document.querySelector(`[data-msg-id="${msgId}"]`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('ring-2', 'ring-amber-400/50');
+            setTimeout(() => el.classList.remove('ring-2', 'ring-amber-400/50'), 2000);
+          } else {
+            scrollToBottom();
+          }
+        }, 300);
+      });
+      return;
+    }
+    // Message is in current session (or no session info)
     setTimeout(() => {
       const el = document.querySelector(`[data-msg-id="${msgId}"]`);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // Flash highlight effect
         el.classList.add('ring-2', 'ring-amber-400/50');
         setTimeout(() => el.classList.remove('ring-2', 'ring-amber-400/50'), 2000);
       } else {
-        // Message not in current view — might be in a different session
         scrollToBottom();
       }
     }, 100);
@@ -1878,11 +1909,32 @@ export default function AtlasApp() {
   // SHARE MESSAGE — Web Share API + fallback
   // ========================================
 
+  const toWhatsAppText = (html: string) => {
+    let text = html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<strong>(.*?)<\/strong>/gi, '*$1*')
+      .replace(/<b>(.*?)<\/b>/gi, '*$1*')
+      .replace(/<em>(.*?)<\/em>/gi, '_$1_')
+      .replace(/<i>(.*?)<\/i>/gi, '_$1_')
+      .replace(/<s>(.*?)<\/s>/gi, '~$1~')
+      .replace(/<del>(.*?)<\/del>/gi, '~$1~')
+      .replace(/<strike>(.*?)<\/strike>/gi, '~$1~')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\*\*(.*?)\*\*/g, '*$1*')
+      .replace(/__(.*?)__/g, '_$1_');
+    return text;
+  };
+
   const shareMessage = useCallback(async (msgId: string, content: string) => {
     try {
-      const plainText = toPlainText(content);
+      const whatsAppText = toWhatsAppText(content);
       trackActionButton({ action: 'share' });
-      const shareText = `${plainText}\n\n— Resuelto por Atlas, tu Asesor Estrategico 24/7. Pribalo en: https://atlas-9mv.pages.dev`;
+      const shareText = `${whatsAppText}\n\n— Resuelto por Atlas, tu Asesor Estrategico 24/7. Pruébalo en: https://atlas-9mv.pages.dev`;
 
       if (typeof navigator !== 'undefined' && navigator.share) {
         await navigator.share({
@@ -2141,17 +2193,17 @@ export default function AtlasApp() {
 
   // Per-message favorite toggle
   const toggleFavoriteMessage = useCallback((msgId: string) => {
-    setFavoriteMessageIds(prev => {
-      const next = new Set(prev);
-      if (next.has(msgId)) {
-        next.delete(msgId);
-      } else {
-        next.add(msgId);
+    const msg = messages.find(m => m.id === msgId);
+    const preview = msg ? msg.content.substring(0, 200) : '';
+    setFavoriteMessages(prev => {
+      const exists = prev.find(f => f.msgId === msgId);
+      if (exists) {
+        return prev.filter(f => f.msgId !== msgId);
       }
-      return next;
+      return [...prev, { msgId, sessionId: sessionId, preview }];
     });
     trackActionButton({ action: 'favorite_message' });
-  }, []);
+  }, [messages, sessionId]);
 
   // ========================================
   // HIGHLIGHTS — Number system (1-99)
@@ -2358,10 +2410,16 @@ export default function AtlasApp() {
         remainingMessages={remainingResponses}
         messageLimit={messageLimit}
         userHasPlan={hasActivePlan === true}
+        onRequestInstall={() => {
+          setShowSettings(false);
+          // Reset trigger so InstallPrompt re-shows
+          setShowInstallPrompt(false);
+          setTimeout(() => setShowInstallPrompt(true), 100);
+        }}
       />
 
       {/* ===== HEADER ===== */}
-      <header className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 bg-[#111111] border-b border-gray-800/30 z-20 shrink-0">
+      <header className="flex items-center justify-between px-3 sm:px-4 py-1 sm:py-1.5 bg-[#111111] border-b border-gray-800/30 z-20 shrink-0">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={() => setShowSessions(!showSessions)}
@@ -2423,10 +2481,10 @@ export default function AtlasApp() {
             aria-label="Favoritos"
             title="Favoritos y destacados"
           >
-            <Star className={`w-5 h-5 ${favoriteSessions.length > 0 || highlights.length > 0 || favoriteMessageIds.size > 0 ? 'text-amber-400 fill-amber-400' : 'text-gray-400'}`} />
-            {(favoriteSessions.length > 0 || highlights.length > 0 || favoriteMessageIds.size > 0) && (
+            <Star className={`w-5 h-5 ${favoriteSessions.length > 0 || highlights.length > 0 || favoriteMessages.length > 0 ? 'text-amber-400 fill-amber-400' : 'text-gray-400'}`} />
+            {(favoriteSessions.length > 0 || highlights.length > 0 || favoriteMessages.length > 0) && (
               <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-amber-500 rounded-full text-[8px] text-white flex items-center justify-center font-bold">
-                {favoriteSessions.length + highlights.length + favoriteMessageIds.size}
+                {favoriteSessions.length + highlights.length + favoriteMessages.length}
               </span>
             )}
           </button>
@@ -2783,9 +2841,9 @@ export default function AtlasApp() {
                     <button
                       onClick={() => toggleFavoriteMessage(msg.id)}
                       className="p-1 rounded-lg transition-all active:scale-90 cursor-pointer select-none"
-                      title={favoriteMessageIds.has(msg.id) ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+                      title={favoriteMessages.some(f => f.msgId === msg.id) ? 'Quitar de favoritos' : 'Agregar a favoritos'}
                     >
-                      <Star className={`w-3.5 h-3.5 ${favoriteMessageIds.has(msg.id) ? 'text-amber-400 fill-amber-400' : 'text-gray-400 hover:text-amber-400'}`} />
+                      <Star className={`w-3.5 h-3.5 ${favoriteMessages.some(f => f.msgId === msg.id) ? 'text-amber-400 fill-amber-400' : 'text-gray-400 hover:text-amber-400'}`} />
                     </button>
 
                     {/* Highlight / Number */}
@@ -3788,7 +3846,7 @@ export default function AtlasApp() {
                     }`}
                   >
                     <Star className="w-3 h-3 inline mr-1" />
-                    Favoritos ({favoriteSessions.length + favoriteMessageIds.size})
+                    Favoritos ({favoriteSessions.length + favoriteMessages.length})
                   </button>
                   <button
                     onClick={() => setFavoritesTab('numbers')}
@@ -3806,7 +3864,7 @@ export default function AtlasApp() {
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-3 space-y-2">
                   {favoritesTab === 'favorites' ? (
-                    (favoriteSessions.length === 0 && favoriteMessageIds.size === 0) ? (
+                    (favoriteSessions.length === 0 && favoriteMessages.length === 0) ? (
                       <div className="text-center py-8">
                         <Star className="w-8 h-8 text-gray-700 mx-auto mb-2" />
                         <p className="text-xs text-gray-500">Sin favoritos</p>
@@ -3815,29 +3873,34 @@ export default function AtlasApp() {
                     ) : (
                       <>
                         {/* Favorited messages */}
-                        {favoriteMessageIds.size > 0 && (
+                        {favoriteMessages.length > 0 && (
                           <div className="space-y-1.5">
                             <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider px-1">Mensajes destacados</p>
-                            {[...favoriteMessageIds].map(msgId => {
-                              const msg = messages.find(m => m.id === msgId);
-                              if (!msg) return null;
+                            {favoriteMessages.map(fav => {
+                              const msg = messages.find(m => m.id === fav.msgId);
+                              const preview = fav.preview || (msg ? msg.content.substring(0, 150) : 'Mensaje no encontrado');
                               return (
                                 <div
-                                  key={msgId}
+                                  key={fav.msgId}
                                   className="p-2.5 rounded-xl bg-gray-800/40 border border-gray-700/30 group"
                                 >
                                   <div
                                     className="flex items-start gap-2 cursor-pointer"
-                                    onClick={() => scrollToMessage(msgId)}
+                                    onClick={() => scrollToMessage(fav.msgId)}
                                   >
                                     <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0 mt-0.5" />
-                                    <p className="text-[12px] text-gray-300 leading-relaxed line-clamp-3">{msg.content.substring(0, 150)}{msg.content.length > 150 ? '...' : ''}</p>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-[12px] text-gray-300 leading-relaxed line-clamp-3">{preview}{preview.length >= 150 ? '...' : ''}</p>
+                                      {fav.sessionId && fav.sessionId !== sessionId && (
+                                        <span className="text-[8px] text-blue-400/60 bg-blue-400/10 px-1 py-0.5 rounded ml-1.5">otro chat</span>
+                                      )}
+                                    </div>
                                   </div>
                                   <div className="flex items-center justify-between mt-1.5 ml-5.5">
-                                    <span className="text-[9px] text-gray-600">{formatTime(msg.timestamp)}</span>
+                                    <span className="text-[9px] text-gray-600">{msg ? formatTime(msg.timestamp) : ''}</span>
                                     <div className="flex items-center gap-1">
                                       <button
-                                        onClick={() => scrollToMessage(msgId)}
+                                        onClick={() => scrollToMessage(fav.msgId)}
                                         className="p-1 rounded hover:bg-emerald-500/10 transition-colors"
                                         title="Ir al chat"
                                       >
@@ -3845,7 +3908,8 @@ export default function AtlasApp() {
                                       </button>
                                       <button
                                         onClick={() => {
-                                          navigator.clipboard.writeText(msg.content).catch(() => {});
+                                          const textToCopy = msg ? msg.content : preview;
+                                          navigator.clipboard.writeText(textToCopy).catch(() => {});
                                         }}
                                         className="p-1 rounded hover:bg-blue-500/10 transition-colors"
                                         title="Copiar texto"
@@ -3853,7 +3917,7 @@ export default function AtlasApp() {
                                         <Copy className="w-2.5 h-2.5 text-gray-500 hover:text-blue-400" />
                                       </button>
                                       <button
-                                        onClick={() => toggleFavoriteMessage(msgId)}
+                                        onClick={() => toggleFavoriteMessage(fav.msgId)}
                                         className="p-1 rounded hover:bg-red-500/10 transition-colors"
                                         title="Quitar de favoritos"
                                       >

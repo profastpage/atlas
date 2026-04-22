@@ -140,18 +140,10 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
     };
   }, []);
 
-  // Watch external trigger
+  // Watch external trigger — always show when parent requests (no cooldown for manual clicks)
   useEffect(() => {
     if (!trigger) return;
     if (isInstalled) return;
-    // Check dismiss cooldown
-    const dismissedAt = localStorage.getItem(DISMISSED_TIME_KEY);
-    if (dismissedAt) {
-      const elapsed = Date.now() - parseInt(dismissedAt, 10);
-      if (elapsed < DISMISS_COOLDOWN_MS) return;
-    }
-    if (shownRef.current) return;
-    shownRef.current = true;
     setShow(true);
   }, [trigger, isInstalled]);
 
