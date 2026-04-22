@@ -237,3 +237,24 @@ Stage Summary:
 - Sin hard refresh necesario
 - Actualización en máximo 2 minutos después del deploy
 - Archivos modificados: sw.js, layout.tsx, manifest.json, package.json, version.json (nuevo), prebuild.sh (nuevo)
+---
+Task ID: 1
+Agent: main
+Task: Fix "This page couldn't load" error on mobile Chrome after interface update
+
+Work Log:
+- Analyzed screenshot: Chrome's "This page couldn't load" error page (network-level failure)
+- Verified server responds with HTTP 200 and valid HTML (curl test)
+- Identified root cause: Service Worker CACHE_VERSION stayed 'atlas-v3' across multiple deployments
+- Old SW cache contained HTML from previous deployment referencing deleted JS chunks
+- When network was briefly unavailable, SW served stale HTML → missing JS files → broken page
+- Also found `position: fixed` on body causing rendering issues on mobile Chrome
+
+Stage Summary:
+- Bumped SW CACHE_VERSION from 'atlas-v3' to 'atlas-v4'
+- Changed activate handler to delete ALL caches (not just different version names)
+- Added one-time postMessage SW_UPDATED to clients on activation (with sessionStorage guard to prevent infinite loops)
+- Added message listener in layout.tsx to reload once per session on SW update
+- Removed `position: fixed` from body in globals.css (overscroll-behavior: none already handles rubber-band prevention)
+- Build verified locally (both next build and pages:build succeed)
+- Commit: f0930d3 pushed to origin/main
