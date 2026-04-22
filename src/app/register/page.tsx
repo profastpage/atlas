@@ -88,8 +88,9 @@ export default function RegisterPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || 'Error al autenticar con Google');
-        console.error('[GOOGLE_AUTH]', data);
+        const errorMsg = data.error || 'Error al autenticar con Google';
+        setError(errorMsg);
+        console.error('[GOOGLE_AUTH] Error:', res.status, errorMsg, data);
         return;
       }
 

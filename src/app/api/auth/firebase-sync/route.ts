@@ -3,14 +3,16 @@ export const runtime = 'edge';
 // ========================================
 // FIREBASE SYNC — Exchange Firebase ID token for Turso auth
 // Used by client-side Firebase Google Auth (signInWithPopup)
+//
+// VERIFICATION METHOD: Google tokeninfo endpoint
+// - 100% Edge compatible (no Buffer, no crypto imports)
+// - Simple fetch to https://oauth2.googleapis.com/tokeninfo?id_token=XXX
+// - Returns email, name, picture, sub directly
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/sql';
 import { generateToken, hashPassword } from '@/lib/password';
-
-// Firebase project ID for token verification
-const FIREBASE_PROJECT_ID = 'asistente-ia-atlas-23dac';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,59 +24,48 @@ export async function POST(request: NextRequest) {
     }
 
     // ---- VERIFY FIREBASE ID TOKEN ----
-    // Use Firebase's public key certificate endpoint to verify the token
-    // This avoids needing firebase-admin on Edge runtime
-    let decodedToken: any;
+    // Use Google's tokeninfo endpoint — simple, reliable, Edge compatible
+    let email: string;
+    let name: string;
+    let googleId: string;
+    let avatarUrl: string | null;
+
     try {
-      // Fetch Firebase public keys
-      const keysResponse = await fetch(
-        `https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com`,
-        { headers: { 'Cache-Control': 'no-cache' } }
-      );
-      const keys = await keysResponse.json();
-      const headerB64 = idToken.split('.')[0];
-      const header = JSON.parse(Buffer.from(headerB64, 'base64').toString());
-      const publicKey = keys[header.kid];
-
-      if (!publicKey) {
-        return NextResponse.json({ error: 'Token de Firebase invalido: clave no encontrada' }, { status: 401 });
-      }
-
-      // Simple verification using Firebase's tokeninfo API (works on Edge)
       const verifyResponse = await fetch(
-        `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=AIzaSyA3INDSDZ7Ab5SsG4Uu9YHG7cCMG1mpcLg`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken }),
-        }
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
       );
-      const verifyData = await verifyResponse.json();
 
-      if (!verifyData.users || verifyData.users.length === 0) {
-        return NextResponse.json({ error: 'Token de Firebase invalido' }, { status: 401 });
+      if (!verifyResponse.ok) {
+        const errData = await verifyResponse.json().catch(() => ({}));
+        console.error('[FIREBASE_SYNC] tokeninfo error:', verifyResponse.status, errData);
+        return NextResponse.json(
+          { error: 'Token de Firebase invalido o expirado' },
+          { status: 401 }
+        );
       }
 
-      const firebaseUser = verifyData.users[0];
-      decodedToken = {
-        uid: firebaseUser.localId,
-        email: firebaseUser.email,
-        name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Usuario',
-        picture: firebaseUser.photoUrl || null,
-        emailVerified: firebaseUser.emailVerified,
-      };
+      const tokenInfo = await verifyResponse.json();
+
+      // Validate audience matches our Firebase project
+      if (tokenInfo.aud !== 'asistente-ia-atlas-23dac') {
+        console.error('[FIREBASE_SYNC] Wrong audience:', tokenInfo.aud);
+        return NextResponse.json(
+          { error: 'Token no pertenece a este proyecto' },
+          { status: 401 }
+        );
+      }
+
+      email = tokenInfo.email?.toLowerCase().trim() || '';
+      name = tokenInfo.name || tokenInfo.given_name || email.split('@')[0] || 'Usuario';
+      googleId = tokenInfo.sub || '';
+      avatarUrl = tokenInfo.picture || null;
+
+      if (!email) {
+        return NextResponse.json({ error: 'No se pudo obtener el email de Firebase' }, { status: 400 });
+      }
     } catch (err) {
       console.error('[FIREBASE_SYNC] Token verification failed:', err);
       return NextResponse.json({ error: 'Error al verificar token de Firebase' }, { status: 401 });
-    }
-
-    const email = decodedToken.email?.toLowerCase().trim();
-    const name = decodedToken.name;
-    const googleId = decodedToken.uid;
-    const avatarUrl = decodedToken.picture;
-
-    if (!email) {
-      return NextResponse.json({ error: 'No se pudo obtener el email de Firebase' }, { status: 400 });
     }
 
     // ---- CHECK/CREATE USER IN TURSO ----
@@ -119,7 +110,9 @@ export async function POST(request: NextRequest) {
             [crypto.randomUUID(), tenantId, name, new Date().toISOString()]
           );
         }
-      } catch {}
+      } catch (memErr) {
+        console.error('[FIREBASE_SYNC] UserMemory creation failed:', memErr);
+      }
     }
 
     // ---- CREATE TURSO AUTH TOKEN (7 days) ----
