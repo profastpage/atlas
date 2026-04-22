@@ -6,3 +6,14 @@
 
 /*.html
   Cache-Control: no-cache, no-store, must-revalidate
+
+# Service Worker: must be fetchable but Cloudflare should not cache
+# The SW handles its own versioning via CACHE_VERSION
+/sw.js
+  Cache-Control: no-cache
+  Content-Type: application/javascript
+
+# Manifest: should always be fresh
+/manifest.json
+  Cache-Control: no-cache
+  Content-Type: application/manifest+json

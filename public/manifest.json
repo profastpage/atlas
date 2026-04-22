@@ -1,28 +1,42 @@
 {
+  "id": "atlas-coach-pwa",
   "name": "Atlas - Asesor Estratégico de Élite",
   "short_name": "Atlas",
   "description": "Tu coach personal con IA 24/7. Estrategia, productividad, bienestar y más. Recibe notificaciones exclusivas directamente en tu celular.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",
   "theme_color": "#059669",
   "orientation": "portrait",
-  "scope": "/",
   "lang": "es",
   "categories": ["productivity", "lifestyle", "business"],
   "prefer_related_applications": false,
+  "dir": "auto",
   "icons": [
     {
       "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "/icons/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
