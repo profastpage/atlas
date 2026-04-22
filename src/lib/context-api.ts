@@ -179,6 +179,14 @@ const WIKI_TRIGGER_PATTERNS = [
   // Broader question patterns
   /(?:cual fue|como surgio|por que se llama|donde se creo|cuando salio|que paso con|que paso en)/i,
   /(?:hablemos (?:del|de la)|dime (?:de|sobre) |cuéntame (?:de|sobre) |información sobre |que(?: |>)(?:panel|sabes) de )/i,
+  // English triggers
+  /^(what is|who (?:is|was|are)|what (?:are|does|was|happened)|tell me about|explain|i want to know about)/i,
+  /(?:tell me about|what do you know about|how does|where is|when was|why is)/i,
+  // Direct title/year patterns: "Title (Year)" or "Title - Year" or quoted titles
+  /(?:^|\s)(["'])?[A-Z][\w\s&:'".\-]+?\s*\(\d{4}\)\s*["']?/i,
+  /(?:^|\s)(["'])?[A-Z][\w\s&:'".\-]+?\s*[-–]\s*\d{4}\s*["']?/i,
+  // Direct name mentions without question words (movie, game, book, song)
+  /(?:pelicula|película|film|movie|serie|show|juego|game|libro|book|cancion|song|anime|manga|album)\s+(?:de |del |about |called )?(.+)/i,
 ];
 
 function containsKeyword(text: string, keywords: string[]): boolean {
@@ -202,14 +210,35 @@ function extractWikipediaTopic(text: string): string | null {
   const matched = WIKI_TRIGGER_PATTERNS.some((pattern) => pattern.test(text.trim()));
   if (!matched) return null;
 
-  // Extract the topic — remove question words and take the subject
-  let topic = text.trim()
-    .replace(/^(que es|quien (?:es|fue|dirigio|entreno|jugo)|que (?:significa|quiere decir|fue|son|equipo|goles|titulo|posicion|seleccion|nacionalidad|paso con|paso en)|explica(?:r)?me?|cuentame sobre|que sabes de|hablemos (?:del|de la|de)|dime (?:de|sobre)|como funciona|como fue|donde esta|donde se creo|cuando (?:salio|jugo|nacio)|cual es (?:el|la) (?:origen|historia|significado)|datos de|biografia de|historia de|estadisticas de|trayectoria de|palmares de|fecha de|donde jugo|que edad tiene|murio en|por que se llama|como surgio|informacion sobre|que(?: |>)(?:panel|sabes) de )\s*/i, '')
+  const trimmed = text.trim();
+
+  // FIRST: Check for "Title (Year)" or "Title - Year" patterns (highest priority)
+  // Examples: "The Matrix (1999)", "Inception - 2010", "Smash Bros Ultimate (2018)"
+  const titleYearMatch = trimmed.match(/^(.+?)\s*[\(\-–]\s*(\d{4})\s*[\)\-–]?\s*$/i);
+  if (titleYearMatch && titleYearMatch[1].trim().length >= 2) {
+    return titleYearMatch[1].trim();
+  }
+
+  // SECOND: Handle English question patterns
+  const englishPrefixMatch = trimmed.match(/^(what is|who (?:is|was|are)|what (?:are|does|was|happened)|tell me about|explain|i want to know about)\s+(.+)/i);
+  if (englishPrefixMatch && englishPrefixMatch[2]) {
+    return englishPrefixMatch[2].replace(/[?!.]+$/, '').trim();
+  }
+
+  // THIRD: Handle movie/game/book prefix patterns
+  const mediaPrefixMatch = trimmed.match(/(?:pelicula|película|film|movie|serie|show|juego|game|libro|book|cancion|song|anime|manga|album)\s+(?:de |del |about |called )?(.+)/i);
+  if (mediaPrefixMatch && mediaPrefixMatch[1]) {
+    return mediaPrefixMatch[1].replace(/[?!.]+$/, '').trim();
+  }
+
+  // FOURTH: Extract topic — remove Spanish question words and take the subject
+  let topic = trimmed
+    .replace(/^(que es|quien (?:es|fue|dirigio|entreno|jugo)|que (?:significa|quiere decir|fue|son|equipo|goles|titulo|posicion|seleccion|nacionalidad|paso con|paso en)|explica(?:r)?me?|cuentame sobre|que sabes de|hablemos (?:del|de la|de)|dime (?:de|sobre)|como funciona|como fue|donde esta|donde se creo|cuando (?:salio|jugo|nacio)|cual es (?:el|la) (?:origen|historia|significado)|datos de|biografia de|historia de|estadisticas de|trayectoria de|palmares de|fecha de|donde jugo|que edad tiene|murio en|por que se llama|como surgio|informacion sobre|que(?: |>)(?:panel|sabes) de |tell me about|what do you know about|how does|where is|when was|why is )\s*/i, '')
     .replace(/[?!.]+$/, '')
     .trim();
 
   // Remove articles and prepositions at start
-  topic = topic.replace(/^(el |la |los |las |un |una |de |del |en |el entrenador |la entrenadora |el dt |el director tecnico |el jugador |la jugadora |el seleccionador |sobre |acerca de )+/i, '').trim();
+  topic = topic.replace(/^(el |la |los |las |un |una |de |del |en |el entrenador |la entrenadora |el dt |el director tecnico |el jugador |la jugadora |el seleccionador |sobre |acerca de |about |the )+/i, '').trim();
 
   // Must be at least 2 chars to be useful (for gaming terms like "smash")
   if (topic.length < 2) return null;
