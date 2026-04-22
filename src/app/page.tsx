@@ -153,6 +153,8 @@ export default function AtlasApp() {
   const startYRef = useRef<number>(0);
   const shouldAutoSendRef = useRef(false);
   const isLockedRef = useRef(false);
+  const isTouchingRef = useRef(false); // Prevent double fire (touch + pointer)
+  const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null); // Latest sendMessage — no stale closure
   const inputValueRef = useRef(inputValue);
   inputValueRef.current = inputValue;
 
@@ -396,7 +398,8 @@ export default function AtlasApp() {
         const text = inputValueRef.current.trim();
         if (text) {
           setInputValue('');
-          sendMessage(text);
+          // Use ref — never stale closure, always latest sendMessage
+          sendMessageRef.current?.(text);
         }
         return;
       }
@@ -413,8 +416,64 @@ export default function AtlasApp() {
   // Keep isLockedRef in sync
   useEffect(() => { isLockedRef.current = isLocked; }, [isLocked]);
 
-  // ---- Mic: Press & Hold + Slide-to-Lock ----
+  // Keep sendMessageRef current — fixes stale closure in recognition.onend
+  useEffect(() => {
+    sendMessageRef.current = sendMessage;
+  }, [sendMessage]);
+
+  // ========================================
+  // MIC: Touch events (mobile) + Pointer events (desktop)
+  // ========================================
+
+  const _startListening = useCallback(() => {
+    if (recognitionRef.current && !isListening) {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch {}
+    }
+  }, [isListening]);
+
+  // ---- TOUCH EVENTS (Mobile-first) ----
+  const handleMicTouchStart = useCallback((e: React.TouchEvent<HTMLButtonElement>) => {
+    isTouchingRef.current = true;
+    if (isLoading || isStreaming || isAnalyzingDocument) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    startYRef.current = touch.clientY;
+    setIsLocked(false);
+    isLockedRef.current = false;
+    shouldAutoSendRef.current = false;
+    trackVoiceStart();
+    _startListening();
+  }, [isLoading, isStreaming, isAnalyzingDocument, _startListening]);
+
+  const handleMicTouchMove = useCallback((e: React.TouchEvent<HTMLButtonElement>) => {
+    if (!isListening || isLockedRef.current) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const diff = startYRef.current - touch.clientY;
+    if (diff > 60 && !isLockedRef.current) {
+      setIsLocked(true);
+      isLockedRef.current = true;
+      shouldAutoSendRef.current = false;
+      trackVoiceLocked();
+    }
+  }, [isListening, isLocked]);
+
+  const handleMicTouchEnd = useCallback((e: React.TouchEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    isTouchingRef.current = false;
+    if (!isListening) return;
+    if (!isLockedRef.current) {
+      shouldAutoSendRef.current = true;
+      try { recognitionRef.current?.stop(); } catch {}
+    }
+  }, [isListening, isLocked]);
+
+  // ---- POINTER EVENTS (Desktop fallback — skipped on touch devices) ----
   const handleMicPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (isTouchingRef.current) return;
     if (isLoading || isStreaming || isAnalyzingDocument) return;
     e.preventDefault();
     startYRef.current = e.clientY;
@@ -422,19 +481,15 @@ export default function AtlasApp() {
     isLockedRef.current = false;
     shouldAutoSendRef.current = false;
     trackVoiceStart();
-    if (recognitionRef.current && !isListening) {
-      try {
-        recognitionRef.current.start();
-        setIsListening(true);
-      } catch {}
-    }
+    _startListening();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, [isLoading, isStreaming, isAnalyzingDocument, isListening]);
+  }, [isLoading, isStreaming, isAnalyzingDocument, _startListening]);
 
   const handleMicPointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
-    if (!isListening || isLocked) return;
+    if (isTouchingRef.current) return;
+    if (!isListening || isLockedRef.current) return;
     const diff = startYRef.current - e.clientY;
-    if (diff > 60) {
+    if (diff > 60 && !isLockedRef.current) {
       setIsLocked(true);
       isLockedRef.current = true;
       shouldAutoSendRef.current = false;
@@ -443,15 +498,13 @@ export default function AtlasApp() {
   }, [isListening, isLocked]);
 
   const handleMicPointerUp = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (isTouchingRef.current) return;
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     if (!isListening) return;
-    if (!isLocked) {
-      // Not locked: stop and auto-send
+    if (!isLockedRef.current) {
       shouldAutoSendRef.current = true;
       try { recognitionRef.current?.stop(); } catch {}
-      // Actual send happens in onend handler
     }
-    // If locked: do nothing, recording continues
   }, [isListening, isLocked]);
 
   const handleLockedSend = useCallback(() => {
@@ -916,10 +969,11 @@ export default function AtlasApp() {
   );
 
   // ---- Form Handlers ----
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading || isStreaming) return;
     sendMessage(inputValue);
-  };
+  }, [isLoading, isStreaming, sendMessage, inputValue]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1879,6 +1933,12 @@ export default function AtlasApp() {
               <button
                 key="mic-normal"
                 type="button"
+                // Touch events (mobile-first)
+                onTouchStart={handleMicTouchStart}
+                onTouchMove={handleMicTouchMove}
+                onTouchEnd={handleMicTouchEnd}
+                onTouchCancel={handleMicTouchEnd}
+                // Pointer events (desktop fallback)
                 onPointerDown={handleMicPointerDown}
                 onPointerMove={handleMicPointerMove}
                 onPointerUp={handleMicPointerUp}
@@ -1907,28 +1967,49 @@ export default function AtlasApp() {
 
         {/* Listening / Locked / Document analyzing indicator */}
         <AnimatePresence>
-          {(isListening || isAnalyzingDocument) && (
+          {isLocked && (
+            <motion.div
+              initial={{ opacity: 0, y: 8, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.95 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+              className="mt-2 mx-auto max-w-xs px-4 py-2.5 rounded-xl bg-emerald-600/20 border border-emerald-500/30 backdrop-blur-sm"
+            >
+              <div className="flex items-center justify-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[12px] sm:text-[13px] font-semibold text-emerald-300">
+                  Modo de voz bloqueado. Toca el boton verde para enviar.
+                </span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {(isListening && !isLocked) && (
             <motion.div
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               className="flex items-center justify-center gap-2 mt-2"
             >
-              <span
-                className={`w-2 h-2 rounded-full animate-pulse ${
-                  isLocked ? 'bg-emerald-500' : isListening ? 'bg-red-500' : 'bg-blue-400'
-                }`}
-              />
-              <span
-                className={`text-[11px] font-medium ${
-                  isLocked ? 'text-emerald-400' : isListening ? 'text-red-400' : 'text-blue-400'
-                }`}
-              >
-                {isLocked
-                  ? 'Grabacion bloqueada. Toca el boton para enviar.'
-                  : isListening
-                    ? 'Escuchando... desliza arriba para bloquear, suelta para enviar'
-                    : 'Atlas esta analizando el documento...'}
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-[11px] font-medium text-red-400">
+                Escuchando... desliza arriba para bloquear, suelta para enviar
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {isAnalyzingDocument && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              className="flex items-center justify-center gap-2 mt-2"
+            >
+              <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+              <span className="text-[11px] font-medium text-blue-400">
+                Atlas esta analizando el documento...
               </span>
             </motion.div>
           )}
