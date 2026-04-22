@@ -63,6 +63,8 @@ async function handleAdminAction(request: NextRequest, action: string) {
       case 'save_city': return handleSaveCity(request);
       // --- User profile (name + avatar) ---
       case 'save_profile': return handleSaveProfile(request);
+      // --- Image payments (Supabase) ---
+      case 'pending_image_payments': return handlePendingImagePayments();
       default:
         return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });
     }
@@ -609,6 +611,8 @@ export async function POST(request: NextRequest) {
       case 'save_settings': return handleSaveSettings(request);
       case 'save_alarm': return handleSaveAlarm(request);
       case 'cancel_alarm': return handleCancelAlarm(request);
+      case 'approve_image_payment': return handleApproveImagePayment(request);
+      case 'reject_image_payment': return handleRejectImagePayment(request);
       default:
         return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });
     }
@@ -1004,6 +1008,107 @@ async function handleSaveCity(request: NextRequest) {
     .eq('id', tenantId);
 
   return NextResponse.json({ success: true, city });
+}
+
+// ========================================
+// PENDING IMAGE PAYMENTS (GET)
+// ========================================
+async function handlePendingImagePayments() {
+  if (!supabase) {
+    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, plan_type, images_generated_month, extra_images_purchased, image_payment_amount, pending_image_payment, created_at')
+    .eq('pending_image_payment', true);
+
+  if (error) {
+    console.error('[IMAGE_PAYMENTS] Fetch error:', error);
+    return NextResponse.json({ error: 'Error al consultar pagos' }, { status: 500 });
+  }
+
+  return NextResponse.json({ payments: data || [] });
+}
+
+// ========================================
+// APPROVE IMAGE PAYMENT (POST)
+// ========================================
+async function handleApproveImagePayment(request: NextRequest) {
+  if (!supabase) {
+    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  }
+
+  const body = await request.json();
+  const { tenantId, extraImages } = body;
+
+  if (!tenantId || !extraImages) {
+    return NextResponse.json(
+      { error: 'tenantId y extraImages son obligatorios' },
+      { status: 400 }
+    );
+  }
+
+  // Get current profile to add images
+  const { data: existing } = await supabase
+    .from('profiles')
+    .select('extra_images_purchased')
+    .eq('id', tenantId)
+    .single();
+
+  const currentExtra = existing?.extra_images_purchased || 0;
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      pending_image_payment: false,
+      extra_images_purchased: currentExtra + extraImages,
+    })
+    .eq('id', tenantId);
+
+  if (error) {
+    console.error('[APPROVE_IMAGE] Update error:', error);
+    return NextResponse.json({ error: 'Error al aprobar pago' }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    success: true,
+    message: `Se desbloquearon ${extraImages} imagenes extra`,
+  });
+}
+
+// ========================================
+// REJECT IMAGE PAYMENT (POST)
+// ========================================
+async function handleRejectImagePayment(request: NextRequest) {
+  if (!supabase) {
+    return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
+  }
+
+  const body = await request.json();
+  const { tenantId } = body;
+
+  if (!tenantId) {
+    return NextResponse.json(
+      { error: 'tenantId es obligatorio' },
+      { status: 400 }
+    );
+  }
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      pending_image_payment: false,
+      image_payment_amount: 0,
+    })
+    .eq('id', tenantId);
+
+  if (error) {
+    console.error('[REJECT_IMAGE] Update error:', error);
+    return NextResponse.json({ error: 'Error al rechazar pago' }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true, message: 'Pago rechazado' });
 }
 
 // ========================================

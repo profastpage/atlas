@@ -231,6 +231,54 @@ export async function describeImage(base64DataUrl: string): Promise<string> {
 }
 
 // ========================================
+// IMAGE GENERATION — FLUX.schnell via OpenRouter
+// Returns base64 image data URL
+// ========================================
+
+const IMAGE_GEN_CONFIG = {
+  model: process.env.IMAGE_GEN_MODEL || 'black-ai/blackai-flux-1',
+};
+
+export async function generateImage(prompt: string): Promise<string> {
+  const url = `${QWEN_CONFIG.baseUrl}/images/generations`;
+
+  console.log('[IMAGE_GEN] Generating with:', IMAGE_GEN_CONFIG.model);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${QWEN_CONFIG.apiKey}`,
+      'HTTP-Referer': 'https://atlas-9mv.pages.dev',
+      'X-Title': 'Atlas Coach — Image Generation',
+    },
+    body: JSON.stringify({
+      model: IMAGE_GEN_CONFIG.model,
+      prompt: prompt,
+      n: 1,
+      response_format: 'b64_json',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error('[IMAGE_GEN] API error:', response.status, errorBody);
+    throw new Error(`Image generation ${response.status}: ${errorBody}`);
+  }
+
+  const data = await response.json();
+  const base64Data = data.data?.[0]?.b64_json;
+
+  if (!base64Data) {
+    console.error('[IMAGE_GEN] No image data in response');
+    throw new Error('Image generation returned no data');
+  }
+
+  console.log('[IMAGE_GEN] Image generated successfully');
+  return `data:image/png;base64,${base64Data}`;
+}
+
+// ========================================
 // AUDIO TRANSCRIPTION
 // Now uses Web Speech API (browser-native, free).
 // createTranscription is no longer needed server-side.

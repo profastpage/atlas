@@ -9,7 +9,7 @@ import {
   ArrowLeft, Users, MessageSquare, DollarSign, Activity,
   ShieldCheck, Settings, BarChart3, RefreshCw, LogOut, X, Eye, EyeOff,
   Gift, Clock, CheckCircle2, MoreVertical, Zap, FileText,
-  Bell, Brain, ShieldAlert, Save, Key, Loader2
+  Bell, Brain, ShieldAlert, Save, Key, Loader2, Image
 } from 'lucide-react';
 import Link from 'next/link';
 import { auth, googleProvider } from '@/lib/firebase';
@@ -66,7 +66,7 @@ interface SettingsData {
   [key: string]: string | number | boolean;
 }
 
-type Tab = 'dashboard' | 'users' | 'plans' | 'config';
+type Tab = 'dashboard' | 'users' | 'plans' | 'image_payments' | 'config';
 
 // ========================================
 // CONSTANTS
@@ -172,6 +172,10 @@ export default function AdminPage() {
 
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // Image payments state
+  const [pendingPayments, setPendingPayments] = useState<any[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
 
   // Config editing states
   const [systemPrompt, setSystemPrompt] = useState('');
@@ -361,6 +365,18 @@ export default function AdminPage() {
     }
   }, [adminFetch]);
 
+  const loadImagePayments = useCallback(async () => {
+    setPaymentsLoading(true);
+    try {
+      const data = await adminFetch('pending_image_payments');
+      setPendingPayments(data.payments || []);
+    } catch (err) {
+      console.error('[ADMIN] Image payments error:', err);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  }, [adminFetch]);
+
   const loadTab = useCallback(async (tab: Tab) => {
     setLoading(true);
     try {
@@ -374,6 +390,9 @@ export default function AdminPage() {
         case 'plans':
           await loadPlans();
           break;
+        case 'image_payments':
+          await loadImagePayments();
+          break;
         case 'config':
           await loadSettings();
           break;
@@ -381,7 +400,7 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
-  }, [loadDashboard, loadUsers, loadPlans, loadSettings]);
+  }, [loadDashboard, loadUsers, loadPlans, loadImagePayments, loadSettings]);
 
   // ========================================
   // EFFECTS
@@ -572,6 +591,42 @@ export default function AdminPage() {
     }
   };
 
+  const handleApproveImagePayment = async (payment: any) => {
+    setActionLoading(true);
+    try {
+      // Determine how many extra images based on amount
+      let extraImages = 1;
+      const amount = payment.image_payment_amount || 0;
+      if (amount >= 30) extraImages = 50;
+      else if (amount >= 14) extraImages = 20;
+      else if (amount >= 4) extraImages = 5;
+      
+      await adminPost('approve_image_payment', {
+        tenantId: payment.id,
+        extraImages,
+      });
+      showToast(`Aprobado: +${extraImages} imagenes desbloqueadas`);
+      loadImagePayments();
+    } catch (err) {
+      showToast(String(err), 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRejectImagePayment = async (payment: any) => {
+    setActionLoading(true);
+    try {
+      await adminPost('reject_image_payment', { tenantId: payment.id });
+      showToast('Pago rechazado');
+      loadImagePayments();
+    } catch (err) {
+      showToast(String(err), 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // ========================================
   // UTILITY FUNCTIONS
   // ========================================
@@ -733,6 +788,7 @@ export default function AdminPage() {
     { id: 'dashboard', label: 'Dashboard', sublabel: 'Radar de Negocio', icon: <BarChart3 className="w-4 h-4" /> },
     { id: 'users', label: 'Usuarios', sublabel: 'Control Total', icon: <Users className="w-4 h-4" /> },
     { id: 'plans', label: 'Planes', sublabel: 'Gestión de Producto', icon: <Activity className="w-4 h-4" /> },
+    { id: 'image_payments', label: 'Imagenes', sublabel: 'Pagos Pendientes', icon: <Image className="w-4 h-4" /> },
     { id: 'config', label: 'Config', sublabel: 'El Cerebro del Sistema', icon: <Settings className="w-4 h-4" /> },
   ];
 
@@ -1154,7 +1210,97 @@ export default function AdminPage() {
           )}
 
           {/* =============================== */}
-          {/* TAB 4: CONFIG                  */}
+          {/* TAB 4: IMAGE PAYMENTS           */}
+          {/* =============================== */}
+          {!loading && activeTab === 'image_payments' && (
+            <motion.div
+              key="image_payments"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="max-w-2xl mx-auto"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-white">Pagos de Imagenes</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">{pendingPayments.length} pagos pendientes</p>
+                </div>
+                <button
+                  onClick={() => loadImagePayments()}
+                  className="p-2 rounded-lg hover:bg-gray-800/60 transition-colors"
+                >
+                  <RefreshCw className={`w-4 h-4 text-gray-400 ${paymentsLoading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+
+              {paymentsLoading && (
+                <div className="flex items-center justify-center py-10">
+                  <RefreshCw className="w-5 h-5 text-amber-400 animate-spin" />
+                </div>
+              )}
+
+              {!paymentsLoading && pendingPayments.length === 0 && (
+                <div className="text-center py-16">
+                  <div className="w-16 h-16 rounded-2xl bg-gray-800/50 border border-gray-700/30 flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle2 className="w-8 h-8 text-gray-600" />
+                  </div>
+                  <p className="text-sm text-gray-500">Sin pagos pendientes</p>
+                  <p className="text-xs text-gray-600 mt-1">Los pagos nuevos apareceran aqui</p>
+                </div>
+              )}
+
+              {!paymentsLoading && pendingPayments.length > 0 && (
+                <div className="space-y-2">
+                  {pendingPayments.map((payment) => (
+                    <div
+                      key={payment.id}
+                      className="bg-gray-900/80 border border-gray-800/50 rounded-xl p-4 flex items-center justify-between"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-white truncate">
+                          {payment.id.substring(0, 12)}...
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] text-gray-500">
+                            {payment.plan_type || 'free'}
+                          </span>
+                          <span className="text-[10px] text-gray-600">|</span>
+                          <span className="text-[10px] text-gray-500">
+                            {payment.images_generated_month || 0} generadas este mes
+                          </span>
+                        </div>
+                        {payment.image_payment_amount > 0 && (
+                          <p className="text-xs font-bold text-yellow-400 mt-1">
+                            S/ {Number(payment.image_payment_amount).toFixed(2)}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-3">
+                        <button
+                          onClick={() => handleApproveImagePayment(payment)}
+                          disabled={actionLoading}
+                          className="px-3 py-2 rounded-lg bg-emerald-600/15 border border-emerald-500/30 text-xs text-emerald-400 font-medium hover:bg-emerald-600/25 transition-all disabled:opacity-50 flex items-center gap-1.5"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Aprobar
+                        </button>
+                        <button
+                          onClick={() => handleRejectImagePayment(payment)}
+                          disabled={actionLoading}
+                          className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400 font-medium hover:bg-red-500/20 transition-all disabled:opacity-50"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* =============================== */}
+          {/* TAB 5: CONFIG                  */}
           {/* =============================== */}
           {!loading && activeTab === 'config' && (
             <motion.div

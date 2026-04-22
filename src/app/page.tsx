@@ -8,7 +8,7 @@ import {
   Pencil, Archive, ArchiveRestore, Check, AlertTriangle,
   Paperclip, FileText, XCircle as XCircleIcon, Loader2,
   Copy, Share2, Bell, Star, Hash, PencilLine,
-  Sparkles, RotateCcw, ChevronRight, Wand2, RefreshCw
+  Sparkles, RotateCcw, ChevronRight, Wand2, RefreshCw, Image
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -30,6 +30,7 @@ import {
 } from '@/lib/analytics';
 import { WELCOME_MESSAGE_NEW } from '@/lib/atlas';
 import SettingsSidebar from '@/components/SettingsSidebar';
+import BuyImagesModal from '@/components/BuyImagesModal';
 import InstallPrompt from '@/components/InstallPrompt';
 import ExpandButton, { ExpandSpinner } from '@/components/ExpandButton';
 
@@ -84,6 +85,13 @@ const REGISTERED_FREE_MESSAGES = 20;
 const GUEST_TENANT_KEY = 'atlas_guest_tenant_id';
 const TRIAL_BOT_KEY = 'atlas_trial_bot_count';
 const REG_MSGS_KEY_PREFIX = 'atlas_reg_msgs_'; // atlas_reg_msgs_YYYY-MM
+
+const IMAGE_LIMITS: Record<string, number> = {
+  pro: 20,
+  executive: 50,
+  free: 0,
+  basico: 0,
+};
 
 // ========================================
 // MAIN APP -- ATLAS COGNITIVE COACH
@@ -170,6 +178,12 @@ export default function AtlasApp() {
   const [imageName, setImageName] = useState<string>('');
   const [showPaywallModal, setShowPaywallModal] = useState(false); // Controlled paywall modal
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ---- Image Generation State ----
+  const [showBuyImagesModal, setShowBuyImagesModal] = useState(false);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [imageQuota, setImageQuota] = useState<{ remaining: number; total: number } | null>(null);
+  const [hasPaidExtraImages, setHasPaidExtraImages] = useState(false); // Local flag after Yape
 
   // ---- Voice State (Web Speech API) ----
   const [isListening, setIsListening] = useState(false);
@@ -995,6 +1009,16 @@ export default function AtlasApp() {
     } finally {
       setCheckingPlan(false);
     }
+
+    // Fetch image quota
+    fetch(`/api/generate-image?tenantId=${tId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.remaining !== undefined) {
+          setImageQuota({ remaining: data.remaining, total: data.total_available });
+        }
+      })
+      .catch(() => {});
   };
 
   // Get current monthly key for registered users
@@ -1442,6 +1466,143 @@ export default function AtlasApp() {
   useEffect(() => {
     sendMessageRef.current = sendMessage;
   }, [sendMessage]);
+
+  // ---- IMAGE GENERATION (FLUX) ----
+  const handleGenerateImage = useCallback(async () => {
+    if (!isAuthenticated || !tenantId || isGeneratingImage) return;
+
+    // Check plan — only Pro and Executive can generate
+    const planLower = userPlanType.toLowerCase();
+    if (!IMAGE_LIMITS[planLower] && !hasPaidExtraImages) {
+      setShowBuyImagesModal(true);
+      return;
+    }
+
+    // Check quota from local state
+    if (imageQuota && imageQuota.remaining <= 0 && !hasPaidExtraImages) {
+      setShowBuyImagesModal(true);
+      return;
+    }
+
+    // Get the prompt from input
+    const prompt = inputValue.trim();
+    if (!prompt) return;
+
+    // Create session if needed
+    let currentSessionId = sessionId;
+    if (!currentSessionId) {
+      const sessionData = await createNewSession();
+      if (!sessionData) return;
+      currentSessionId = sessionData.sessionId;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+
+    // Add user message
+    const userMsg: Message = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: `[Generar imagen] ${prompt}`,
+      timestamp: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    setInputValue('');
+    setIsGeneratingImage(true);
+
+    try {
+      const res = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          tenantId,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (data.error === 'limit_reached') {
+          // Show buy modal
+          setShowBuyImagesModal(true);
+          // Update local quota
+          setImageQuota({ remaining: 0, total: data.totalAvailable });
+          return;
+        }
+        if (data.error === 'pending_payment') {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `error-${Date.now()}`,
+              role: 'assistant',
+              content: 'Tu pago esta siendo verificado por el administrador. Por favor espera la aprobacion.',
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+          return;
+        }
+        throw new Error(data.message || data.detail || 'Error al generar imagen');
+      }
+
+      // Show generated image in chat as assistant message
+      const assistantMsg: Message = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: data.image, // base64 data URL
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+
+      // Update local quota
+      setImageQuota({ remaining: data.remaining, total: data.remaining + data.used });
+
+      // Save messages to DB
+      try {
+        await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: currentSessionId,
+            message: `[Imagen generada] ${prompt}`,
+            tenantId,
+          }),
+        });
+      } catch {}
+    } catch (error: any) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `error-${Date.now()}`,
+          role: 'assistant',
+          content: `Error al generar imagen: ${error.message || 'Intenta de nuevo.'}`,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  }, [isAuthenticated, tenantId, isGeneratingImage, inputValue, sessionId, userPlanType, imageQuota, hasPaidExtraImages]);
+
+  const handleImagePaymentConfirmed = useCallback(async (quantity: number, amount: number) => {
+    setShowBuyImagesModal(false);
+    setHasPaidExtraImages(true);
+
+    // Update Supabase pending payment flag
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (url && key) {
+        const sb = createClient(url, key);
+        await sb
+          .from('profiles')
+          .update({
+            pending_image_payment: true,
+            image_payment_amount: amount,
+          })
+          .eq('id', tenantId);
+      }
+    } catch {}
+  }, [tenantId]);
 
   // ---- Form Handlers ----
   const handleSubmit = useCallback((e: React.FormEvent) => {
@@ -2506,6 +2667,16 @@ export default function AtlasApp() {
                     ))}
                   </div>
                 )}
+                {/* Check if content is a base64 image (generated image) */}
+                {msg.role === 'assistant' && msg.content.startsWith('data:image/') && (
+                  <img
+                    src={msg.content}
+                    alt="Imagen generada por IA"
+                    className="rounded-xl max-w-full max-h-[400px] object-contain"
+                  />
+                )}
+                {/* Message content — skip rendering text for generated images */}
+                {!(msg.role === 'assistant' && msg.content.startsWith('data:image/')) && (
                 <div
                   className={`text-[13.5px] leading-relaxed ${
                     msg.role === 'user' ? 'text-white' : 'text-gray-200'
@@ -2517,6 +2688,7 @@ export default function AtlasApp() {
                         : ''),
                   }}
                 />
+                )}
                 {/* Stream disconnection error — subtle warning below text */}
                 {msg.role === 'assistant' && msg.id === streamDisconnectedId && (
                   <p className="text-[11px] text-amber-400/80 mt-2 flex items-center gap-1">
@@ -2780,6 +2952,21 @@ export default function AtlasApp() {
           )}
         </AnimatePresence>
 
+        {/* Image Generation Loading */}
+        <AnimatePresence>
+          {isGeneratingImage && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 max-w-[400px]"
+            >
+              <Loader2 className="w-3.5 h-3.5 text-purple-400 animate-spin shrink-0" />
+              <span className="text-[11px] text-purple-300">Generando obra de arte...</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <form onSubmit={handleSubmit} className="flex items-center gap-2 max-w-3xl mx-auto">
           <textarea
             ref={inputRef}
@@ -2838,6 +3025,24 @@ export default function AtlasApp() {
               <Paperclip className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
             )}
           </button>
+
+          {/* Image Generation — Pro/Executive only */}
+          {(userPlanType === 'pro' || userPlanType === 'executive' || userPlanType?.startsWith('trial_pro') || userPlanType?.startsWith('trial_executive') || hasPaidExtraImages) && (
+            <button
+              type="button"
+              onClick={handleGenerateImage}
+              disabled={isLoading || isStreaming || isGeneratingImage || !inputValue.trim()}
+              className="w-10 h-10 sm:w-[52px] sm:h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 disabled:opacity-30 bg-gray-800 hover:bg-purple-500/20 border-2 border-gray-700/30 hover:border-purple-500/40"
+              aria-label="Generar imagen con IA"
+              title="Generar imagen"
+            >
+              {isGeneratingImage ? (
+                <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 text-purple-400 animate-spin" />
+              ) : (
+                <Image className="w-4 h-4 sm:w-5 sm:h-5 text-purple-400" />
+              )}
+            </button>
+          )}
 
           {/* Microphone — Slide-to-Lock + Auto-Send */}
           {speechSupported && (
@@ -3601,6 +3806,14 @@ export default function AtlasApp() {
 
       {/* ===== PWA INSTALL PROMPT ===== */}
       <InstallPrompt trigger={showInstallPrompt} />
+
+      {/* Buy Images Modal */}
+      <BuyImagesModal
+        isOpen={showBuyImagesModal}
+        onClose={() => setShowBuyImagesModal(false)}
+        yapeNumber="Fabio Herrera"
+        onPaymentConfirmed={handleImagePaymentConfirmed}
+      />
     </div>
   );
 }
