@@ -8,7 +8,7 @@ import {
   Pencil, Archive, ArchiveRestore, Check, AlertTriangle,
   Paperclip, FileText, XCircle as XCircleIcon, Loader2,
   Copy, Share2, Bell, Star, Hash, PencilLine,
-  Sparkles, RotateCcw, ChevronRight, Wand2, RefreshCw, Image
+  Sparkles, RotateCcw, ChevronRight, Wand2, RefreshCw, Image, Globe, ExternalLink
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -256,6 +256,12 @@ export default function AtlasApp() {
   const [suggestionOffset, setSuggestionOffset] = useState(0);
   const [lastUserMsgForSug, setLastUserMsgForSug] = useState('');
   const [lastBotMsgForSug, setLastBotMsgForSug] = useState('');
+
+  // ---- Sources State ----
+  const [showSources, setShowSources] = useState(false);
+  const [sourcesResults, setSourcesResults] = useState<Array<{ position: number; url: string; title: string; snippet: string; score: number }>>([]);
+  const [sourcesQuery, setSourcesQuery] = useState('');
+  const [sourcesLoading, setSourcesLoading] = useState(false);
 
   // ---- Favorites & Highlights: Load from localStorage ----
   const FAV_KEY = 'atlas_favorites';
@@ -1585,6 +1591,33 @@ export default function AtlasApp() {
   useEffect(() => {
     sendMessageRef.current = sendMessage;
   }, [sendMessage]);
+
+  // ---- SOURCES SEARCH (Tavily) ----
+  const handleSourcesSearch = useCallback(async (searchQuery?: string) => {
+    const query = searchQuery || inputValue.trim() || lastUserMsgForSug;
+    if (!query || query.length < 2) return;
+    setSourcesLoading(true);
+    setSourcesQuery(query);
+    setShowSources(true);
+    try {
+      const res = await fetch('/api/sources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, maxResults: 10 }),
+      });
+      const data = await res.json();
+      if (data.sources) {
+        setSourcesResults(data.sources);
+      } else {
+        setSourcesResults([]);
+      }
+    } catch (err) {
+      console.error('[SOURCES] Search error:', err);
+      setSourcesResults([]);
+    } finally {
+      setSourcesLoading(false);
+    }
+  }, [inputValue, lastUserMsgForSug]);
 
   // ---- IMAGE GENERATION (FLUX) ----
   const handleGenerateImage = useCallback(async () => {
@@ -3245,6 +3278,22 @@ export default function AtlasApp() {
                   <Wand2 className="w-[16px] h-[16px] text-amber-400/60 hover:text-amber-400" />
                 </button>
               )}
+
+              {/* Sources — Web search */}
+              <button
+                type="button"
+                onClick={() => handleSourcesSearch()}
+                disabled={isLoading || isStreaming || (!inputValue.trim() && !lastUserMsgForSug)}
+                className="p-1.5 rounded-full hover:bg-blue-500/10 transition-all active:scale-90 shrink-0 disabled:opacity-30"
+                aria-label="Buscar fuentes en la web"
+                title="Buscar fuentes"
+              >
+                {sourcesLoading ? (
+                  <Loader2 className="w-[16px] h-[16px] text-blue-400 animate-spin" />
+                ) : (
+                  <Globe className="w-[16px] h-[16px] text-blue-400/60 hover:text-blue-400" />
+                )}
+              </button>
             </div>
 
             {/* Textarea — taller for more chat space */}
@@ -4213,6 +4262,74 @@ export default function AtlasApp() {
         yapeNumber="Fabio Herrera"
         onPaymentConfirmed={handleImagePaymentConfirmed}
       />
+
+      {/* ===== SOURCES PANEL ===== */}
+      <AnimatePresence>
+        {showSources && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
+          >
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/50" onClick={() => setShowSources(false)} />
+            {/* Panel */}
+            <div className="relative w-full sm:max-w-lg max-h-[70vh] bg-[#1a1a1a] rounded-t-2xl sm:rounded-2xl border border-gray-800/60 overflow-hidden flex flex-col">
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800/40">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-blue-400" />
+                  <span className="text-white text-sm font-medium">Fuentes web</span>
+                </div>
+                <button onClick={() => setShowSources(false)} className="p-1 rounded-full hover:bg-gray-700/50 transition">
+                  <X className="w-4 h-4 text-gray-400" />
+                </button>
+              </div>
+              {/* Query */}
+              <div className="px-4 py-2 border-b border-gray-800/30">
+                <p className="text-gray-500 text-xs truncate">
+                  Busqueda: <span className="text-gray-300">{sourcesQuery}</span>
+                </p>
+              </div>
+              {/* Results */}
+              <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
+                {sourcesLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+                  </div>
+                ) : sourcesResults.length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-8">No se encontraron fuentes</p>
+                ) : (
+                  sourcesResults.map((src) => (
+                    <a
+                      key={src.position}
+                      href={src.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block p-2.5 rounded-lg hover:bg-gray-800/40 transition group"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="text-[10px] text-gray-600 font-mono mt-0.5 shrink-0">{src.position}.</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] text-blue-400 group-hover:text-blue-300 font-medium leading-snug line-clamp-2">
+                            {src.title}
+                          </p>
+                          <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">{src.snippet}</p>
+                          <p className="text-[10px] text-gray-600 mt-1 flex items-center gap-1">
+                            <ExternalLink className="w-2.5 h-2.5" />
+                            {new URL(src.url).hostname}
+                          </p>
+                        </div>
+                      </div>
+                    </a>
+                  ))
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
