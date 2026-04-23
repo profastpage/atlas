@@ -2756,7 +2756,7 @@ export default function AtlasApp() {
   // ========================================
 
   return (
-    <div className="flex flex-col h-[100dvh] max-h-[100dvh] w-full min-h-0 bg-[#0a0a0a] text-white overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
+    <div className="flex flex-col h-[100dvh] max-h-[100dvh] w-full min-h-0 bg-[#050505] text-white overflow-hidden atlas-noise-bg" style={{ WebkitOverflowScrolling: 'touch' }}>
       {/* ===== SETTINGS SIDEBAR ===== */}
       <SettingsSidebar
         isOpen={showSettings}
@@ -2780,22 +2780,22 @@ export default function AtlasApp() {
       />
 
       {/* ===== HEADER ===== */}
-      <header className="flex items-center justify-between px-2.5 sm:px-4 py-1 sm:py-2 bg-[#161616] border-b border-gray-700/40 z-20 shrink-0" style={{ paddingTop: 'max(0.25rem, env(safe-area-inset-top, 0px))' }}>
+      <header className="flex items-center justify-between px-2.5 sm:px-4 py-1 sm:py-2 atlas-header z-20 shrink-0" style={{ paddingTop: 'max(0.25rem, env(safe-area-inset-top, 0px))' }}>
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={() => setShowSessions(!showSessions)}
-            className="p-2 rounded-full hover:bg-gray-800/60 transition-colors shrink-0"
+            className="p-2 rounded-full hover:bg-white/5 transition-colors shrink-0"
             aria-label="Historial de sesiones"
           >
             <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
           </button>
           <div className="min-w-0">
-            <h1 className="text-sm sm:text-[15px] font-bold text-white tracking-tight">
+            <h1 className="text-sm sm:text-[15px] font-bold text-white tracking-[0.15em] uppercase">
               ATLAS
             </h1>
             <div className="flex items-center gap-2">
-              <p className="text-[9px] sm:text-[10px] text-emerald-400/70 font-medium tracking-wide uppercase truncate">
-                Coach Cognitivo de Elite
+              <p className="text-[9px] sm:text-[10px] text-emerald-700 font-medium tracking-[0.1em] uppercase truncate">
+                Consultor Estratégico y Cognitivo
               </p>
               {trialInfo?.isActive && (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[8px] sm:text-[9px] text-amber-400 font-semibold shrink-0">
@@ -2816,7 +2816,7 @@ export default function AtlasApp() {
               )}
               <button
                 onClick={logout}
-                className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
+                className="p-2 rounded-full hover:bg-white/5 transition-colors"
                 aria-label="Cerrar sesion"
                 title="Cerrar sesion"
               >
@@ -2828,7 +2828,7 @@ export default function AtlasApp() {
               {/* Iniciar Sesion button — always visible for guests */}
               <a
                 href="/login"
-                className="flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] sm:text-xs font-semibold transition-all active:scale-95 shadow-lg shadow-emerald-500/15 whitespace-nowrap"
+                className="flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full bg-[#047857] hover:bg-[#059669] text-white text-[10px] sm:text-xs font-semibold transition-all active:scale-95 shadow-lg shadow-emerald-900/20 whitespace-nowrap"
               >
                 <LogIn className="w-3 h-3 sm:w-4 sm:h-4" />
                 <span>Iniciar</span>
@@ -2838,7 +2838,7 @@ export default function AtlasApp() {
           {/* Favorites Star */}
           <button
             onClick={() => setShowFavoritesModal(true)}
-            className="p-2 rounded-full hover:bg-gray-800/60 transition-colors relative"
+            className="p-2 rounded-full hover:bg-white/5 transition-colors relative"
             aria-label="Favoritos"
             title="Favoritos y destacados"
           >
@@ -2851,7 +2851,7 @@ export default function AtlasApp() {
           </button>
           <button
             onClick={createNewSession}
-            className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
+            className="p-2 rounded-full hover:bg-white/5 transition-colors"
             aria-label="Nueva conversacion"
           >
             <Plus className="w-5 h-5 text-gray-400" />
@@ -2859,7 +2859,7 @@ export default function AtlasApp() {
           {isAuthenticated && (
             <button
               onClick={() => setShowSettings(true)}
-              className="p-2 rounded-full hover:bg-gray-800/60 transition-colors"
+              className="p-2 rounded-full hover:bg-white/5 transition-colors"
               aria-label="Configuracion"
               title="Configuracion"
             >
@@ -2885,16 +2885,16 @@ export default function AtlasApp() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -300, opacity: 0 }}
               transition={{ type: 'spring', damping: 28, stiffness: 260 }}
-              className="fixed inset-y-0 left-0 w-[300px] bg-gray-900 z-30 shadow-2xl border-r border-gray-800/40 flex flex-col"
+              className="fixed inset-y-0 left-0 w-[300px] bg-[#0a0a0a] z-30 shadow-2xl border-r border-white/[0.04] flex flex-col"
             >
               {/* Header */}
-              <div className="flex items-center justify-between p-4 border-b border-gray-800/40">
+              <div className="flex items-center justify-between p-4 border-b border-white/[0.04]">
                 <h2 className="text-sm font-semibold text-gray-300">
                   {showArchived ? 'Archivados' : 'Conversaciones'}
                 </h2>
                 <button
                   onClick={() => { setShowSessions(false); cancelRename(); setDeleteConfirmId(null); }}
-                  className="p-1 rounded-full hover:bg-gray-800/60"
+                  className="p-1 rounded-full hover:bg-white/5"
                 >
                   <X className="w-4 h-4 text-gray-400" />
                 </button>
@@ -2937,7 +2937,7 @@ export default function AtlasApp() {
                         </button>
                         <button
                           onClick={cancelRename}
-                          className="p-1.5 rounded-lg hover:bg-gray-800/60 transition-colors shrink-0"
+                          className="p-1.5 rounded-lg hover:bg-white/5 transition-colors shrink-0"
                         >
                           <X className="w-3.5 h-3.5 text-gray-500" />
                         </button>
@@ -2949,7 +2949,7 @@ export default function AtlasApp() {
                           className={`flex items-center p-3 rounded-xl cursor-pointer transition-all ${
                             session.id === sessionId && !showArchived
                               ? 'bg-emerald-500/10 border border-emerald-500/20'
-                              : 'hover:bg-gray-800/40 border border-transparent'
+                              : 'hover:bg-gray-800/30 border border-transparent'
                           }`}
                           onClick={() => !showArchived && loadSession(session.id)}
                         >
@@ -2982,7 +2982,7 @@ export default function AtlasApp() {
                                 </button>
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(null); }}
-                                  className="p-1.5 rounded-lg hover:bg-gray-800/60 transition-colors"
+                                  className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
                                 >
                                   <X className="w-3 h-3 text-gray-500" />
                                 </button>
@@ -2992,7 +2992,7 @@ export default function AtlasApp() {
                                 {/* Rename */}
                                 <button
                                   onClick={(e) => { e.stopPropagation(); startRename(session.id, session.title); }}
-                                  className="p-1.5 rounded-lg hover:bg-gray-700/40 transition-colors"
+                                  className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
                                   title="Renombrar"
                                 >
                                   <Pencil className="w-3 h-3 text-gray-500 hover:text-gray-300" />
@@ -3000,7 +3000,7 @@ export default function AtlasApp() {
                                 {/* Favorite toggle */}
                                 <button
                                   onClick={(e) => { e.stopPropagation(); toggleFavoriteSession(session.id, session.title, session._count?.messages || 0); }}
-                                  className="p-1.5 rounded-lg hover:bg-gray-700/40 transition-colors"
+                                  className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
                                   title={isSessionFavorited(session.id) ? 'Quitar de favoritos' : 'Agregar a favoritos'}
                                 >
                                   <Star className={`w-3 h-3 ${isSessionFavorited(session.id) ? 'text-amber-400 fill-amber-400' : 'text-gray-500 hover:text-amber-400'}`} />
@@ -3008,7 +3008,7 @@ export default function AtlasApp() {
                                 {/* Archive / Unarchive */}
                                 <button
                                   onClick={(e) => { e.stopPropagation(); showArchived ? unarchiveSession(session.id) : archiveSession(session.id); }}
-                                  className="p-1.5 rounded-lg hover:bg-gray-700/40 transition-colors"
+                                  className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
                                   title={showArchived ? 'Desarchivar' : 'Archivar'}
                                 >
                                   {showArchived ? (
@@ -3036,10 +3036,10 @@ export default function AtlasApp() {
               </div>
 
               {/* Archive toggle button */}
-              <div className="border-t border-gray-800/40 p-2">
+              <div className="border-t border-white/[0.04] p-2">
                 <button
                   onClick={toggleArchivedView}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-gray-800/40 transition-colors text-left"
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-gray-800/30 transition-colors text-left"
                 >
                   {showArchived ? (
                     <>
@@ -3067,16 +3067,62 @@ export default function AtlasApp() {
       >
         {messages.length === 0 && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 flex items-center justify-center mb-5 border border-emerald-500/10">
-              <span className="text-4xl">{'\uD83E\uDDED'}</span>
+            {/* Wireframe Globe — CSS/SVG Animated */}
+            <div className="atlas-globe-container w-24 h-24 sm:w-28 sm:h-28 mb-6 relative">
+              {/* Outer glow */}
+              <div className="absolute inset-0 rounded-full atlas-globe-glow" style={{ background: 'radial-gradient(circle, rgba(4,120,87,0.12) 0%, transparent 70%)' }} />
+              {/* SVG Globe */}
+              <svg viewBox="0 0 100 100" className="w-full h-full atlas-globe" fill="none" xmlns="http://www.w3.org/2000/svg">
+                {/* Globe outline */}
+                <circle cx="50" cy="50" r="38" stroke="#047857" strokeWidth="0.5" opacity="0.6" />
+                {/* Latitude lines */}
+                <ellipse cx="50" cy="50" rx="38" ry="12" stroke="#047857" strokeWidth="0.3" opacity="0.4" />
+                <ellipse cx="50" cy="50" rx="38" ry="24" stroke="#047857" strokeWidth="0.3" opacity="0.35" />
+                <ellipse cx="50" cy="50" rx="38" ry="34" stroke="#047857" strokeWidth="0.3" opacity="0.3" />
+                {/* Longitude lines */}
+                <ellipse cx="50" cy="50" rx="14" ry="38" stroke="#047857" strokeWidth="0.3" opacity="0.4" />
+                <ellipse cx="50" cy="50" rx="28" ry="38" stroke="#047857" strokeWidth="0.3" opacity="0.35" />
+                <ellipse cx="50" cy="50" rx="38" ry="38" stroke="#047857" strokeWidth="0.3" opacity="0.3" />
+                {/* Axis highlight — neon emerald */}
+                <circle cx="50" cy="50" r="38" stroke="#10b981" strokeWidth="0.8" opacity="0.5" filter="url(#globe-glow)" />
+                {/* Cross-meridian */}
+                <line x1="12" y1="50" x2="88" y2="50" stroke="#047857" strokeWidth="0.25" opacity="0.3" />
+                <line x1="50" y1="12" x2="50" y2="88" stroke="#047857" strokeWidth="0.25" opacity="0.3" />
+                {/* Orbit ring */}
+                <ellipse cx="50" cy="50" rx="44" ry="16" stroke="#047857" strokeWidth="0.4" opacity="0.25" className="atlas-globe-ring" />
+                {/* SVG filter for glow */}
+                <defs>
+                  <filter id="globe-glow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                </defs>
+              </svg>
+              {/* Inner core glow dot */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-2 h-2 rounded-full bg-emerald-500/30 atlas-globe-glow" />
+              </div>
             </div>
-            <h2 className="text-xl font-bold text-gray-200 mb-2">Atlas</h2>
-            <p className="text-sm text-gray-500 max-w-[260px] leading-relaxed">
-              Consultor Estrategico y Coach Cognitivo de Elite.
-              <br />
-              <span className="text-gray-600 text-xs mt-1 block">
-                Escribe o usa el microfono para empezar.
-              </span>
+            {/* Title */}
+            <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-[0.25em] uppercase mb-2">ATLAS</h2>
+            {/* Subtitle */}
+            <p className="text-[11px] sm:text-xs text-emerald-700 font-semibold tracking-[0.15em] uppercase mb-5">
+              Consultor Estratégico y Cognitivo
+            </p>
+            {/* Terminal system status */}
+            <div className="atlas-terminal-text mb-5 flex items-center gap-2">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Sistema: En Línea &nbsp;//&nbsp; Modo: Estrategia Activa</span>
+            </div>
+            {/* Impact phrase */}
+            <p className="text-sm text-gray-500 max-w-[280px] leading-relaxed">
+              Domina la incertidumbre. Define tu objetivo.
+            </p>
+            <p className="text-[11px] text-gray-600 mt-1.5 max-w-[240px] leading-relaxed">
+              Escribe o usa el micrófono para iniciar.
             </p>
           </div>
         )}
@@ -3096,15 +3142,15 @@ export default function AtlasApp() {
                 data-msg-id={msg.id}
                 className={`relative max-w-[85%] sm:max-w-[70%] min-w-0 overflow-hidden px-3.5 py-2 sm:py-2.5 shadow-sm ${
                   msg.role === 'user'
-                    ? 'bg-[#005c4b] text-white rounded-2xl rounded-br-sm'
-                    : 'bg-[#1f2722] text-gray-100 rounded-2xl rounded-bl-sm'
+                    ? 'bg-[#047857] text-white rounded-2xl rounded-br-sm'
+                    : 'bg-[#0a0a0a] text-gray-100 rounded-2xl rounded-bl-sm border border-white/[0.04]'
                 }`}
               >
                 {msg.role === 'assistant' && (
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs">{'\uD83E\uDDED'}</span>
-                      <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest">
+                      <span className="text-[9px] font-bold text-emerald-700 uppercase tracking-widest">
                         Atlas
                       </span>
                     </div>
@@ -3197,7 +3243,7 @@ export default function AtlasApp() {
                     {/* Copy */}
                     <button
                       onClick={() => copyMessage(msg.id, msg.content)}
-                      className="p-1 rounded-lg text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all active:scale-90 cursor-pointer select-none"
+                      className="p-1 rounded-lg text-gray-400 hover:text-emerald-400 hover:bg-[#047857]/15 transition-all active:scale-90 cursor-pointer select-none"
                       title={copiedId === msg.id ? 'Copiado' : 'Copiar'}
                     >
                       {copiedId === msg.id ? (
@@ -3236,7 +3282,7 @@ export default function AtlasApp() {
                           localStorage.setItem('atlas_feedback', JSON.stringify(stored));
                         } catch {}
                       }}
-                      className={`p-1 rounded-lg transition-all active:scale-90 cursor-pointer select-none ${feedbackMap[msg.id] === 'up' ? 'text-emerald-400' : 'text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10'}`}
+                      className={`p-1 rounded-lg transition-all active:scale-90 cursor-pointer select-none ${feedbackMap[msg.id] === 'up' ? 'text-emerald-400' : 'text-gray-400 hover:text-emerald-400 hover:bg-[#047857]/15'}`}
                       title="Buen respuesta"
                     >
                       <ThumbsUp className={`w-3.5 h-3.5 ${feedbackMap[msg.id] === 'up' ? 'fill-emerald-400' : ''}`} />
@@ -3351,7 +3397,7 @@ export default function AtlasApp() {
                       </button>
                       <button
                         onClick={cancelEdit}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-gray-800/60 text-gray-400 text-[11px] font-medium transition-all"
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-white/5 text-gray-400 text-[11px] font-medium transition-all"
                       >
                         <X className="w-3 h-3" />
                         Cancelar
@@ -3391,7 +3437,7 @@ export default function AtlasApp() {
       </div>
 
       {/* ===== INPUT AREA ===== */}
-      <div className="shrink-0 bg-[#0f0f0f] px-1.5 sm:px-3 pt-0.5 pb-[max(0.25rem,env(safe-area-inset-bottom))] z-10 relative">
+      <div className="shrink-0 atlas-input-area px-1.5 sm:px-3 pt-0.5 pb-[max(0.25rem,env(safe-area-inset-bottom))] z-10 relative">
         {/* Remaining responses bar — guests AND registered free users */}
         {remainingResponses > 0 && hasActivePlan !== true && !checkingPlan && (
           <div className="text-center mb-1">
@@ -3419,7 +3465,7 @@ export default function AtlasApp() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.95 }}
               transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              className="mb-2 mx-auto max-w-xs px-3 py-2.5 rounded-xl bg-emerald-600/20 border border-emerald-500/30 backdrop-blur-sm"
+              className="mb-2 mx-auto max-w-xs px-3 py-2.5 rounded-xl bg-[#047857]/15 border border-[#047857]/25 backdrop-blur-sm"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center justify-center gap-2 flex-1 min-w-0">
@@ -3529,7 +3575,7 @@ export default function AtlasApp() {
           )}
         </AnimatePresence>
 
-        <form onSubmit={handleSubmit} className="flex items-end gap-1.5 max-w-3xl mx-auto relative">
+        <form onSubmit={handleSubmit} className="flex items-end gap-1.5 max-w-3xl mx-auto relative atlas-input-glow rounded-2xl border border-transparent">
           {/* Hidden file inputs — one per type */}
           <input ref={fileInputRef} type="file" accept=".pdf,.txt,.jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,application/pdf,text/plain" onChange={handleFileUpload} className="hidden" />
           <input ref={fileInputImageRef} type="file" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp" onChange={handleFileUpload} className="hidden" />
@@ -3537,10 +3583,10 @@ export default function AtlasApp() {
           <input ref={fileInputTxtRef} type="file" accept=".txt,text/plain" onChange={handleFileUpload} className="hidden" />
 
           {/* ===== Integrated input container ===== */}
-          <div className={`flex-1 flex items-end bg-[#1a1a1a] rounded-[22px] border transition-all ${
+          <div className={`flex-1 flex items-end bg-[#0a0a0a] rounded-[22px] border transition-all ${
             isListening && !isLocked
               ? 'border-red-500/40 ring-1 ring-red-500/20'
-              : 'border-gray-800/40'
+              : 'border-white/[0.04]'
           }`}>
             {/* Left: Unified "+" button — MOBILE shows mega-dropdown, DESKTOP shows individual buttons */}
             <div className="flex items-center shrink-0 p-1 pl-1.5 self-end">
@@ -3564,41 +3610,41 @@ export default function AtlasApp() {
                   )}
                 </button>
                 {showActionsMenu && (
-                  <div className="absolute bottom-full left-0 mb-2 bg-[#252525] border border-gray-700/60 rounded-xl shadow-xl z-50 py-1 min-w-[160px]">
+                  <div className="absolute bottom-full left-0 mb-2 bg-[#111111] border border-white/[0.04] rounded-xl shadow-xl z-50 py-1 min-w-[160px]">
                     {/* Attach image */}
-                    <button type="button" onClick={() => { setShowActionsMenu(false); fileInputImageRef.current?.click(); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                    <button type="button" onClick={() => { setShowActionsMenu(false); fileInputImageRef.current?.click(); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-white/5 hover:text-white transition-colors">
                       <Image className="w-4 h-4 text-purple-400" /><span>Imagen</span>
                     </button>
                     {/* Attach PDF */}
-                    <button type="button" onClick={() => { setShowActionsMenu(false); fileInputPdfRef.current?.click(); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                    <button type="button" onClick={() => { setShowActionsMenu(false); fileInputPdfRef.current?.click(); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-white/5 hover:text-white transition-colors">
                       <FileText className="w-4 h-4 text-blue-400" /><span>PDF</span>
                     </button>
                     {/* Attach text */}
-                    <button type="button" onClick={() => { setShowActionsMenu(false); fileInputTxtRef.current?.click(); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                    <button type="button" onClick={() => { setShowActionsMenu(false); fileInputTxtRef.current?.click(); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-white/5 hover:text-white transition-colors">
                       <Pencil className="w-4 h-4 text-emerald-400" /><span>Texto</span>
                     </button>
                     {/* Divider */}
-                    <div className="h-px bg-gray-700/40 my-1 mx-2" />
+                    <div className="h-px bg-white/[0.04] my-1 mx-2" />
                     {/* Generate image */}
                     {(IMAGE_LIMITS[userPlanType?.toLowerCase()] > 0 || userPlanType?.startsWith('trial_') || hasPaidExtraImages) && (
-                      <button type="button" onClick={() => { setShowActionsMenu(false); handleGenerateImage(); }} disabled={isGeneratingImage || !inputValue.trim()} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors disabled:opacity-30">
+                      <button type="button" onClick={() => { setShowActionsMenu(false); handleGenerateImage(); }} disabled={isGeneratingImage || !inputValue.trim()} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-white/5 hover:text-white transition-colors disabled:opacity-30">
                         {isGeneratingImage ? <Loader2 className="w-4 h-4 text-purple-400 animate-spin" /> : <Sparkles className="w-4 h-4 text-purple-400" />}<span>Generar imagen</span>
                       </button>
                     )}
                     {/* Suggestions */}
                     {suggestions.length > 0 && !isLoading && !isStreaming && !isLocked && (
-                      <button type="button" onClick={() => { setShowActionsMenu(false); setShowSuggestionsModal(true); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                      <button type="button" onClick={() => { setShowActionsMenu(false); setShowSuggestionsModal(true); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-white/5 hover:text-white transition-colors">
                         <Wand2 className="w-4 h-4 text-amber-400" /><span>Sugerencias</span>
                       </button>
                     )}
                     {/* Web research */}
-                    <button type="button" onClick={() => { setShowActionsMenu(false); handleSourcesSearch(); }} disabled={isLoading || isStreaming || (!inputValue.trim() && !lastUserMsgForSug)} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors disabled:opacity-30">
+                    <button type="button" onClick={() => { setShowActionsMenu(false); handleSourcesSearch(); }} disabled={isLoading || isStreaming || (!inputValue.trim() && !lastUserMsgForSug)} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-white/5 hover:text-white transition-colors disabled:opacity-30">
                       {sourcesLoading ? <Loader2 className="w-4 h-4 text-blue-400 animate-spin" /> : <Globe className="w-4 h-4 text-blue-400" />}<span>Investigar</span>
                     </button>
                     {/* Divider */}
-                    <div className="h-px bg-gray-700/40 my-1 mx-2" />
+                    <div className="h-px bg-white/[0.04] my-1 mx-2" />
                     {/* Football live data */}
-                    <button type="button" onClick={() => { setShowActionsMenu(false); handleFootballFetch('live'); }} disabled={footballLoading} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors disabled:opacity-30">
+                    <button type="button" onClick={() => { setShowActionsMenu(false); handleFootballFetch('live'); }} disabled={footballLoading} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-white/5 hover:text-white transition-colors disabled:opacity-30">
                       {footballLoading ? <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" /> : <CircleDot className="w-4 h-4 text-emerald-400" />}<span>Futbol en vivo</span>
                     </button>
                   </div>
@@ -3628,14 +3674,14 @@ export default function AtlasApp() {
                     )}
                   </button>
                   {showClipDropdown && (
-                    <div className="absolute bottom-full left-0 mb-2 bg-[#252525] border border-gray-700/60 rounded-xl shadow-xl z-50 py-1 min-w-[140px]">
-                      <button type="button" onClick={() => { setShowClipDropdown(false); fileInputImageRef.current?.click(); }} className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                    <div className="absolute bottom-full left-0 mb-2 bg-[#111111] border border-white/[0.04] rounded-xl shadow-xl z-50 py-1 min-w-[140px]">
+                      <button type="button" onClick={() => { setShowClipDropdown(false); fileInputImageRef.current?.click(); }} className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-white/5 hover:text-white transition-colors">
                         <Image className="w-3.5 h-3.5 text-purple-400" /><span>Imagen</span>
                       </button>
-                      <button type="button" onClick={() => { setShowClipDropdown(false); fileInputPdfRef.current?.click(); }} className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                      <button type="button" onClick={() => { setShowClipDropdown(false); fileInputPdfRef.current?.click(); }} className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-white/5 hover:text-white transition-colors">
                         <FileText className="w-3.5 h-3.5 text-blue-400" /><span>PDF</span>
                       </button>
-                      <button type="button" onClick={() => { setShowClipDropdown(false); fileInputTxtRef.current?.click(); }} className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                      <button type="button" onClick={() => { setShowClipDropdown(false); fileInputTxtRef.current?.click(); }} className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-white/5 hover:text-white transition-colors">
                         <Pencil className="w-3.5 h-3.5 text-emerald-400" /><span>Texto</span>
                       </button>
                     </div>
@@ -3658,7 +3704,7 @@ export default function AtlasApp() {
                   {sourcesLoading ? <Loader2 className="w-[16px] h-[16px] text-blue-400 animate-spin" /> : <Globe className="w-[16px] h-[16px] text-blue-400/60 hover:text-blue-400" />}
                 </button>
                 {/* Football */}
-                <button type="button" onClick={() => handleFootballFetch('live')} disabled={footballLoading} className="p-1.5 rounded-full hover:bg-emerald-500/10 transition-all active:scale-90 shrink-0 disabled:opacity-30" aria-label="Futbol en vivo" title="Futbol en vivo">
+                <button type="button" onClick={() => handleFootballFetch('live')} disabled={footballLoading} className="p-1.5 rounded-full hover:bg-[#047857]/15 transition-all active:scale-90 shrink-0 disabled:opacity-30" aria-label="Futbol en vivo" title="Futbol en vivo">
                   {footballLoading ? <Loader2 className="w-[16px] h-[16px] text-emerald-400 animate-spin" /> : <CircleDot className="w-[16px] h-[16px] text-emerald-400/60 hover:text-emerald-400" />}
                 </button>
               </div>
@@ -3676,7 +3722,7 @@ export default function AtlasApp() {
                 ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
               }}
               onKeyDown={handleKeyDown}
-              placeholder={'Escribe tu mensaje...'}
+              placeholder={'Escribe tu instrucción o usa el micrófono...'}
               rows={1}
               style={{ height: '36px' }}
               className="flex-1 min-w-0 bg-transparent py-2 px-1 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none resize-none overflow-y-auto max-h-40 leading-5 disabled:opacity-50"
@@ -3690,8 +3736,8 @@ export default function AtlasApp() {
                 disabled={(!inputValue.trim() && !imageBase64 && !documentText) || isLoading || isStreaming || isListening}
                 className={`p-2 m-1 mr-1 rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 self-end ${
                   inputValue.trim() || imageBase64 || documentText
-                    ? 'bg-emerald-600 hover:bg-emerald-500'
-                    : 'bg-gray-800/60'
+                    ? 'bg-[#047857] hover:bg-[#059669] shadow-lg shadow-emerald-900/30'
+                    : 'bg-white/5'
                 } disabled:opacity-30`}
                 aria-label="Enviar"
               >
@@ -3712,7 +3758,7 @@ export default function AtlasApp() {
                 onPointerCancel={handleLockedPointerUp}
                 disabled={isLoading || isStreaming}
                 className={`p-2 m-1 mr-1 rounded-full shrink-0 self-end select-none touch-none transition-all active:scale-90 ${
-                  isSwipeCanceling ? 'bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'
+                  isSwipeCanceling ? 'bg-red-500' : 'bg-[#047857] hover:bg-[#059669]'
                 }`}
                 aria-label="Enviar mensaje de voz"
               >
@@ -3850,7 +3896,7 @@ export default function AtlasApp() {
                     </button>
                     <button
                       onClick={() => setShowSuggestionsModal(false)}
-                      className="p-1.5 rounded-full text-gray-500 hover:text-gray-300 hover:bg-gray-800/60 transition-all active:scale-90 cursor-pointer"
+                      className="p-1.5 rounded-full text-gray-500 hover:text-gray-300 hover:bg-white/5 transition-all active:scale-90 cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -4001,7 +4047,7 @@ export default function AtlasApp() {
                   </div>
                   <button
                     onClick={() => setShowAlarmPaywall(false)}
-                    className="p-1.5 rounded-full hover:bg-gray-800/60 transition-colors"
+                    className="p-1.5 rounded-full hover:bg-white/5 transition-colors"
                   >
                     <X className="w-5 h-5 text-gray-500" />
                   </button>
@@ -4071,7 +4117,7 @@ export default function AtlasApp() {
                   </div>
                   <button
                     onClick={() => { setShowAlarmScheduler(false); setAlarmTime(''); }}
-                    className="p-1.5 rounded-full hover:bg-gray-800/60 transition-colors"
+                    className="p-1.5 rounded-full hover:bg-white/5 transition-colors"
                   >
                     <X className="w-5 h-5 text-gray-500" />
                   </button>
@@ -4157,7 +4203,7 @@ export default function AtlasApp() {
                   </div>
                   <button
                     onClick={() => setShowPdfPaywall(false)}
-                    className="p-1.5 rounded-full hover:bg-gray-800/60 transition-colors"
+                    className="p-1.5 rounded-full hover:bg-white/5 transition-colors"
                   >
                     <XCircleIcon className="w-5 h-5 text-gray-500" />
                   </button>
@@ -4403,7 +4449,7 @@ export default function AtlasApp() {
             >
               <div className="bg-gray-900 border border-gray-700/50 rounded-2xl shadow-2xl flex flex-col max-h-[70vh]">
                 {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-gray-800/40 shrink-0">
+                <div className="flex items-center justify-between p-4 border-b border-white/[0.04] shrink-0">
                   <div className="flex items-center gap-2">
                     <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
                     <h2 className="text-sm font-semibold text-white">Mis Destacados</h2>
@@ -4417,7 +4463,7 @@ export default function AtlasApp() {
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-gray-800/40 shrink-0">
+                <div className="flex border-b border-white/[0.04] shrink-0">
                   <button
                     onClick={() => setFavoritesTab('favorites')}
                     className={`flex-1 py-2.5 text-[12px] font-semibold transition-all ${
@@ -4463,7 +4509,7 @@ export default function AtlasApp() {
                               return (
                                 <div
                                   key={fav.msgId}
-                                  className="p-2.5 rounded-xl bg-gray-800/40 border border-gray-700/30 group"
+                                  className="p-2.5 rounded-xl bg-gray-800/30 border border-gray-700/30 group"
                                 >
                                   <div
                                     className="flex items-start gap-2 cursor-pointer"
@@ -4518,7 +4564,7 @@ export default function AtlasApp() {
                             {favoriteSessions.map(fav => (
                               <div
                                 key={fav.sessionId}
-                                className="flex items-center p-3 rounded-xl bg-gray-800/40 border border-gray-700/30 hover:border-gray-600/40 transition-all group"
+                                className="flex items-center p-3 rounded-xl bg-gray-800/30 border border-gray-700/30 hover:border-gray-600/40 transition-all group"
                               >
                                 <Star className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0 mr-2.5" />
                                 <div
@@ -4576,7 +4622,7 @@ export default function AtlasApp() {
                       highlights.sort((a, b) => a.number - b.number).map(hl => (
                         <div
                           key={hl.id}
-                          className="p-3 rounded-xl bg-gray-800/40 border border-gray-700/30 cursor-pointer hover:border-gray-600/40 transition-all"
+                          className="p-3 rounded-xl bg-gray-800/30 border border-gray-700/30 cursor-pointer hover:border-gray-600/40 transition-all"
                           onClick={() => scrollToMessage(hl.messageId)}
                         >
                           <div className="flex items-center justify-between mb-1.5">
@@ -4642,9 +4688,9 @@ export default function AtlasApp() {
             {/* Backdrop */}
             <div className="absolute inset-0 bg-black/50" onClick={() => setShowSources(false)} />
             {/* Panel */}
-            <div className="relative w-full sm:max-w-xl max-h-[85vh] bg-[#1a1a1a] rounded-t-2xl sm:rounded-2xl border border-gray-800/60 overflow-hidden flex flex-col">
+            <div className="relative w-full sm:max-w-xl max-h-[85vh] bg-[#0a0a0a] rounded-t-2xl sm:rounded-2xl border border-white/[0.04] overflow-hidden flex flex-col">
               {/* Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800/40">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
                 <div className="flex items-center gap-2">
                   <Globe className="w-4 h-4 text-blue-400" />
                   <span className="text-white text-sm font-medium">Investigacion web</span>
@@ -4655,7 +4701,7 @@ export default function AtlasApp() {
                 </button>
               </div>
               {/* Query */}
-              <div className="px-4 py-2 border-b border-gray-800/30">
+              <div className="px-4 py-2 border-b border-white/[0.04]">
                 <p className="text-gray-500 text-xs truncate">
                   Consulta: <span className="text-gray-300">{sourcesQuery}</span>
                 </p>
@@ -4672,7 +4718,7 @@ export default function AtlasApp() {
                   <>
                     {/* Research Summary */}
                     {researchSummary && (
-                      <div className="px-4 py-3 border-b border-gray-800/30">
+                      <div className="px-4 py-3 border-b border-white/[0.04]">
                         <div className="flex items-center gap-1.5 mb-2">
                           <span className="text-xs">{'\uD83E\uDD16'}</span>
                           <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Resumen de Atlas</span>
@@ -4702,7 +4748,7 @@ export default function AtlasApp() {
                               href={src.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="block p-2.5 rounded-lg hover:bg-gray-800/40 transition group"
+                              className="block p-2.5 rounded-lg hover:bg-gray-800/30 transition group"
                             >
                               <div className="flex items-start gap-2">
                                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500/10 border border-blue-500/20 text-[10px] font-bold text-blue-400 mt-0.5 shrink-0">
@@ -4744,9 +4790,9 @@ export default function AtlasApp() {
             className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
           >
             <div className="absolute inset-0 bg-black/50" onClick={() => setShowFootball(false)} />
-            <div className="relative w-full sm:max-w-xl max-h-[85vh] bg-[#1a1a1a] rounded-t-2xl sm:rounded-2xl border border-gray-800/60 overflow-hidden flex flex-col">
+            <div className="relative w-full sm:max-w-xl max-h-[85vh] bg-[#0a0a0a] rounded-t-2xl sm:rounded-2xl border border-white/[0.04] overflow-hidden flex flex-col">
               {/* Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800/40">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
                 <div className="flex items-center gap-2">
                   <CircleDot className="w-4 h-4 text-emerald-400" />
                   <span className="text-white text-sm font-medium">Futbol en vivo</span>
@@ -4756,7 +4802,7 @@ export default function AtlasApp() {
                 </button>
               </div>
               {/* Tabs */}
-              <div className="flex border-b border-gray-800/40">
+              <div className="flex border-b border-white/[0.04]">
                 {[
                   { key: 'live' as const, label: 'En vivo' },
                   { key: 'standings' as const, label: 'Posiciones' },
@@ -4868,7 +4914,7 @@ export default function AtlasApp() {
                             { label: 'Ligue 1', code: '2015' },
                             { label: 'Champions', code: '2001' },
                           ].map(l => (
-                            <button key={l.code} onClick={() => handleFootballFetch('standings', l.code)} className="px-3 py-1.5 text-[11px] bg-gray-800/40 text-gray-300 rounded-lg hover:bg-gray-700/50 transition">
+                            <button key={l.code} onClick={() => handleFootballFetch('standings', l.code)} className="px-3 py-1.5 text-[11px] bg-gray-800/30 text-gray-300 rounded-lg hover:bg-gray-700/50 transition">
                               {l.label}
                             </button>
                           ))}
@@ -4925,7 +4971,7 @@ export default function AtlasApp() {
                             { label: 'Ligue 1', code: '2015' },
                             { label: 'Champions', code: '2001' },
                           ].map(l => (
-                            <button key={l.code} onClick={() => handleFootballFetch('scorers', l.code)} className="px-3 py-1.5 text-[11px] bg-gray-800/40 text-gray-300 rounded-lg hover:bg-gray-700/50 transition">
+                            <button key={l.code} onClick={() => handleFootballFetch('scorers', l.code)} className="px-3 py-1.5 text-[11px] bg-gray-800/30 text-gray-300 rounded-lg hover:bg-gray-700/50 transition">
                               {l.label}
                             </button>
                           ))}
