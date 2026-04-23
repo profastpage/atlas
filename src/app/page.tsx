@@ -9,7 +9,7 @@ import {
   Paperclip, FileText, XCircle as XCircleIcon, Loader2,
   Copy, Share2, Bell, Star, Hash, PencilLine,
   Sparkles, RotateCcw, ChevronRight, Wand2, RefreshCw, Image, Globe, ExternalLink,
-  ThumbsUp, ThumbsDown, CircleDot, Clock
+  ThumbsUp, ThumbsDown, CircleDot, Clock, FileDown
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -33,6 +33,7 @@ import { WELCOME_MESSAGE_NEW } from '@/lib/atlas';
 import SettingsSidebar from '@/components/SettingsSidebar';
 import BuyImagesModal from '@/components/BuyImagesModal';
 import InstallPrompt from '@/components/InstallPrompt';
+import { exportChatToPDF } from '@/lib/export-pdf';
 import ExpandButton, { ExpandSpinner } from '@/components/ExpandButton';
 
 // ========================================
@@ -660,6 +661,21 @@ export default function AtlasApp() {
   const clearChatHistory = useCallback(() => {
     try { localStorage.removeItem(CHAT_HISTORY_KEY); } catch {}
   }, []);
+
+  // ---- Export chat to PDF ----
+  const [exportingPDF, setExportingPDF] = useState(false);
+
+  const handleExportPDF = useCallback(async () => {
+    if (messages.length === 0 || exportingPDF) return;
+    setExportingPDF(true);
+    try {
+      await exportChatToPDF(messages, userInfo?.name);
+    } catch (err) {
+      console.error('PDF export failed:', err);
+    } finally {
+      setExportingPDF(false);
+    }
+  }, [messages, userInfo?.name, exportingPDF]);
 
   // Scroll policy: Auto-scroll to bottom on new messages
   // During streaming: scroll if user is near bottom (within 200px)
@@ -2945,6 +2961,22 @@ export default function AtlasApp() {
           >
             <Plus className="w-5 h-5 text-gray-400" />
           </button>
+          {/* Export PDF button — visible when there are messages */}
+          {messages.length > 0 && (
+            <button
+              onClick={handleExportPDF}
+              disabled={exportingPDF}
+              className="p-2 rounded-full hover:bg-white/5 transition-colors disabled:opacity-40"
+              aria-label="Exportar reporte a PDF"
+              title="Exportar Reporte"
+            >
+              {exportingPDF ? (
+                <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+              ) : (
+                <FileDown className="w-5 h-5 text-gray-400 hover:text-emerald-400 transition-colors" />
+              )}
+            </button>
+          )}
           {isAuthenticated && (
             <button
               onClick={() => setShowSettings(true)}
