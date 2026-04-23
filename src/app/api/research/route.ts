@@ -86,27 +86,28 @@ function extractArticleText(html: string): string {
 }
 
 // ========================================
-// STEP 1: Search DuckDuckGo
+// STEP 1: Search DuckDuckGo HTML (Lite has CAPTCHA)
 // ========================================
 async function searchDuckDuckGo(query: string, maxResults = 8): Promise<SearchResult[]> {
   const trimmed = query.trim();
   // For football queries, add "site filters" to prioritize quality sources
   const footballTerms = ['futbol', 'fútbol', 'soccer', 'partido', 'goles', 'liga', 'champions', 'libertadores', 'premier', 'la liga', 'bundesliga', 'serie a', 'messi', 'ronaldo', 'mbappe', 'haaland'];
   const isFootballQuery = footballTerms.some(term => trimmed.toLowerCase().includes(term));
-  
+
   let enrichedQuery = trimmed;
   if (isFootballQuery) {
-    // Add quality football sites to the query for better results
     enrichedQuery = `${trimmed} (transfermarkt OR flashscore OR sofascore OR marca OR goal OR espn soccer OR fotmob)`;
   }
-  
+
   const encodedQuery = encodeURIComponent(enrichedQuery);
-  const ddgUrl = `https://lite.duckduckgo.com/lite/?q=${encodedQuery}`;
+  // Use html.duckduckgo.com (lite version has CAPTCHA blocking server requests)
+  const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodedQuery}`;
 
   const ddgRes = await fetch(ddgUrl, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; AtlasBot/1.0)',
-      'Accept': 'text/html',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml',
+      'Accept-Language': 'es,es-419,en;q=0.5',
     },
   });
 
@@ -114,34 +115,42 @@ async function searchDuckDuckGo(query: string, maxResults = 8): Promise<SearchRe
 
   const html = await ddgRes.text();
   const sources: SearchResult[] = [];
-  const resultBlocks = html.split(/<td[^>]*class="result-snippet"[^>]*>/i);
+
+  // Parse DDG HTML: <div class="result results_links ... web-result"> (skip ads)
+  // <a class="result__a" href="//duckduckgo.com/l/?uddg=ENCODED_URL">
+  // <a class="result__snippet">TEXT</a>
+  const resultBlocks = html.split(/<div class="result results_links[\s\S]*?web-result\s*"/i);
 
   for (let i = 1; i < resultBlocks.length && sources.length < maxResults; i++) {
     const block = resultBlocks[i];
-    const prevBlock = resultBlocks[i - 1];
-    const urlMatch = prevBlock.match(/href="(https?:\/\/duckduckgo\.com\/l\/\?uddg=([^&"]+)[^"]*)"/);
 
-    if (urlMatch) {
-      let url = urlMatch[2];
-      try { url = decodeURIComponent(url); } catch {}
+    const urlMatch = block.match(/class="result__a"[^>]*href="(?:\/\/|https?:\/\/)duckduckgo\.com\/l\/\?uddg=([^"&]+)/i);
+    if (!urlMatch) continue;
 
-      const titleMatch = prevBlock.match(/<a[^>]*class="result-link"[^>]*>([\s\S]*?)<\/a>/i);
-      const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+    let url = urlMatch[1];
+    try { url = decodeURIComponent(url); } catch {}
 
-      const snippetMatch = block.match(/([\s\S]*?)(?:<\/td>|$)/i);
-      const snippet = snippetMatch
-        ? snippetMatch[1].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim().substring(0, 250)
-        : '';
+    // Skip DDG internal URLs and ads
+    if (!url || url.includes('duckduckgo.com') || url.includes('bing.com') || url.includes('microsoft.com')) continue;
 
-      if (url && title && !url.includes('duckduckgo.com')) {
-        sources.push({
-          position: sources.length + 1,
-          url,
-          title,
-          snippet: snippet || '',
-          score: 1 - (sources.length * 0.05),
-        });
-      }
+    const titleMatch = block.match(/class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
+    const title = titleMatch
+      ? titleMatch[1].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim()
+      : '';
+
+    const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i);
+    const snippet = snippetMatch
+      ? snippetMatch[1].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim().substring(0, 250)
+      : '';
+
+    if (url && title) {
+      sources.push({
+        position: sources.length + 1,
+        url,
+        title,
+        snippet: snippet || '',
+        score: 1 - (sources.length * 0.05),
+      });
     }
   }
 

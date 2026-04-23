@@ -2593,8 +2593,47 @@ export default function AtlasApp() {
     const topic = (lastUserMsg + ' ' + lastBotMsg).toLowerCase();
     const suggestionsList: string[] = [];
 
+    // Extract key words from user message for more specific suggestions
+    const extractKeywords = (text: string): string[] => {
+      const words = text.toLowerCase().split(/\s+/).filter(w => w.length > 4);
+      return [...new Set(words)].slice(0, 3);
+    };
+    const userKeywords = extractKeywords(lastUserMsg);
+    const contextPhrase = userKeywords.length > 0 ? userKeywords[0] : '';
+
     // Context-aware suggestions based on keywords from both user and bot
-    if (topic.includes('estrategia') || topic.includes('plan') || topic.includes('negocio')) {
+    if (topic.includes('futbol') || topic.includes('fútbol') || topic.includes('soccer') || topic.includes('partido') || topic.includes('liga') || topic.includes('champions') || topic.includes('goles') || topic.includes('messi') || topic.includes('ronaldo') || topic.includes('mbappe') || topic.includes('alianza') || topic.includes('universitario') || topic.includes('boca') || topic.includes('river')) {
+      suggestionsList.push(
+        'Que formulario usan?', 'Cuales son las proximas fechas?', 'Quien es el goleador actual?',
+        'Como estan las posiciones?', 'Que lesiones hay?', 'Que fichajes recientes hay?'
+      );
+    } else if (topic.includes('nutricion') || topic.includes('dieta') || topic.includes('proteina') || topic.includes('creatina') || topic.includes('suplemento') || topic.includes('caloria') || topic.includes('macronutriente') || topic.includes('meal prep') || topic.includes('keto') || topic.includes('ayuno')) {
+      if (contextPhrase) {
+        suggestionsList.push(
+          `Cuantos gramos de ${contextPhrase} al dia?`, `Que alimentos tienen ${contextPhrase}?`,
+          `Es seguro tomar ${contextPhrase} todos los dias?`, `Cuando es mejor tomar ${contextPhrase}?`,
+          `Cual es la dosis recomendada de ${contextPhrase}?`, `Que alternativa natural hay a ${contextPhrase}?`
+        );
+      } else {
+        suggestionsList.push(
+          'Que dieta me recomiendas para mi objetivo?', 'Cuantas calorias debo consumir?',
+          'Que suplementos son realmente efectivos?', 'Como distribuyo mis macros?',
+          'Que como antes y despues de entrenar?', 'Es necesario tomar suplementos?'
+        );
+      }
+    } else if (topic.includes('fisiologia') || topic.includes('musculo') || topic.includes('lesion') || topic.includes('recuperacion') || topic.includes('metabolismo') || topic.includes('testosterona') || topic.includes('cortisol') || topic.includes('vo2') || topic.includes('entrenamiento')) {
+      if (contextPhrase) {
+        suggestionsList.push(
+          `Como optimizo mi ${contextPhrase}?`, `Que ejercicios mejoran el ${contextPhrase}?`,
+          `Cual es la ciencia detras del ${contextPhrase}?`, `Que pasa si tengo exceso de ${contextPhrase}?`
+        );
+      }
+      suggestionsList.push(
+        'Cuantos dias de descanso necesito?', 'Como acelero la recuperacion muscular?',
+        'Que indica mi frecuencia cardiaca en reposo?', 'Como evito el sobreentrenamiento?',
+        'Que estiramientos son realmente efectivos?', 'Como afecta el sueño al rendimiento?'
+      );
+    } else if (topic.includes('estrategia') || topic.includes('plan') || topic.includes('negocio')) {
       suggestionsList.push(
         'Dame un plan de accion paso a paso', 'Que riesgos debo considerar?', 'Como mido el progreso?',
         'Cuales son los KPIs clave?', 'Como lo diferencio de la competencia?', 'Que inversor deberia buscar?'
@@ -2602,7 +2641,7 @@ export default function AtlasApp() {
     } else if (topic.includes('estres') || topic.includes('ansiedad') || topic.includes('miedo') || topic.includes('panico')) {
       suggestionsList.push(
         'Dame una tecnica de respiracion rapida', 'Como manejo esto en el trabajo?', 'Que habito diario me ayudaria?',
-        'Que ejercicio físico me recomiendas?', 'Como afecta mi sueño?', 'Cuando deberia buscar ayuda profesional?'
+        'Que ejercicio fisico me recomiendas?', 'Como afecta mi sueno?', 'Cuando deberia buscar ayuda profesional?'
       );
     } else if (topic.includes('estudio') || topic.includes('aprender') || topic.includes('examen') || topic.includes('universidad')) {
       suggestionsList.push(
@@ -2622,17 +2661,33 @@ export default function AtlasApp() {
     } else if (topic.includes('trabajo') || topic.includes('jefe') || topic.includes('empleo') || topic.includes('sueldo')) {
       suggestionsList.push(
         'Como negocio un aumento?', 'Que hago si quiero renunciar?', 'Como destaco en mi trabajo?',
-        'Como prepuro una entrevista?', 'Que habilidades debo aprender?', 'Como manejo el burnout laboral?'
+        'Como preparo una entrevista?', 'Que habilidades debo aprender?', 'Como manejo el burnout laboral?'
       );
-    } else if (topic.includes('salud') || topic.includes('dieta') || topic.includes('ejercicio') || topic.includes('peso')) {
+    } else if (topic.includes('salud') || topic.includes('ejercicio') || topic.includes('peso')) {
       suggestionsList.push(
         'Hazme una rutina semanal de ejercicio', 'Que dieta me recomiendas?', 'Como mantengo la motivacion?',
-        'Cuantas horas de sueño necesito?', 'Que suplementos son esenciales?', 'Como evito lesiones entrenando?'
+        'Cuantas horas de sueno necesito?', 'Que suplementos son esenciales?', 'Como evito lesiones entrenando?'
       );
-    } else if (topic.includes('ventas') || topic.includes('marketing') || topic.includes('cliente') || topic.includes('negocio')) {
+    } else if (topic.includes('ventas') || topic.includes('marketing') || topic.includes('cliente')) {
       suggestionsList.push(
         'Como atraigo mas clientes?', 'Que estrategia de precios uso?', 'Como cierro mas ventas?',
         'Que canales de marketing son mejores?', 'Como fidelizo a mis clientes?', 'Como creo una marca personal?'
+      );
+    } else if (topic.includes('programacion') || topic.includes('codigo') || topic.includes('javascript') || topic.includes('python') || topic.includes('desarrollo') || topic.includes('app') || topic.includes('web')) {
+      suggestionsList.push(
+        'Que lenguaje debo aprender primero?', 'Como consigo mi primer proyecto freelance?',
+        'Que framework me recomiendas?', 'Como construyo un portafolio?', 'Que errores comunes debo evitar?',
+        'Como optimizo el rendimiento?'
+      );
+    }
+
+    // If still empty, try to use contextPhrase for a semi-specific fallback
+    if (suggestionsList.length === 0 && contextPhrase) {
+      suggestionsList.push(
+        `Dame un ejemplo practico sobre ${contextPhrase}`,
+        `Que debo saber sobre ${contextPhrase}?`,
+        `Cual es el error mas comun con ${contextPhrase}?`,
+        `Que sigue despues de ${contextPhrase}?`
       );
     }
 
