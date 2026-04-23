@@ -2318,6 +2318,11 @@ export default function AtlasApp() {
     // Single asterisk bold fallback (in case model outputs *text* instead of **text**)
     formatted = formatted.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, '<strong>$1</strong>');
     formatted = formatted.replace(/\n/g, '<br/>');
+    // Break long URLs to prevent horizontal overflow
+    formatted = formatted.replace(/(https?:\/\/[^\s<>]{40,})/g, (match) => {
+      // Insert zero-width spaces every 30 chars to allow wrapping
+      return match.replace(/(.{30})/g, '$1\u200B');
+    });
     return formatted;
   };
 
@@ -3057,7 +3062,7 @@ export default function AtlasApp() {
       {/* ===== CHAT AREA ===== */}
       <div
         ref={chatContainerRef}
-        className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3 space-y-3"
+        className="chat-messages-area flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3 space-y-3"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {messages.length === 0 && !isLoading && (
@@ -3089,7 +3094,7 @@ export default function AtlasApp() {
             >
               <div
                 data-msg-id={msg.id}
-                className={`relative max-w-[85%] sm:max-w-[70%] px-3.5 py-2 sm:py-2.5 shadow-sm min-w-[120px] ${
+                className={`relative max-w-[85%] sm:max-w-[70%] px-3.5 py-2 sm:py-2.5 shadow-sm ${
                   msg.role === 'user'
                     ? 'bg-[#005c4b] text-white rounded-2xl rounded-br-sm'
                     : 'bg-[#1f2722] text-gray-100 rounded-2xl rounded-bl-sm'
@@ -3133,7 +3138,7 @@ export default function AtlasApp() {
                 {/* Message content — skip rendering text for generated images */}
                 {!(msg.role === 'assistant' && msg.content.startsWith('data:image/')) && (
                 <div
-                  className={`text-[13.5px] leading-relaxed ${
+                  className={`text-[13.5px] leading-relaxed break-words overflow-wrap-anywhere ${
                     msg.role === 'user' ? 'text-white' : 'text-gray-200'
                   }`}
                   dangerouslySetInnerHTML={{
@@ -4656,7 +4661,7 @@ export default function AtlasApp() {
                 </p>
               </div>
               {/* Content */}
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden">
                 {/* AI Summary Section */}
                 {sourcesLoading && !researchSummary ? (
                   <div className="flex flex-col items-center justify-center py-12 px-4">
@@ -4674,7 +4679,7 @@ export default function AtlasApp() {
                           <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Resumen de Atlas</span>
                         </div>
                         <div
-                          className="text-[13px] text-gray-200 leading-relaxed whitespace-pre-wrap"
+                          className="text-[13px] text-gray-200 leading-relaxed break-words overflow-wrap-anywhere"
                           dangerouslySetInnerHTML={{
                             __html: formatMessageContent(researchSummary) +
                               (researchStreaming
@@ -4773,7 +4778,7 @@ export default function AtlasApp() {
                 ))}
               </div>
               {/* Content */}
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden">
                 {footballLoading ? (
                   <div className="flex flex-col items-center justify-center py-12">
                     <Loader2 className="w-6 h-6 text-emerald-400 animate-spin mb-3" />

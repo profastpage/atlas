@@ -88,73 +88,117 @@ function extractArticleText(html: string): string {
 // ========================================
 // STEP 1: Search DuckDuckGo HTML (Lite has CAPTCHA)
 // ========================================
+const SEARCH_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'es,es-419;q=0.9,en;q=0.8',
+};
+
+function cleanSnippet(text: string): string {
+  return text.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ').trim();
+}
+
+// MULTI-ENGINE SEARCH: Brave + Bing + DuckDuckGo with fallback
+async function searchBrave(query: string, maxResults = 8): Promise<SearchResult[]> {
+  const encodedQuery = encodeURIComponent(query);
+  const url = `https://search.brave.com/search?q=${encodedQuery}&source=web`;
+  try {
+    const res = await fetch(url, { headers: SEARCH_HEADERS, signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return [];
+    const html = await res.text();
+    const sources: SearchResult[] = [];
+    const resultPattern = /<div[^>]*class="[^"]*result[^"]*"[^>]*>[\s\S]*?<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    let match;
+    while ((match = resultPattern.exec(html)) !== null && sources.length < maxResults) {
+      const resultUrl = match[1];
+      const title = cleanSnippet(match[2]).substring(0, 200);
+      if (title.length > 3 && !resultUrl.includes('search.brave.com') && !resultUrl.includes('brave.com/')) {
+        sources.push({ position: sources.length + 1, url: resultUrl, title, snippet: '', score: 1 - (sources.length * 0.05) });
+      }
+    }
+    return sources;
+  } catch { return []; }
+}
+
+async function searchBing(query: string, maxResults = 8): Promise<SearchResult[]> {
+  const encodedQuery = encodeURIComponent(query);
+  const url = `https://www.bing.com/search?q=${encodedQuery}&setlang=es`;
+  try {
+    const res = await fetch(url, { headers: SEARCH_HEADERS, signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return [];
+    const html = await res.text();
+    const sources: SearchResult[] = [];
+    const bAlgoBlocks = html.split(/<li[^>]*class="b_algo"[^>]*>/i);
+    for (let i = 1; i < bAlgoBlocks.length && sources.length < maxResults; i++) {
+      const block = bAlgoBlocks[i];
+      const urlMatch = block.match(/<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>/i);
+      if (!urlMatch) continue;
+      const resultUrl = urlMatch[1];
+      if (resultUrl.includes('bing.com') || resultUrl.includes('microsoft.com')) continue;
+      const titleMatch = block.match(/<a[^>]*href="[^"]*"[^>]*>([\s\S]*?)<\/a>/i);
+      const title = titleMatch ? cleanSnippet(titleMatch[1]).substring(0, 200) : '';
+      const snippetMatch = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+      const snippet = snippetMatch ? cleanSnippet(snippetMatch[1]).substring(0, 250) : '';
+      if (resultUrl && title && title.length > 3) {
+        sources.push({ position: sources.length + 1, url: resultUrl, title, snippet, score: 1 - (sources.length * 0.05) });
+      }
+    }
+    return sources;
+  } catch { return []; }
+}
+
 async function searchDuckDuckGo(query: string, maxResults = 8): Promise<SearchResult[]> {
-  const trimmed = query.trim();
-  // For football queries, add "site filters" to prioritize quality sources
-  const footballTerms = ['futbol', 'fútbol', 'soccer', 'partido', 'goles', 'liga', 'champions', 'libertadores', 'premier', 'la liga', 'bundesliga', 'serie a', 'messi', 'ronaldo', 'mbappe', 'haaland'];
-  const isFootballQuery = footballTerms.some(term => trimmed.toLowerCase().includes(term));
-
-  let enrichedQuery = trimmed;
-  if (isFootballQuery) {
-    enrichedQuery = `${trimmed} (transfermarkt OR flashscore OR sofascore OR marca OR goal OR espn soccer OR fotmob)`;
-  }
-
-  const encodedQuery = encodeURIComponent(enrichedQuery);
-  // Use html.duckduckgo.com (lite version has CAPTCHA blocking server requests)
+  const encodedQuery = encodeURIComponent(query);
   const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodedQuery}`;
+  try {
+    const ddgRes = await fetch(ddgUrl, { headers: SEARCH_HEADERS, signal: AbortSignal.timeout(10000) });
+    if (!ddgRes.ok) return [];
+    const html = await ddgRes.text();
+    const sources: SearchResult[] = [];
+    const resultBlocks = html.split(/<div class="result results_links[\s\S]*?web-result\s*"/i);
+    for (let i = 1; i < resultBlocks.length && sources.length < maxResults; i++) {
+      const block = resultBlocks[i];
+      const urlMatch = block.match(/class="result__a"[^>]*href="(?:\/\/|https?:\/\/)duckduckgo\.com\/l\/?uddg=([^"&]+)/i);
+      if (!urlMatch) continue;
+      let url = urlMatch[1];
+      try { url = decodeURIComponent(url); } catch {}
+      if (!url || url.includes('duckduckgo.com') || url.includes('bing.com') || url.includes('microsoft.com')) continue;
+      const titleMatch = block.match(/class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
+      const title = titleMatch ? cleanSnippet(titleMatch[1]) : '';
+      const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i);
+      const snippet = snippetMatch ? cleanSnippet(snippetMatch[1]).substring(0, 250) : '';
+      if (url && title) {
+        sources.push({ position: sources.length + 1, url, title, snippet: snippet || '', score: 1 - (sources.length * 0.05) });
+      }
+    }
+    return sources;
+  } catch { return []; }
+}
 
-  const ddgRes = await fetch(ddgUrl, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml',
-      'Accept-Language': 'es,es-419,en;q=0.5',
-    },
-  });
-
-  if (!ddgRes.ok) return [];
-
-  const html = await ddgRes.text();
-  const sources: SearchResult[] = [];
-
-  // Parse DDG HTML: <div class="result results_links ... web-result"> (skip ads)
-  // <a class="result__a" href="//duckduckgo.com/l/?uddg=ENCODED_URL">
-  // <a class="result__snippet">TEXT</a>
-  const resultBlocks = html.split(/<div class="result results_links[\s\S]*?web-result\s*"/i);
-
-  for (let i = 1; i < resultBlocks.length && sources.length < maxResults; i++) {
-    const block = resultBlocks[i];
-
-    const urlMatch = block.match(/class="result__a"[^>]*href="(?:\/\/|https?:\/\/)duckduckgo\.com\/l\/\?uddg=([^"&]+)/i);
-    if (!urlMatch) continue;
-
-    let url = urlMatch[1];
-    try { url = decodeURIComponent(url); } catch {}
-
-    // Skip DDG internal URLs and ads
-    if (!url || url.includes('duckduckgo.com') || url.includes('bing.com') || url.includes('microsoft.com')) continue;
-
-    const titleMatch = block.match(/class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
-    const title = titleMatch
-      ? titleMatch[1].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim()
-      : '';
-
-    const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i);
-    const snippet = snippetMatch
-      ? snippetMatch[1].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim().substring(0, 250)
-      : '';
-
-    if (url && title) {
-      sources.push({
-        position: sources.length + 1,
-        url,
-        title,
-        snippet: snippet || '',
-        score: 1 - (sources.length * 0.05),
-      });
+// Multi-engine merge with dedup
+async function searchAllEngines(query: string, maxResults = 8): Promise<SearchResult[]> {
+  const [brave, bing, ddg] = await Promise.all([
+    searchBrave(query, maxResults),
+    searchBing(query, maxResults),
+    searchDuckDuckGo(query, maxResults),
+  ]);
+  const seenDomains = new Set<string>();
+  const merged: SearchResult[] = [];
+  function addSources(sources: SearchResult[]) {
+    for (const src of sources) {
+      try {
+        const domain = new URL(src.url).hostname.replace(/^www\./, '');
+        if (seenDomains.has(domain)) continue;
+        seenDomains.add(domain);
+        merged.push(src);
+      } catch {}
     }
   }
-
-  return sources;
+  addSources(brave);
+  addSources(bing);
+  addSources(ddg);
+  console.log(`[RESEARCH] Merged ${merged.length} unique sources (Brave:${brave.length} Bing:${bing.length} DDG:${ddg.length})`);
+  return merged.slice(0, maxResults);
 }
 
 // ========================================
@@ -211,8 +255,8 @@ export async function POST(request: NextRequest) {
     }
 
     // ---- STEP 1: Search ----
-    console.log('[RESEARCH] Step 1: Searching DuckDuckGo for:', query.trim());
-    const sources = await searchDuckDuckGo(query.trim(), maxResults);
+    console.log('[RESEARCH] Step 1: Searching all engines for:', query.trim());
+    const sources = await searchAllEngines(query.trim(), maxResults);
 
     if (sources.length === 0) {
       return NextResponse.json({

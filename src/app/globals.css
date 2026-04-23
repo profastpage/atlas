@@ -131,6 +131,32 @@ button,
   user-select: none;
 }
 
+/* Chat message overflow prevention — mobile-first */
+[data-msg-id] {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+[data-msg-id] a {
+  overflow-wrap: break-word;
+  word-break: break-all;
+}
+
+[data-msg-id] code {
+  overflow-wrap: break-word;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+/* Force chat area to never overflow horizontally */
+.chat-messages-area {
+  overflow-x: hidden !important;
+  max-width: 100% !important;
+}
+
 /* Smooth transitions for all interactive elements */
 button,
 a,

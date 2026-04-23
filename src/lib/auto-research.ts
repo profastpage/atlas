@@ -1,7 +1,8 @@
 // ========================================
 // AUTO-RESEARCH — Investigación automática antes de responder
 // Previene alucinaciones: busca web, lee páginas, inyecta fuentes en contexto
-// 100% GRATIS — usa DuckDuckGo HTML + Wikipedia Search API
+// 100% GRATIS — usa Brave Search HTML + Bing HTML + DuckDuckGo HTML + Wikipedia Search API
+// Fallback chain: Brave -> Bing -> DuckDuckGo -> Wikipedia
 // ========================================
 
 interface AutoResearchResult {
@@ -141,45 +142,159 @@ function cleanSnippet(text: string): string {
     .trim();
 }
 
+const SEARCH_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'es,es-419;q=0.9,en;q=0.8,en-US;q=0.7',
+};
+
 // ========================================
-// STEP 1: Search DuckDuckGo HTML (NOT Lite — Lite has CAPTCHA)
+// SEARCH ENGINE 1: Brave Search HTML (most reliable from edge)
+// ========================================
+
+async function searchBrave(query: string, maxResults = 5): Promise<AutoSource[]> {
+  const encodedQuery = encodeURIComponent(query);
+  const url = `https://search.brave.com/search?q=${encodedQuery}&source=web`;
+
+  try {
+    const res = await fetch(url, {
+      headers: SEARCH_HEADERS,
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) return [];
+
+    const html = await res.text();
+    const sources: AutoSource[] = [];
+
+    // Brave search results are in <div class="snippet ..."> with <a> inside
+    // Pattern: <div class="snippet"><a href="URL">TITLE</a>...description...</div>
+    // Also: <div class="result-header"><a href="URL">TITLE</a></div>
+    const resultPattern = /<div[^>]*class="[^"]*result[^"]*"[^>]*>[\s\S]*?<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    let match;
+    let parsed = 0;
+
+    while ((match = resultPattern.exec(html)) !== null && parsed < maxResults) {
+      let resultUrl = match[1];
+      const titleRaw = match[2];
+
+      // Skip Brave internal URLs
+      if (resultUrl.includes('search.brave.com') || resultUrl.includes('brave.com/search')) continue;
+      if (resultUrl.includes('account.brave.com') || resultUrl.includes('brave.com/ads')) continue;
+
+      const title = cleanSnippet(titleRaw).substring(0, 200);
+
+      // Try to extract snippet from nearby content
+      const blockStart = match.index;
+      const blockHtml = html.substring(blockStart, blockStart + 2000);
+      const snippetMatch = blockHtml.match(/<div[^>]*class="[^"]*(?:snippet-description|result-description|description)[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+      const snippet = snippetMatch ? cleanSnippet(snippetMatch[1]).substring(0, 200) : '';
+
+      if (resultUrl && title && title.length > 3) {
+        sources.push({
+          position: sources.length + 1,
+          url: resultUrl,
+          title,
+          snippet,
+        });
+        parsed++;
+      }
+    }
+
+    // Alternative parsing: look for structured result divs
+    if (sources.length === 0) {
+      // Try div id="search" approach
+      const divPattern = /<a[^>]*href="(https?:\/\/[^"]+)"[^>]*class="[^"]*[^"]*"[^>]*>([\s\S]*?)<\/a>\s*<\/div>/gi;
+      while ((match = divPattern.exec(html)) !== null && sources.length < maxResults) {
+        let resultUrl = match[1];
+        const title = cleanSnippet(match[2]).substring(0, 200);
+        if (resultUrl.includes('search.brave.com') || resultUrl.includes('brave.com/')) continue;
+        if (resultUrl && title && title.length > 5) {
+          sources.push({ position: sources.length + 1, url: resultUrl, title, snippet: '' });
+        }
+      }
+    }
+
+    console.log(`[AUTO-RESEARCH] Brave Search found ${sources.length} results`);
+    return sources;
+  } catch (err) {
+    console.warn('[AUTO-RESEARCH] Brave search failed:', err instanceof Error ? err.message : 'unknown');
+    return [];
+  }
+}
+
+// ========================================
+// SEARCH ENGINE 2: Bing Search HTML (fallback)
+// ========================================
+
+async function searchBing(query: string, maxResults = 5): Promise<AutoSource[]> {
+  const encodedQuery = encodeURIComponent(query);
+  const url = `https://www.bing.com/search?q=${encodedQuery}&setlang=es`;
+
+  try {
+    const res = await fetch(url, {
+      headers: SEARCH_HEADERS,
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) return [];
+
+    const html = await res.text();
+    const sources: AutoSource[] = [];
+
+    // Bing results are in <li class="b_algo"> blocks
+    // <a href="URL">TITLE</a>
+    // <div class="b_caption"><p>DESCRIPTION</p></div>
+    const bAlgoBlocks = html.split(/<li[^>]*class="b_algo"[^>]*>/i);
+
+    for (let i = 1; i < bAlgoBlocks.length && sources.length < maxResults; i++) {
+      const block = bAlgoBlocks[i];
+
+      // Extract URL from first <a> tag with href
+      const urlMatch = block.match(/<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>/i);
+      if (!urlMatch) continue;
+
+      let resultUrl = urlMatch[1];
+      // Skip Bing internal URLs
+      if (resultUrl.includes('bing.com') || resultUrl.includes('microsoft.com')) continue;
+
+      // Extract title from same <a> tag
+      const titleMatch = block.match(/<a[^>]*href="[^"]*"[^>]*>([\s\S]*?)<\/a>/i);
+      const title = titleMatch ? cleanSnippet(titleMatch[1]).substring(0, 200) : '';
+
+      // Extract snippet/description
+      const snippetMatch = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+      const snippet = snippetMatch ? cleanSnippet(snippetMatch[1]).substring(0, 200) : '';
+
+      if (resultUrl && title && title.length > 3) {
+        sources.push({
+          position: sources.length + 1,
+          url: resultUrl,
+          title,
+          snippet,
+        });
+      }
+    }
+
+    console.log(`[AUTO-RESEARCH] Bing Search found ${sources.length} results`);
+    return sources;
+  } catch (err) {
+    console.warn('[AUTO-RESEARCH] Bing search failed:', err instanceof Error ? err.message : 'unknown');
+    return [];
+  }
+}
+
+// ========================================
+// SEARCH ENGINE 3: DuckDuckGo HTML (last resort)
 // ========================================
 
 async function searchDuckDuckGo(query: string, maxResults = 5): Promise<AutoSource[]> {
-  const trimmed = query.trim();
-
-  // Enrich football queries
-  const footballTerms = ['futbol', 'futbol', 'soccer', 'partido', 'goles', 'liga', 'champions', 'libertadores', 'premier', 'la liga', 'bundesliga', 'serie a', 'messi', 'ronaldo', 'mbappe', 'haaland', 'balon de oro', 'mundial', 'seleccion', 'goleador', 'marcador', 'posiciones', 'clasificacion', 'transferencia', 'fichaje', 'convocatoria', 'tactica', 'formacion'];
-  const isFootball = footballTerms.some(t => trimmed.toLowerCase().includes(t));
-
-  // Enrich nutrition queries
-  const nutritionTerms = ['nutricion', 'dieta', 'proteina', 'caloria', 'macronutriente', 'suplemento', 'creatina', 'vitamina', 'meal prep', 'alimentacion', 'hidratacion', 'ayuno intermitente', 'keto', 'whey', 'bcaa'];
-  const isNutrition = nutritionTerms.some(t => trimmed.toLowerCase().includes(t));
-
-  // Enrich physiology queries
-  const physioTerms = ['fisiologia', 'musculo', 'lesion', 'recuperacion', 'rehabilitacion', 'estiramiento', 'vo2', 'metabolismo', 'testosterona', 'cortisol', 'frecuencia cardiaca', 'anabolismo', 'catabolismo', 'tendinitis', 'articulacion'];
-  const isPhysio = physioTerms.some(t => trimmed.toLowerCase().includes(t));
-
-  let enrichedQuery = trimmed;
-  if (isFootball) {
-    enrichedQuery = `${trimmed} (transfermarkt OR flashscore OR sofascore OR marca OR goal OR espn)`;
-  } else if (isNutrition) {
-    enrichedQuery = `${trimmed} (nutricion deportiva OR ISSN OR academia de nutricion)`;
-  } else if (isPhysio) {
-    enrichedQuery = `${trimmed} (fisiologia del ejercicio OR medicina deportiva OR PubMed)`;
-  }
-
-  const encodedQuery = encodeURIComponent(enrichedQuery);
-  // Use html.duckduckgo.com (Lite has CAPTCHA blocking server requests)
+  const encodedQuery = encodeURIComponent(query);
   const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodedQuery}`;
 
   try {
     const ddgRes = await fetch(ddgUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'es,es-419,en;q=0.5',
-      },
+      headers: SEARCH_HEADERS,
       signal: AbortSignal.timeout(8000),
     });
 
@@ -188,32 +303,22 @@ async function searchDuckDuckGo(query: string, maxResults = 5): Promise<AutoSour
     const html = await ddgRes.text();
     const sources: AutoSource[] = [];
 
-    // Parse DDG HTML result structure:
-    // <div class="result results_links ... web-result"> (skip result--ad)
-    // <a class="result__a" href="//duckduckgo.com/l/?uddg=ENCODED_URL">
-    // <a class="result__snippet">SNIPPET TEXT</a>
-
-    // Split by web-result blocks (exclude ads)
     const resultBlocks = html.split(/<div class="result results_links[\s\S]*?web-result\s*"/i);
 
     for (let i = 1; i < resultBlocks.length && sources.length < maxResults; i++) {
       const block = resultBlocks[i];
 
-      // Extract URL from result__a link
       const urlMatch = block.match(/class="result__a"[^>]*href="(?:\/\/|https?:\/\/)duckduckgo\.com\/l\/\?uddg=([^"&]+)/i);
       if (!urlMatch) continue;
 
       let url = urlMatch[1];
       try { url = decodeURIComponent(url); } catch {}
 
-      // Skip DDG internal URLs and ads
       if (!url || url.includes('duckduckgo.com') || url.includes('bing.com') || url.includes('microsoft.com')) continue;
 
-      // Extract title from result__a link text
       const titleMatch = block.match(/class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
       const title = titleMatch ? cleanSnippet(titleMatch[1]) : '';
 
-      // Extract snippet from result__snippet
       const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i);
       const snippet = snippetMatch ? cleanSnippet(snippetMatch[1]).substring(0, 200) : '';
 
@@ -227,15 +332,16 @@ async function searchDuckDuckGo(query: string, maxResults = 5): Promise<AutoSour
       }
     }
 
+    console.log(`[AUTO-RESEARCH] DuckDuckGo found ${sources.length} results`);
     return sources;
   } catch (err) {
-    console.warn('[AUTO-RESEARCH] DDG HTML search failed:', err instanceof Error ? err.message : 'unknown');
+    console.warn('[AUTO-RESEARCH] DuckDuckGo search failed:', err instanceof Error ? err.message : 'unknown');
     return [];
   }
 }
 
 // ========================================
-// STEP 2: Fetch page content
+// STEP: Fetch page content
 // ========================================
 
 async function fetchPageContent(url: string, timeoutMs = 5000): Promise<{ text: string; success: boolean }> {
@@ -243,7 +349,7 @@ async function fetchPageContent(url: string, timeoutMs = 5000): Promise<{ text: 
     const res = await fetch(url, {
       signal: AbortSignal.timeout(timeoutMs),
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'es,es-419,en;q=0.5',
       },
@@ -260,49 +366,70 @@ async function fetchPageContent(url: string, timeoutMs = 5000): Promise<{ text: 
 }
 
 // ========================================
-// STEP 3: Wikipedia search + summary (more reliable than page/summary)
+// STEP: Wikipedia search + summary
 // ========================================
 
 async function fetchWikipedia(query: string): Promise<{ text: string; url: string } | null> {
   try {
-    // Step 1: Search Wikipedia to find the best article
-    const searchUrl = `https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query.trim())}&format=json&srlimit=1&utf8=1`;
-    const searchRes = await fetch(searchUrl, { signal: AbortSignal.timeout(4000) });
-    if (!searchRes.ok) return null;
+    // Search Spanish Wikipedia first, fallback to English
+    const searches = [
+      `https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query.trim())}&format=json&srlimit=1&utf8=1`,
+      `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query.trim())}&format=json&srlimit=1&utf8=1`,
+    ];
 
-    const searchData = await searchRes.json();
-    const searchResults = searchData?.query?.search;
-    if (!searchResults || searchResults.length === 0) return null;
+    let pageTitle = '';
+    let snippet = '';
+    let langPrefix = 'es';
 
-    const pageTitle = searchResults[0].title;
-    const snippet = searchResults[0].snippet?.replace(/<[^>]+>/g, '') || '';
-
-    // Step 2: Get article summary/extract
-    const summaryUrl = `https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`;
-    const summaryRes = await fetch(summaryUrl, { signal: AbortSignal.timeout(4000) });
-    if (!summaryRes.ok) {
-      // Fallback: use search snippet + page URL
-      return {
-        text: snippet.substring(0, 1500),
-        url: `https://es.wikipedia.org/wiki/${encodeURIComponent(pageTitle.replace(/ /g, '_'))}`,
-      };
+    for (let si = 0; si < searches.length; si++) {
+      try {
+        const searchRes = await fetch(searches[si], { signal: AbortSignal.timeout(4000) });
+        if (!searchRes.ok) continue;
+        const searchData = await searchRes.json();
+        const searchResults = searchData?.query?.search;
+        if (searchResults && searchResults.length > 0) {
+          pageTitle = searchResults[0].title;
+          snippet = searchResults[0].snippet?.replace(/<[^>]+>/g, '') || '';
+          langPrefix = si === 0 ? 'es' : 'en';
+          break;
+        }
+      } catch {}
     }
 
-    const summaryData = await summaryRes.json();
-    const extract = summaryData.extract;
-    if (!extract || extract.length < 50) return null;
+    if (!pageTitle) return null;
 
-    return {
-      text: extract.substring(0, 1500),
-      url: summaryData.content_urls?.desktop?.page || `https://es.wikipedia.org/wiki/${encodeURIComponent(pageTitle.replace(/ /g, '_'))}`,
-    };
+    // Get article summary
+    const summaryUrl = `https://${langPrefix}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`;
+    try {
+      const summaryRes = await fetch(summaryUrl, { signal: AbortSignal.timeout(4000) });
+      if (!summaryRes.ok) {
+        return {
+          text: snippet.substring(0, 1500),
+          url: `https://${langPrefix}.wikipedia.org/wiki/${encodeURIComponent(pageTitle.replace(/ /g, '_'))}`,
+        };
+      }
+
+      const summaryData = await summaryRes.json();
+      const extract = summaryData.extract;
+      if (!extract || extract.length < 50) return null;
+
+      return {
+        text: extract.substring(0, 1500),
+        url: summaryData.content_urls?.desktop?.page || `https://${langPrefix}.wikipedia.org/wiki/${encodeURIComponent(pageTitle.replace(/ /g, '_'))}`,
+      };
+    } catch {
+      return {
+        text: snippet.substring(0, 1500),
+        url: `https://${langPrefix}.wikipedia.org/wiki/${encodeURIComponent(pageTitle.replace(/ /g, '_'))}`,
+      };
+    }
   } catch {
     return null;
   }
 }
 
 // ========================================
-// MAIN: Perform auto-research
+// MAIN: Perform auto-research with multi-engine fallback
 // Returns context block + sources for injection into LLM prompt
 // ========================================
 
@@ -313,14 +440,41 @@ export async function performAutoResearch(message: string): Promise<AutoResearch
 
   const trimmed = message.trim();
 
-  // Run DuckDuckGo HTML search AND Wikipedia in parallel
-  const [ddgSources, wikiResult] = await Promise.all([
+  // Run all search engines AND Wikipedia in parallel (race for speed)
+  console.log('[AUTO-RESEARCH] Starting multi-engine search for:', trimmed.substring(0, 60));
+
+  const [braveSources, bingSources, ddgSources, wikiResult] = await Promise.all([
+    searchBrave(trimmed, 5),
+    searchBing(trimmed, 5),
     searchDuckDuckGo(trimmed, 5),
     fetchWikipedia(trimmed),
   ]);
 
-  // Fetch content from top 3 DDG sources in parallel
-  const topSources = ddgSources.slice(0, 3);
+  // Merge results: prefer Brave > Bing > DDG, deduplicate by URL domain
+  const seenDomains = new Set<string>();
+  const mergedSources: AutoSource[] = [];
+
+  function addSources(sources: AutoSource[]) {
+    for (const src of sources) {
+      try {
+        const domain = new URL(src.url).hostname.replace(/^www\./, '');
+        if (seenDomains.has(domain)) continue;
+        seenDomains.add(domain);
+        mergedSources.push(src);
+      } catch {
+        // Invalid URL, skip
+      }
+    }
+  }
+
+  addSources(braveSources);
+  addSources(bingSources);
+  addSources(ddgSources);
+
+  console.log(`[AUTO-RESEARCH] Merged ${mergedSources.length} unique sources (Brave:${braveSources.length} Bing:${bingSources.length} DDG:${ddgSources.length})`);
+
+  // Fetch content from top 3 merged sources in parallel
+  const topSources = mergedSources.slice(0, 3);
   const fetchResults = await Promise.all(
     topSources.map(async (src) => {
       const { text, success } = await fetchPageContent(src.url);
@@ -343,8 +497,8 @@ export async function performAutoResearch(message: string): Promise<AutoResearch
     });
   }
 
-  // Web sources
-  let sourceIndex = wikiResult ? 1 : 1;
+  // Web sources with fetched content
+  let sourceIndex = 1;
   for (const src of fetchResults) {
     if (src.contentFetched) {
       parts.push(`FUENTE [${sourceIndex}]: ${src.title}\n  URL: ${src.url}\n  ${src.content}`);
@@ -358,8 +512,8 @@ export async function performAutoResearch(message: string): Promise<AutoResearch
     }
   }
 
-  // Add remaining DDG sources as URL-only references
-  for (const src of ddgSources.slice(3)) {
+  // Add remaining merged sources as URL-only references
+  for (const src of mergedSources.slice(3)) {
     parts.push(`FUENTE [${sourceIndex}]: ${src.title}\n  URL: ${src.url}\n  Resumen: ${src.snippet}`);
     allSources.push({
       position: sourceIndex,
@@ -371,6 +525,7 @@ export async function performAutoResearch(message: string): Promise<AutoResearch
   }
 
   if (parts.length === 0) {
+    console.log('[AUTO-RESEARCH] No sources found from any engine');
     return { needed: false, sources: [], contextBlock: '' };
   }
 
