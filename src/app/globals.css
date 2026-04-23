@@ -245,7 +245,6 @@ button,
   overflow-y: visible;
   max-width: 100%;
   min-width: 0;
-  contain: inline-size;
 }
 
 [data-msg-id] > div {
@@ -280,7 +279,6 @@ button,
   overflow-x: hidden !important;
   max-width: 100% !important;
   min-width: 0;
-  contain: layout;
 }
 
 /* Global containment: prevent any child from expanding beyond viewport */

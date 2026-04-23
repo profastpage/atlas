@@ -3062,7 +3062,7 @@ export default function AtlasApp() {
       {/* ===== CHAT AREA ===== */}
       <div
         ref={chatContainerRef}
-        className="chat-messages-area flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3 space-y-3"
+        className="chat-messages-area relative z-[1] flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3 space-y-3"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {messages.length === 0 && !isLoading && (
