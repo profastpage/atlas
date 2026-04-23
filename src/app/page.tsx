@@ -3740,7 +3740,7 @@ export default function AtlasApp() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="flex items-end gap-1.5 max-w-3xl mx-auto relative atlas-input-glow rounded-2xl border border-transparent">
+        <form onSubmit={handleSubmit} className="flex items-center gap-1.5 max-w-3xl mx-auto relative atlas-input-glow rounded-2xl border border-transparent">
           {/* Hidden file inputs — one per type */}
           <input ref={fileInputRef} type="file" accept=".pdf,.txt,.jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,application/pdf,text/plain" onChange={handleFileUpload} className="hidden" />
           <input ref={fileInputImageRef} type="file" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp" onChange={handleFileUpload} className="hidden" />
@@ -3748,13 +3748,13 @@ export default function AtlasApp() {
           <input ref={fileInputTxtRef} type="file" accept=".txt,text/plain" onChange={handleFileUpload} className="hidden" />
 
           {/* ===== Integrated input container — glassmorphism ===== */}
-          <div className={`flex-1 flex items-end atlas-glass-input rounded-[22px] transition-all ${
+          <div className={`flex-1 flex items-center atlas-glass-input rounded-[22px] transition-all ${
             isListening && !isLocked
               ? '!border-red-500/40 ring-1 ring-red-500/20'
               : ''
           }`}>
             {/* Left: Unified "+" button — MOBILE shows mega-dropdown, DESKTOP shows individual buttons */}
-            <div className="flex items-center shrink-0 p-1 pl-1.5 self-end">
+            <div className="flex items-center shrink-0 p-1 pl-1.5">
               {/* MOBILE: Single "+" button with mega-dropdown */}
               <div className="relative sm:hidden" data-actions-menu>
                 <button
@@ -3894,21 +3894,8 @@ export default function AtlasApp() {
               disabled={isLoading || isStreaming}
             />
 
-            {/* Right: Unified Send/Mic button inside container */}
-            {!isLocked ? (
-              <button
-                type="submit"
-                disabled={(!inputValue.trim() && !imageBase64 && !documentText) || isLoading || isStreaming || isListening}
-                className={`w-9 h-9 m-1 mr-1 rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 ${
-                  inputValue.trim() || imageBase64 || documentText
-                    ? 'bg-[#047857] hover:bg-[#059669] shadow-lg shadow-emerald-900/30'
-                    : 'bg-white/5'
-                } disabled:opacity-30`}
-                aria-label="Enviar"
-              >
-                <Send className="w-[18px] h-[18px] text-white" />
-              </button>
-            ) : (
+            {/* Right: Dynamic Send / Mic button — single position, animated swap */}
+            {isLocked ? (
               <motion.button
                 key="locked-send-inline"
                 type="button"
@@ -3922,75 +3909,83 @@ export default function AtlasApp() {
                 onPointerUp={handleLockedPointerUp}
                 onPointerCancel={handleLockedPointerUp}
                 disabled={isLoading || isStreaming}
-                className={`w-9 h-9 m-1 mr-1 rounded-full shrink-0 select-none touch-none transition-all active:scale-90 ${
+                className={`w-9 h-9 m-1 mr-1 rounded-full shrink-0 select-none touch-none flex items-center justify-center transition-all active:scale-90 ${
                   isSwipeCanceling ? 'bg-red-500' : 'bg-[#047857] hover:bg-[#059669]'
                 }`}
                 aria-label="Enviar mensaje de voz"
               >
                 {isSwipeCanceling ? <X className="w-[18px] h-[18px] text-white" /> : <Send className="w-[18px] h-[18px] text-white" />}
               </motion.button>
+            ) : (
+              <AnimatePresence mode="wait" initial={false}>
+                {(inputValue.trim() || imageBase64 || documentText) ? (
+                  <motion.button
+                    key="send-btn"
+                    type="submit"
+                    disabled={isLoading || isStreaming || isListening}
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0, opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="w-9 h-9 m-1 mr-1 rounded-full shrink-0 flex items-center justify-center bg-[#047857] hover:bg-[#059669] shadow-lg shadow-emerald-900/30 transition-all active:scale-90 disabled:opacity-30"
+                    aria-label="Enviar"
+                  >
+                    <Send className="w-[18px] h-[18px] text-white" />
+                  </motion.button>
+                ) : speechSupported ? (
+                  <motion.button
+                    key="mic-btn"
+                    type="button"
+                    onTouchStart={handleMicTouchStart}
+                    onTouchMove={handleMicTouchMove}
+                    onTouchEnd={handleMicTouchEnd}
+                    onTouchCancel={handleMicTouchEnd}
+                    onPointerDown={handleMicPointerDown}
+                    onPointerMove={handleMicPointerMove}
+                    onPointerUp={handleMicPointerUp}
+                    onPointerCancel={handleMicPointerUp}
+                    onContextMenu={(e) => e.preventDefault()}
+                    disabled={isLoading || isStreaming || isAnalyzingDocument}
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: isListening ? 1.1 : 1, opacity: 1 }}
+                    exit={{ scale: 0, opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className={`w-9 h-9 m-1 mr-1 rounded-full shrink-0 select-none touch-none flex items-center justify-center relative transition-all duration-200 active:scale-90 ${
+                      isListening
+                        ? 'bg-red-500 hover:bg-red-400 shadow-lg shadow-red-500/30'
+                        : 'bg-emerald-600 hover:bg-emerald-500 shadow-md shadow-emerald-500/20'
+                    }`}
+                    aria-label="Mantener presionado para hablar"
+                  >
+                    {isListening ? (
+                      <>
+                        {/* Pulse wave rings */}
+                        <span className="absolute w-full h-full rounded-full bg-red-500/20 animate-ping" />
+                        <span className="absolute w-full h-full rounded-full bg-red-500/10 animate-ping [animation-delay:300ms]" />
+                        <Mic className="w-4 h-4 text-white relative z-10" />
+                      </>
+                    ) : (
+                      <Mic className="w-4 h-4 text-white" />
+                    )}
+                  </motion.button>
+                ) : (
+                  <motion.button
+                    key="send-disabled-btn"
+                    type="submit"
+                    disabled={true}
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0, opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="w-9 h-9 m-1 mr-1 rounded-full shrink-0 flex items-center justify-center bg-white/5 opacity-30 cursor-default"
+                    aria-label="Enviar"
+                  >
+                    <Send className="w-[18px] h-[18px] text-white" />
+                  </motion.button>
+                )}
+              </AnimatePresence>
             )}
           </div>
-
-          {/* Mic button — compact circle INSIDE form, only on mobile */}
-          {speechSupported && !isLocked && (
-            <button
-              key="mic-compact"
-              type="button"
-              onTouchStart={handleMicTouchStart}
-              onTouchMove={handleMicTouchMove}
-              onTouchEnd={handleMicTouchEnd}
-              onTouchCancel={handleMicTouchEnd}
-              onPointerDown={handleMicPointerDown}
-              onPointerMove={handleMicPointerMove}
-              onPointerUp={handleMicPointerUp}
-              onPointerCancel={handleMicPointerUp}
-              onContextMenu={(e) => e.preventDefault()}
-              disabled={isLoading || isStreaming || isAnalyzingDocument}
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 select-none touch-none ${
-                isListening
-                  ? 'bg-red-500 hover:bg-red-400 shadow-lg shadow-red-500/30 scale-110'
-                  : 'bg-emerald-600 hover:bg-emerald-500 shadow-md shadow-emerald-500/20'
-              }`}
-              aria-label="Mantener presionado para hablar"
-            >
-              {isListening ? (
-                <span className="relative flex h-4 w-4">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                  <Mic className="relative inline-flex h-4 w-4 text-white" />
-                </span>
-              ) : (
-                <Mic className="w-4 h-4 text-white" />
-              )}
-            </button>
-          )}
-
-          {/* Locked mic state — Send button with swipe-cancel */}
-          {speechSupported && isLocked && (
-            <motion.button
-              key="mic-locked-compact"
-              type="button"
-              onClick={handleLockedSend}
-              onTouchStart={handleLockedTouchStart}
-              onTouchMove={handleLockedTouchMove}
-              onTouchEnd={handleLockedTouchEnd}
-              onTouchCancel={handleLockedTouchEnd}
-              onPointerDown={handleLockedPointerDown}
-              onPointerMove={handleLockedPointerMove}
-              onPointerUp={handleLockedPointerUp}
-              onPointerCancel={handleLockedPointerUp}
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: isSwipeCanceling ? 1.1 : 1, opacity: 1 }}
-              transition={{ type: 'spring', damping: 15, stiffness: 300 }}
-              disabled={isLoading || isStreaming}
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 select-none touch-none ${
-                isSwipeCanceling ? 'bg-red-500 shadow-red-500/30' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/30'
-              }`}
-              aria-label="Enviar voz (desliza para cancelar)"
-            >
-              {isSwipeCanceling ? <X className="w-4 h-4 text-white" /> : <Send className="w-4 h-4 text-white" />}
-            </motion.button>
-          )}
         </form>
 
         {/* Document / Image attached chip */}
