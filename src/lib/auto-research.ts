@@ -679,8 +679,8 @@ export async function performAutoResearch(message: string): Promise<AutoResearch
 
   console.log(`[AUTO-RESEARCH] Merged ${mergedSources.length} unique sources (SearXNG:${searxngResults.length} DDG-Instant:${ddgInstantResults.length} DDG-Lite:${ddgLiteResults.length} DDG-HTML:${ddgHtmlResults.length} Brave:${braveResults.length} Bing:${bingResults.length})`);
 
-  // ---- PHASE 4: Fetch content from top 3 merged sources in parallel ----
-  const topSources = mergedSources.slice(0, 3);
+  // ---- PHASE 4: Fetch content from top 2 merged sources in parallel (max 2 sources to avoid saturation) ----
+  const topSources = mergedSources.slice(0, 2);
   const fetchResults = await Promise.all(
     topSources.map(async (src) => {
       const { text, success } = await fetchPageContent(src.url);
@@ -718,17 +718,7 @@ export async function performAutoResearch(message: string): Promise<AutoResearch
     }
   }
 
-  // Add remaining merged sources as URL-only references
-  for (const src of mergedSources.slice(3)) {
-    parts.push(`FUENTE [${sourceIndex}]: ${src.title}\n  URL: ${src.url}\n  Resumen: ${src.snippet}`);
-    allSources.push({
-      position: sourceIndex,
-      url: src.url,
-      title: src.title,
-      snippet: src.snippet,
-    });
-    sourceIndex++;
-  }
+  // NO additional sources — max 2 precise sources to avoid saturation
 
   if (parts.length === 0) {
     console.log('[AUTO-RESEARCH] No sources found from any engine');
@@ -739,12 +729,14 @@ export async function performAutoResearch(message: string): Promise<AutoResearch
 Las siguientes fuentes fueron encontradas mediante busqueda web para responder la pregunta del usuario.
 REGLAS CRITICAS:
 1. USA la informacion de estas fuentes como base PRINCIPAL para tu respuesta.
-2. Cita las fuentes usando [W] para Wikipedia o [1], [2], [3] para web.
+2. Cita las fuentes usando [W] para Wikipedia o [1], [2] para web.
 3. Si la informacion de las fuentes contradice tu conocimiento propio, PRIORIZA las fuentes.
 4. NUNCA inventes datos. Si las fuentes no cubren algo, di que no tienes esa informacion exacta.
-5. Al final de tu respuesta, incluye una linea con "Fuentes: [W] Wikipedia, [1] titulo, [2] titulo..."
+5. Al final de tu respuesta, incluye UNA SOLA linea: "Fuente: [W](url) Wikipedia" o "Fuentes: [1](url) titulo, [2](url) titulo" — MAXIMO 2 fuentes.
 6. Responde en espanol, con formato de vinetas y negritas como siempre.
-7. Incluye los enlaces reales de las fuentes en tu respuesta final como hipervinculos.
+7. NO repitas fuentes que ya citaste en respuestas anteriores del mismo chat.
+8. Solo cita la fuente MAS RELEVANTE de donde extrajiste cada dato. No copies la misma fuente varias veces.
+9. Manten tu respuesta CORTA y directa. Las fuentes son para verificar, no para alargar la respuesta.
 
 ${parts.join('\n\n---\n')}
 

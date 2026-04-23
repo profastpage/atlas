@@ -264,6 +264,41 @@ export default function AtlasApp() {
       if (stored) setFeedbackMap(JSON.parse(stored));
     } catch {}
   }, []);
+
+  // Send feedback to server for development analytics
+  const handleFeedback = async (msgId: string, type: 'up' | 'down') => {
+    const current = feedbackMap[msgId];
+    const next = current === type ? undefined : type;
+
+    // Update local state
+    setFeedbackMap(prev => {
+      const updated = { ...prev };
+      if (next) updated[msgId] = next; else delete updated[msgId];
+      return updated;
+    });
+    try {
+      const stored = JSON.parse(localStorage.getItem('atlas_feedback') || '{}');
+      if (next) stored[msgId] = next; else delete stored[msgId];
+      localStorage.setItem('atlas_feedback', JSON.stringify(stored));
+    } catch {}
+
+    // Send to server (fire-and-forget, non-blocking)
+    try {
+      const msgContent = messages.find(m => m.id === msgId)?.content || '';
+      await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messageId: msgId,
+          type: next || type,
+          content: msgContent.substring(0, 500),
+          sessionId,
+        }),
+      });
+    } catch {
+      // Silent fail — local storage already updated
+    }
+  };
   const sendingVoiceRef = useRef(false); // Prevents double-send of voice messages
   const lastFinalResultTimeRef = useRef(0); // Debounces final results to prevent rapid duplicate sends
 
@@ -3268,20 +3303,7 @@ export default function AtlasApp() {
 
                     {/* Thumbs Up */}
                     <button
-                      onClick={() => {
-                        const current = feedbackMap[msg.id];
-                        const next = current === 'up' ? undefined : 'up';
-                        setFeedbackMap(prev => {
-                          const updated = { ...prev };
-                          if (next) updated[msg.id] = next; else delete updated[msg.id];
-                          return updated;
-                        });
-                        try {
-                          const stored = JSON.parse(localStorage.getItem('atlas_feedback') || '{}');
-                          if (next) stored[msg.id] = next; else delete stored[msg.id];
-                          localStorage.setItem('atlas_feedback', JSON.stringify(stored));
-                        } catch {}
-                      }}
+                      onClick={() => handleFeedback(msg.id, 'up')}
                       className={`p-1 rounded-lg transition-all active:scale-90 cursor-pointer select-none ${feedbackMap[msg.id] === 'up' ? 'text-emerald-400' : 'text-gray-400 hover:text-emerald-400 hover:bg-[#047857]/15'}`}
                       title="Buen respuesta"
                     >
@@ -3290,20 +3312,7 @@ export default function AtlasApp() {
 
                     {/* Thumbs Down */}
                     <button
-                      onClick={() => {
-                        const current = feedbackMap[msg.id];
-                        const next = current === 'down' ? undefined : 'down';
-                        setFeedbackMap(prev => {
-                          const updated = { ...prev };
-                          if (next) updated[msg.id] = next; else delete updated[msg.id];
-                          return updated;
-                        });
-                        try {
-                          const stored = JSON.parse(localStorage.getItem('atlas_feedback') || '{}');
-                          if (next) stored[msg.id] = next; else delete stored[msg.id];
-                          localStorage.setItem('atlas_feedback', JSON.stringify(stored));
-                        } catch {}
-                      }}
+                      onClick={() => handleFeedback(msg.id, 'down')}
                       className={`p-1 rounded-lg transition-all active:scale-90 cursor-pointer select-none ${feedbackMap[msg.id] === 'down' ? 'text-red-400' : 'text-gray-400 hover:text-red-400 hover:bg-red-500/10'}`}
                       title="Mala respuesta"
                     >
