@@ -231,26 +231,28 @@ export async function describeImage(base64DataUrl: string): Promise<string> {
 }
 
 // ========================================
-// IMAGE GENERATION — FLUX.schnell via OpenRouter
+// IMAGE GENERATION — FLUX.1 Schnell via Together AI
+// $0.003 per image — excellent quality
 // Returns base64 image data URL
 // ========================================
 
 const IMAGE_GEN_CONFIG = {
-  model: process.env.IMAGE_GEN_MODEL || 'black-ai/blackai-flux-1',
+  baseUrl: process.env.IMAGE_GEN_BASE_URL || 'https://api.together.xyz',
+  apiKey: process.env.IMAGE_GEN_API_KEY || '',
+  model: process.env.IMAGE_GEN_MODEL || 'black-forest-labs/FLUX.1-schnell',
 };
 
 export async function generateImage(prompt: string): Promise<string> {
-  const url = `${QWEN_CONFIG.baseUrl}/images/generations`;
+  const apiKey = IMAGE_GEN_CONFIG.apiKey;
+  const baseUrl = IMAGE_GEN_CONFIG.baseUrl;
 
-  console.log('[IMAGE_GEN] Generating with:', IMAGE_GEN_CONFIG.model);
+  console.log('[IMAGE_GEN] Generating with:', IMAGE_GEN_CONFIG.model, 'via Together AI');
 
-  const response = await fetch(url, {
+  const response = await fetch(`${baseUrl}/v1/images/generations`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${QWEN_CONFIG.apiKey}`,
-      'HTTP-Referer': 'https://atlas-9mv.pages.dev',
-      'X-Title': 'Atlas Coach — Image Generation',
+      'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: IMAGE_GEN_CONFIG.model,

@@ -174,6 +174,9 @@ export default function AtlasApp() {
     };
   }, [tenantId, isAuthenticated]);
 
+  // ---- Unified Actions Menu (mobile) ----
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
+
   // ---- Expand State ----
   const [expandingId, setExpandingId] = useState<string | null>(null);
 
@@ -239,18 +242,19 @@ export default function AtlasApp() {
     }
   }, [inputValue]);
 
-  // Click-outside handler for clip dropdown
+  // Click-outside handler for clip dropdown and actions menu
   useEffect(() => {
-    if (!showClipDropdown) return;
+    if (!showClipDropdown && !showActionsMenu) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest('[data-clip-dropdown]')) {
+      if (!target.closest('[data-clip-dropdown]') && !target.closest('[data-actions-menu]')) {
         setShowClipDropdown(false);
+        setShowActionsMenu(false);
       }
     };
     document.addEventListener('click', handler);
     return () => document.removeEventListener('click', handler);
-  }, [showClipDropdown]);
+  }, [showClipDropdown, showActionsMenu]);
 
   // Load feedback from localStorage on mount
   useEffect(() => {
@@ -2624,7 +2628,7 @@ export default function AtlasApp() {
       />
 
       {/* ===== HEADER ===== */}
-      <header className="flex items-center justify-between px-3 sm:px-4 py-1.5 sm:py-2 bg-[#161616] border-b border-gray-700/40 z-20 shrink-0" style={{ paddingTop: 'max(0.375rem, env(safe-area-inset-top, 0px))' }}>
+      <header className="flex items-center justify-between px-2.5 sm:px-4 py-1 sm:py-2 bg-[#161616] border-b border-gray-700/40 z-20 shrink-0" style={{ paddingTop: 'max(0.25rem, env(safe-area-inset-top, 0px))' }}>
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={() => setShowSessions(!showSessions)}
@@ -3202,7 +3206,7 @@ export default function AtlasApp() {
       </div>
 
       {/* ===== INPUT AREA ===== */}
-      <div className="shrink-0 bg-[#0f0f0f] px-2 sm:px-3 pt-1 pb-[max(0.375rem,env(safe-area-inset-bottom))] z-10 relative">
+      <div className="shrink-0 bg-[#0f0f0f] px-1.5 sm:px-3 pt-0.5 pb-[max(0.25rem,env(safe-area-inset-bottom))] z-10 relative">
         {/* Remaining responses bar — guests AND registered free users */}
         {remainingResponses > 0 && hasActivePlan !== true && !checkingPlan && (
           <div className="text-center mb-1">
@@ -3342,146 +3346,127 @@ export default function AtlasApp() {
 
         <form onSubmit={handleSubmit} className="flex items-end gap-1.5 max-w-3xl mx-auto relative">
           {/* Hidden file inputs — one per type */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.txt,.jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,application/pdf,text/plain"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
-          <input
-            ref={fileInputImageRef}
-            type="file"
-            accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
-          <input
-            ref={fileInputPdfRef}
-            type="file"
-            accept=".pdf,application/pdf"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
-          <input
-            ref={fileInputTxtRef}
-            type="file"
-            accept=".txt,text/plain"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
+          <input ref={fileInputRef} type="file" accept=".pdf,.txt,.jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,application/pdf,text/plain" onChange={handleFileUpload} className="hidden" />
+          <input ref={fileInputImageRef} type="file" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp" onChange={handleFileUpload} className="hidden" />
+          <input ref={fileInputPdfRef} type="file" accept=".pdf,application/pdf" onChange={handleFileUpload} className="hidden" />
+          <input ref={fileInputTxtRef} type="file" accept=".txt,text/plain" onChange={handleFileUpload} className="hidden" />
 
           {/* ===== Integrated input container ===== */}
-          <div className={`flex-1 flex items-end bg-[#1a1a1a] rounded-[22px] border transition-all min-h-[56px] sm:min-h-[60px] ${
-            isListening && !isLocked 
-              ? 'border-red-500/40 ring-1 ring-red-500/20' 
+          <div className={`flex-1 flex items-end bg-[#1a1a1a] rounded-[22px] border transition-all ${
+            isListening && !isLocked
+              ? 'border-red-500/40 ring-1 ring-red-500/20'
               : 'border-gray-800/40'
           }`}>
-            {/* Left: Action buttons inside container */}
-            <div className="flex items-center shrink-0 gap-0.5 p-1 pl-1.5 self-end">
-              {/* Paperclip — Document Upload Dropdown */}
-              <div className="relative" data-clip-dropdown>
+            {/* Left: Unified "+" button — MOBILE shows mega-dropdown, DESKTOP shows individual buttons */}
+            <div className="flex items-center shrink-0 p-1 pl-1.5 self-end">
+              {/* MOBILE: Single "+" button with mega-dropdown */}
+              <div className="relative sm:hidden" data-actions-menu>
                 <button
                   type="button"
-                  onClick={() => {
-                    trackActionButton({ action: 'attach' });
-                    setShowClipDropdown(prev => !prev);
-                  }}
+                  onClick={() => setShowActionsMenu(prev => !prev)}
                   disabled={isLoading || isStreaming || isAnalyzingDocument}
-                  className={`p-1.5 rounded-full transition-all active:scale-90 disabled:opacity-30 ${
-                    isAnalyzingDocument
+                  className={`p-2 rounded-full transition-all active:scale-90 disabled:opacity-30 ${
+                    isAnalyzingDocument || documentText || imageBase64
                       ? 'bg-blue-500/15'
-                      : documentText || imageBase64
-                        ? 'bg-blue-500/10'
-                        : 'hover:bg-gray-700/50'
+                      : 'bg-gray-800/60'
                   }`}
-                  aria-label="Adjuntar archivo (PDF, TXT, Imagen)"
-                  title="Adjuntar archivo"
+                  aria-label="Mas opciones"
                 >
                   {isAnalyzingDocument ? (
-                    <Loader2 className="w-[18px] h-[18px] text-blue-400 animate-spin" />
-                  ) : documentText || imageBase64 ? (
-                    <FileText className="w-[18px] h-[18px] text-blue-400" />
+                    <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
                   ) : (
-                    <Paperclip className="w-[18px] h-[18px] text-gray-500 hover:text-gray-300" />
+                    <Plus className="w-5 h-5 text-gray-400" />
                   )}
                 </button>
-                {showClipDropdown && (
-                  <div className="absolute bottom-full left-0 mb-2 bg-[#252525] border border-gray-700/60 rounded-xl shadow-xl z-50 py-1 min-w-[140px]">
-                    <button
-                      type="button"
-                      onClick={() => { setShowClipDropdown(false); fileInputImageRef.current?.click(); }}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors"
-                    >
-                      <Image className="w-3.5 h-3.5 text-purple-400" />
-                      <span>Imagen</span>
+                {showActionsMenu && (
+                  <div className="absolute bottom-full left-0 mb-2 bg-[#252525] border border-gray-700/60 rounded-xl shadow-xl z-50 py-1 min-w-[160px]">
+                    {/* Attach image */}
+                    <button type="button" onClick={() => { setShowActionsMenu(false); fileInputImageRef.current?.click(); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                      <Image className="w-4 h-4 text-purple-400" /><span>Imagen</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => { setShowClipDropdown(false); fileInputPdfRef.current?.click(); }}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors"
-                    >
-                      <FileText className="w-3.5 h-3.5 text-blue-400" />
-                      <span>PDF</span>
+                    {/* Attach PDF */}
+                    <button type="button" onClick={() => { setShowActionsMenu(false); fileInputPdfRef.current?.click(); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                      <FileText className="w-4 h-4 text-blue-400" /><span>PDF</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => { setShowClipDropdown(false); fileInputTxtRef.current?.click(); }}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors"
-                    >
-                      <Pencil className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Texto</span>
+                    {/* Attach text */}
+                    <button type="button" onClick={() => { setShowActionsMenu(false); fileInputTxtRef.current?.click(); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                      <Pencil className="w-4 h-4 text-emerald-400" /><span>Texto</span>
+                    </button>
+                    {/* Divider */}
+                    <div className="h-px bg-gray-700/40 my-1 mx-2" />
+                    {/* Generate image */}
+                    {(IMAGE_LIMITS[userPlanType?.toLowerCase()] > 0 || userPlanType?.startsWith('trial_') || hasPaidExtraImages) && (
+                      <button type="button" onClick={() => { setShowActionsMenu(false); handleGenerateImage(); }} disabled={isGeneratingImage || !inputValue.trim()} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors disabled:opacity-30">
+                        {isGeneratingImage ? <Loader2 className="w-4 h-4 text-purple-400 animate-spin" /> : <Sparkles className="w-4 h-4 text-purple-400" />}<span>Generar imagen</span>
+                      </button>
+                    )}
+                    {/* Suggestions */}
+                    {suggestions.length > 0 && !isLoading && !isStreaming && !isLocked && (
+                      <button type="button" onClick={() => { setShowActionsMenu(false); setShowSuggestionsModal(true); }} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                        <Wand2 className="w-4 h-4 text-amber-400" /><span>Sugerencias</span>
+                      </button>
+                    )}
+                    {/* Web research */}
+                    <button type="button" onClick={() => { setShowActionsMenu(false); handleSourcesSearch(); }} disabled={isLoading || isStreaming || (!inputValue.trim() && !lastUserMsgForSug)} className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors disabled:opacity-30">
+                      {sourcesLoading ? <Loader2 className="w-4 h-4 text-blue-400 animate-spin" /> : <Globe className="w-4 h-4 text-blue-400" />}<span>Investigar</span>
                     </button>
                   </div>
                 )}
               </div>
 
-              {/* Image Generation — Pro/Executive only */}
-              {(IMAGE_LIMITS[userPlanType?.toLowerCase()] > 0 || userPlanType?.startsWith('trial_') || hasPaidExtraImages) && (
-                <button
-                  type="button"
-                  onClick={handleGenerateImage}
-                  disabled={isLoading || isStreaming || isGeneratingImage || !inputValue.trim()}
-                  className="p-1.5 rounded-full hover:bg-purple-500/10 transition-all active:scale-90 shrink-0 disabled:opacity-30"
-                  aria-label="Generar imagen con IA"
-                  title="Generar imagen"
-                >
-                  {isGeneratingImage ? (
-                    <Loader2 className="w-[18px] h-[18px] text-purple-400 animate-spin" />
-                  ) : (
-                    <Image className="w-[18px] h-[18px] text-purple-400" />
+              {/* DESKTOP: Individual buttons (hidden on mobile) */}
+              <div className="hidden sm:flex items-center gap-0.5">
+                {/* Paperclip — Document Upload Dropdown */}
+                <div className="relative" data-clip-dropdown>
+                  <button
+                    type="button"
+                    onClick={() => { trackActionButton({ action: 'attach' }); setShowClipDropdown(prev => !prev); }}
+                    disabled={isLoading || isStreaming || isAnalyzingDocument}
+                    className={`p-1.5 rounded-full transition-all active:scale-90 disabled:opacity-30 ${
+                      isAnalyzingDocument ? 'bg-blue-500/15' : documentText || imageBase64 ? 'bg-blue-500/10' : 'hover:bg-gray-700/50'
+                    }`}
+                    aria-label="Adjuntar archivo"
+                    title="Adjuntar archivo"
+                  >
+                    {isAnalyzingDocument ? (
+                      <Loader2 className="w-[18px] h-[18px] text-blue-400 animate-spin" />
+                    ) : documentText || imageBase64 ? (
+                      <FileText className="w-[18px] h-[18px] text-blue-400" />
+                    ) : (
+                      <Paperclip className="w-[18px] h-[18px] text-gray-500 hover:text-gray-300" />
+                    )}
+                  </button>
+                  {showClipDropdown && (
+                    <div className="absolute bottom-full left-0 mb-2 bg-[#252525] border border-gray-700/60 rounded-xl shadow-xl z-50 py-1 min-w-[140px]">
+                      <button type="button" onClick={() => { setShowClipDropdown(false); fileInputImageRef.current?.click(); }} className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                        <Image className="w-3.5 h-3.5 text-purple-400" /><span>Imagen</span>
+                      </button>
+                      <button type="button" onClick={() => { setShowClipDropdown(false); fileInputPdfRef.current?.click(); }} className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                        <FileText className="w-3.5 h-3.5 text-blue-400" /><span>PDF</span>
+                      </button>
+                      <button type="button" onClick={() => { setShowClipDropdown(false); fileInputTxtRef.current?.click(); }} className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors">
+                        <Pencil className="w-3.5 h-3.5 text-emerald-400" /><span>Texto</span>
+                      </button>
+                    </div>
                   )}
-                </button>
-              )}
-
-              {/* Suggestions lightbulb — opens mini modal */}
-              {suggestions.length > 0 && !isLoading && !isStreaming && !isLocked && (
-                <button
-                  type="button"
-                  onClick={() => setShowSuggestionsModal(true)}
-                  className="p-1.5 rounded-full hover:bg-amber-500/10 transition-all active:scale-90 shrink-0"
-                  aria-label="Sugerencias"
-                  title="Sugerencias"
-                >
-                  <Wand2 className="w-[16px] h-[16px] text-amber-400/60 hover:text-amber-400" />
-                </button>
-              )}
-
-              {/* Sources — Web search */}
-              <button
-                type="button"
-                onClick={() => handleSourcesSearch()}
-                disabled={isLoading || isStreaming || (!inputValue.trim() && !lastUserMsgForSug)}
-                className="p-1.5 rounded-full hover:bg-blue-500/10 transition-all active:scale-90 shrink-0 disabled:opacity-30"
-                aria-label="Investigar en la web"
-                title="Investigar"
-              >
-                {sourcesLoading ? (
-                  <Loader2 className="w-[16px] h-[16px] text-blue-400 animate-spin" />
-                ) : (
-                  <Globe className="w-[16px] h-[16px] text-blue-400/60 hover:text-blue-400" />
+                </div>
+                {/* Image Generation */}
+                {(IMAGE_LIMITS[userPlanType?.toLowerCase()] > 0 || userPlanType?.startsWith('trial_') || hasPaidExtraImages) && (
+                  <button type="button" onClick={handleGenerateImage} disabled={isLoading || isStreaming || isGeneratingImage || !inputValue.trim()} className="p-1.5 rounded-full hover:bg-purple-500/10 transition-all active:scale-90 shrink-0 disabled:opacity-30" aria-label="Generar imagen" title="Generar imagen">
+                    {isGeneratingImage ? <Loader2 className="w-[18px] h-[18px] text-purple-400 animate-spin" /> : <Image className="w-[18px] h-[18px] text-purple-400" />}
+                  </button>
                 )}
-              </button>
+                {/* Suggestions */}
+                {suggestions.length > 0 && !isLoading && !isStreaming && !isLocked && (
+                  <button type="button" onClick={() => setShowSuggestionsModal(true)} className="p-1.5 rounded-full hover:bg-amber-500/10 transition-all active:scale-90 shrink-0" aria-label="Sugerencias" title="Sugerencias">
+                    <Wand2 className="w-[16px] h-[16px] text-amber-400/60 hover:text-amber-400" />
+                  </button>
+                )}
+                {/* Sources */}
+                <button type="button" onClick={() => handleSourcesSearch()} disabled={isLoading || isStreaming || (!inputValue.trim() && !lastUserMsgForSug)} className="p-1.5 rounded-full hover:bg-blue-500/10 transition-all active:scale-90 shrink-0 disabled:opacity-30" aria-label="Investigar" title="Investigar">
+                  {sourcesLoading ? <Loader2 className="w-[16px] h-[16px] text-blue-400 animate-spin" /> : <Globe className="w-[16px] h-[16px] text-blue-400/60 hover:text-blue-400" />}
+                </button>
+              </div>
             </div>
 
             {/* Textarea — auto-expanding */}
@@ -3492,23 +3477,27 @@ export default function AtlasApp() {
               onChange={(e) => {
                 setInputValue(e.target.value);
                 const ta = e.target;
-                ta.style.height = '40px';
+                ta.style.height = '36px';
                 ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
               }}
               onKeyDown={handleKeyDown}
-              placeholder={'Escribe o habla tu mensaje...'}
+              placeholder={'Escribe tu mensaje...'}
               rows={1}
-              style={{ height: '40px' }}
-              className="flex-1 min-w-0 bg-transparent py-2.5 px-1 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none resize-none overflow-y-auto max-h-40 leading-5 disabled:opacity-50"
+              style={{ height: '36px' }}
+              className="flex-1 min-w-0 bg-transparent py-2 px-1 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none resize-none overflow-y-auto max-h-40 leading-5 disabled:opacity-50"
               disabled={isLoading || isStreaming}
             />
 
-            {/* Right: Send button inside container */}
+            {/* Right: Unified Send/Mic button inside container */}
             {!isLocked ? (
               <button
                 type="submit"
-                disabled={(!inputValue.trim() && !imageBase64) || isLoading || isStreaming || isListening}
-                className="p-2 m-1 mr-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700/40 disabled:opacity-30 flex items-center justify-center transition-all active:scale-90 shrink-0 self-end"
+                disabled={(!inputValue.trim() && !imageBase64 && !documentText) || isLoading || isStreaming || isListening}
+                className={`p-2 m-1 mr-1 rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 self-end ${
+                  inputValue.trim() || imageBase64 || documentText
+                    ? 'bg-emerald-600 hover:bg-emerald-500'
+                    : 'bg-gray-800/60'
+                } disabled:opacity-30`}
                 aria-label="Enviar"
               >
                 <Send className="w-[18px] h-[18px] text-white" />
@@ -3527,85 +3516,74 @@ export default function AtlasApp() {
                 onPointerUp={handleLockedPointerUp}
                 onPointerCancel={handleLockedPointerUp}
                 disabled={isLoading || isStreaming}
-                className={`p-2 m-1 mr-1.5 rounded-full shrink-0 self-end select-none touch-none transition-all active:scale-90 ${
+                className={`p-2 m-1 mr-1 rounded-full shrink-0 self-end select-none touch-none transition-all active:scale-90 ${
                   isSwipeCanceling ? 'bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'
                 }`}
                 aria-label="Enviar mensaje de voz"
               >
-                {isSwipeCanceling ? (
-                  <X className="w-[18px] h-[18px] text-white" />
-                ) : (
-                  <Send className="w-[18px] h-[18px] text-white" />
-                )}
+                {isSwipeCanceling ? <X className="w-[18px] h-[18px] text-white" /> : <Send className="w-[18px] h-[18px] text-white" />}
               </motion.button>
             )}
           </div>
 
-          {/* Microphone — Outside the container, separate circle */}
-          {speechSupported && (
-            isLocked ? (
-              /* LOCKED STATE — Send button (swipe down to cancel) */
-              <motion.button
-                key="mic-locked"
-                type="button"
-                onClick={handleLockedSend}
-                onTouchStart={handleLockedTouchStart}
-                onTouchMove={handleLockedTouchMove}
-                onTouchEnd={handleLockedTouchEnd}
-                onTouchCancel={handleLockedTouchEnd}
-                onPointerDown={handleLockedPointerDown}
-                onPointerMove={handleLockedPointerMove}
-                onPointerUp={handleLockedPointerUp}
-                onPointerCancel={handleLockedPointerUp}
-                initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: isSwipeCanceling ? 1.1 : 1, opacity: 1 }}
-                transition={{ type: 'spring', damping: 15, stiffness: 300 }}
-                disabled={isLoading || isStreaming}
-                className={`w-10 h-10 rounded-full shadow-xl flex items-center justify-center transition-all active:scale-90 shrink-0 select-none touch-none self-end ${
-                  isSwipeCanceling
-                    ? 'bg-red-500 shadow-red-500/40'
-                    : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/40'
-                }`}
-                aria-label="Enviar mensaje de voz"
-              >
-                {isSwipeCanceling ? (
-                  <X className="w-4 h-4 text-white" />
-                ) : (
-                  <Send className="w-4 h-4 text-white" />
-                )}
-              </motion.button>
-            ) : (
-              /* NORMAL STATE — Mic button (press & hold, slide up to lock) */
-              <button
-                key="mic-normal"
-                type="button"
-                onTouchStart={handleMicTouchStart}
-                onTouchMove={handleMicTouchMove}
-                onTouchEnd={handleMicTouchEnd}
-                onTouchCancel={handleMicTouchEnd}
-                onPointerDown={handleMicPointerDown}
-                onPointerMove={handleMicPointerMove}
-                onPointerUp={handleMicPointerUp}
-                onPointerCancel={handleMicPointerUp}
-                onContextMenu={(e) => e.preventDefault()}
-                disabled={isLoading || isStreaming || isAnalyzingDocument}
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 select-none touch-none self-end ${
-                  isListening
-                    ? 'bg-red-500 hover:bg-red-400 shadow-xl shadow-red-500/40 scale-110'
-                    : 'bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-500/20'
-                }`}
-                aria-label="Hablar (manten presionado, desliza arriba para bloquear)"
-              >
-                {isListening ? (
-                  <span className="relative flex h-4 w-4">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                    <Mic className="relative inline-flex h-4 w-4 text-white" />
-                  </span>
-                ) : (
-                  <Mic className="w-4 h-4 text-white" />
-                )}
-              </button>
-            )
+          {/* Mic button — compact circle INSIDE form, only on mobile */}
+          {speechSupported && !isLocked && (
+            <button
+              key="mic-compact"
+              type="button"
+              onTouchStart={handleMicTouchStart}
+              onTouchMove={handleMicTouchMove}
+              onTouchEnd={handleMicTouchEnd}
+              onTouchCancel={handleMicTouchEnd}
+              onPointerDown={handleMicPointerDown}
+              onPointerMove={handleMicPointerMove}
+              onPointerUp={handleMicPointerUp}
+              onPointerCancel={handleMicPointerUp}
+              onContextMenu={(e) => e.preventDefault()}
+              disabled={isLoading || isStreaming || isAnalyzingDocument}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 select-none touch-none self-end ${
+                isListening
+                  ? 'bg-red-500 hover:bg-red-400 shadow-lg shadow-red-500/30 scale-110'
+                  : 'bg-emerald-600 hover:bg-emerald-500 shadow-md shadow-emerald-500/20'
+              }`}
+              aria-label="Mantener presionado para hablar"
+            >
+              {isListening ? (
+                <span className="relative flex h-4 w-4">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                  <Mic className="relative inline-flex h-4 w-4 text-white" />
+                </span>
+              ) : (
+                <Mic className="w-4 h-4 text-white" />
+              )}
+            </button>
+          )}
+
+          {/* Locked mic state — Send button with swipe-cancel */}
+          {speechSupported && isLocked && (
+            <motion.button
+              key="mic-locked-compact"
+              type="button"
+              onClick={handleLockedSend}
+              onTouchStart={handleLockedTouchStart}
+              onTouchMove={handleLockedTouchMove}
+              onTouchEnd={handleLockedTouchEnd}
+              onTouchCancel={handleLockedTouchEnd}
+              onPointerDown={handleLockedPointerDown}
+              onPointerMove={handleLockedPointerMove}
+              onPointerUp={handleLockedPointerUp}
+              onPointerCancel={handleLockedPointerUp}
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: isSwipeCanceling ? 1.1 : 1, opacity: 1 }}
+              transition={{ type: 'spring', damping: 15, stiffness: 300 }}
+              disabled={isLoading || isStreaming}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 select-none touch-none self-end ${
+                isSwipeCanceling ? 'bg-red-500 shadow-red-500/30' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/30'
+              }`}
+              aria-label="Enviar voz (desliza para cancelar)"
+            >
+              {isSwipeCanceling ? <X className="w-4 h-4 text-white" /> : <Send className="w-4 h-4 text-white" />}
+            </motion.button>
           )}
         </form>
 
