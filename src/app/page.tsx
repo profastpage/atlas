@@ -3678,6 +3678,39 @@ export default function AtlasApp() {
           )}
         </AnimatePresence>
 
+        {/* ---- Guest / Free user: message counter above input ---- */}
+        {hasActivePlan !== true && !checkingPlan && (
+          <div className="max-w-3xl mx-auto mb-2 text-center">
+            {isInputBlocked ? (
+              <p className="text-xs text-gray-500">
+                <span className="text-red-400 font-semibold">0/{messageLimit}</span>
+                {' '}mensajes restantes.{' '}
+                <button
+                  onClick={() => isAuthenticated ? setShowSettings(true) : setShowLogin(true)}
+                  className="text-emerald-400 hover:text-emerald-300 font-semibold transition-colors"
+                >
+                  {isAuthenticated ? 'Obtén un plan' : 'Regístrate'}
+                </button>
+                {' '}para seguir chateando.
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500">
+                <span className={remainingResponses <= 2 ? 'text-red-400 font-semibold animate-pulse' : 'text-gray-400 font-medium'}>
+                  {remainingResponses}/{messageLimit}
+                </span>
+                {' '}mensajes restantes.{' '}
+                <button
+                  onClick={() => isAuthenticated ? setShowSettings(true) : setShowLogin(true)}
+                  className="text-emerald-400 hover:text-emerald-300 font-semibold transition-colors"
+                >
+                  {isAuthenticated ? 'Obtén un plan' : 'Regístrate'}
+                </button>
+                {' '}para obtener {isAuthenticated ? 'mensajes ilimitados' : '20 mensajes mensuales gratis'}.
+              </p>
+            )}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="flex items-end gap-1.5 max-w-3xl mx-auto relative atlas-input-glow rounded-2xl border border-transparent">
           {/* Hidden file inputs — one per type */}
           <input ref={fileInputRef} type="file" accept=".pdf,.txt,.jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,application/pdf,text/plain" onChange={handleFileUpload} className="hidden" />
