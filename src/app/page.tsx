@@ -2829,8 +2829,8 @@ export default function AtlasApp() {
               ATLAS
             </h1>
             <div className="flex items-center gap-2">
-              <p className="text-[9px] sm:text-[10px] text-emerald-700 font-medium tracking-[0.1em] uppercase truncate">
-                Consultor Estratégico y Cognitivo
+              <p className="text-[9px] sm:text-[10px] text-emerald-700 font-medium tracking-[0.1em] uppercase whitespace-nowrap">
+                Consultor Estratégico
               </p>
               {trialInfo?.isActive && (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[8px] sm:text-[9px] text-amber-400 font-semibold shrink-0">
@@ -3144,14 +3144,10 @@ export default function AtlasApp() {
             {/* Title */}
             <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-[0.25em] uppercase mb-2">ATLAS</h2>
             {/* Subtitle */}
-            <p className="text-[11px] sm:text-xs text-emerald-700 font-semibold tracking-[0.15em] uppercase mb-5">
-              Consultor Estratégico y Cognitivo
+            <p className="text-[11px] sm:text-xs text-emerald-700 font-semibold tracking-[0.15em] uppercase mb-3">
+              Consultor Estratégico
             </p>
             {/* Terminal system status */}
-            <div className="atlas-terminal-text mb-5 flex items-center gap-2">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Sistema: En Línea &nbsp;//&nbsp; Modo: Estrategia Activa</span>
-            </div>
             {/* Impact phrase */}
             <p className="text-sm text-gray-500 max-w-[280px] leading-relaxed">
               Domina la incertidumbre. Define tu objetivo.
@@ -3743,7 +3739,7 @@ export default function AtlasApp() {
               <button
                 type="submit"
                 disabled={(!inputValue.trim() && !imageBase64 && !documentText) || isLoading || isStreaming || isListening}
-                className={`p-2 m-1 mr-1 rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 self-end ${
+                className={`w-9 h-9 m-1 mr-1 rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 ${
                   inputValue.trim() || imageBase64 || documentText
                     ? 'bg-[#047857] hover:bg-[#059669] shadow-lg shadow-emerald-900/30'
                     : 'bg-white/5'
@@ -3766,7 +3762,7 @@ export default function AtlasApp() {
                 onPointerUp={handleLockedPointerUp}
                 onPointerCancel={handleLockedPointerUp}
                 disabled={isLoading || isStreaming}
-                className={`p-2 m-1 mr-1 rounded-full shrink-0 self-end select-none touch-none transition-all active:scale-90 ${
+                className={`w-9 h-9 m-1 mr-1 rounded-full shrink-0 select-none touch-none transition-all active:scale-90 ${
                   isSwipeCanceling ? 'bg-red-500' : 'bg-[#047857] hover:bg-[#059669]'
                 }`}
                 aria-label="Enviar mensaje de voz"
@@ -3791,7 +3787,7 @@ export default function AtlasApp() {
               onPointerCancel={handleMicPointerUp}
               onContextMenu={(e) => e.preventDefault()}
               disabled={isLoading || isStreaming || isAnalyzingDocument}
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 select-none touch-none self-end ${
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 select-none touch-none ${
                 isListening
                   ? 'bg-red-500 hover:bg-red-400 shadow-lg shadow-red-500/30 scale-110'
                   : 'bg-emerald-600 hover:bg-emerald-500 shadow-md shadow-emerald-500/20'
@@ -3827,7 +3823,7 @@ export default function AtlasApp() {
               animate={{ scale: isSwipeCanceling ? 1.1 : 1, opacity: 1 }}
               transition={{ type: 'spring', damping: 15, stiffness: 300 }}
               disabled={isLoading || isStreaming}
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 select-none touch-none self-end ${
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90 shrink-0 select-none touch-none ${
                 isSwipeCanceling ? 'bg-red-500 shadow-red-500/30' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/30'
               }`}
               aria-label="Enviar voz (desliza para cancelar)"
