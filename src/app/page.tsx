@@ -3104,8 +3104,9 @@ export default function AtlasApp() {
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             {/* Wireframe Globe — CSS/SVG Animated */}
             <div className="atlas-globe-container w-24 h-24 sm:w-28 sm:h-28 mb-6 relative">
-              {/* Outer glow */}
-              <div className="absolute inset-0 rounded-full atlas-globe-glow" style={{ background: 'radial-gradient(circle, rgba(4,120,87,0.12) 0%, transparent 70%)' }} />
+              {/* Enhanced outer glow — soft emerald aura */}
+              <div className="absolute inset-[-12px] sm:inset-[-16px] rounded-full atlas-logo-glow" style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.15) 0%, rgba(4,120,87,0.06) 50%, transparent 75%)' }} />
+              <div className="absolute inset-[-4px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%)', boxShadow: '0 0 40px 8px rgba(16,185,129,0.06), 0 0 80px 16px rgba(4,120,87,0.04)' }} />
               {/* SVG Globe */}
               <svg viewBox="0 0 100 100" className="w-full h-full atlas-globe" fill="none" xmlns="http://www.w3.org/2000/svg">
                 {/* Globe outline */}
@@ -3141,20 +3142,55 @@ export default function AtlasApp() {
                 <div className="w-2 h-2 rounded-full bg-emerald-500/30 atlas-globe-glow" />
               </div>
             </div>
-            {/* Title */}
-            <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-[0.25em] uppercase mb-2">ATLAS</h2>
-            {/* Subtitle */}
-            <p className="text-[11px] sm:text-xs text-emerald-700 font-semibold tracking-[0.15em] uppercase mb-3">
+            {/* Title — Bold with emerald subtle glow */}
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-[0.3em] uppercase mb-2" style={{ textShadow: '0 0 30px rgba(16,185,129,0.15), 0 0 60px rgba(4,120,87,0.08)' }}>ATLAS</h2>
+            {/* Subtitle — Elegant gray */}
+            <p className="text-[11px] sm:text-xs text-gray-400 font-medium tracking-[0.2em] uppercase mb-4">
               Consultor Estratégico
             </p>
-            {/* Terminal system status */}
             {/* Impact phrase */}
             <p className="text-sm text-gray-500 max-w-[280px] leading-relaxed">
               Domina la incertidumbre. Define tu objetivo.
             </p>
-            <p className="text-[11px] text-gray-600 mt-1.5 max-w-[240px] leading-relaxed">
-              Escribe o usa el micrófono para iniciar.
-            </p>
+            {/* Floating suggestion cards */}
+            <div className="flex flex-wrap justify-center gap-2 mt-5 px-2 max-w-[360px]">
+              <button
+                type="button"
+                onClick={() => { if (!isLoading && !isStreaming) sendMessage('Analiza mi negocio y sugiere estrategias de crecimiento'); }}
+                className="atlas-suggestion-card rounded-xl px-3.5 py-2.5 text-left max-w-[160px] cursor-pointer"
+                style={{ animation: 'atlas-suggestion-float 4s ease-in-out infinite', animationDelay: '0s' }}
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Sparkles className="w-3 h-3 text-emerald-400/70" />
+                  <span className="text-[10px] font-semibold text-emerald-400/70 uppercase tracking-wider">Estrategia</span>
+                </div>
+                <p className="text-[11px] text-gray-400 leading-snug">Analiza mi negocio y sugiere crecimiento</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => { if (!isLoading && !isStreaming) sendMessage('Resumir las tendencias del mercado actual'); }}
+                className="atlas-suggestion-card rounded-xl px-3.5 py-2.5 text-left max-w-[160px] cursor-pointer"
+                style={{ animation: 'atlas-suggestion-float 4s ease-in-out infinite', animationDelay: '0.5s' }}
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Globe className="w-3 h-3 text-emerald-400/70" />
+                  <span className="text-[10px] font-semibold text-emerald-400/70 uppercase tracking-wider">Mercado</span>
+                </div>
+                <p className="text-[11px] text-gray-400 leading-snug">Tendencias del mercado actual</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => { if (!isLoading && !isStreaming) sendMessage('Ayudame a crear un plan de accion semanal'); }}
+                className="atlas-suggestion-card rounded-xl px-3.5 py-2.5 text-left max-w-[160px] cursor-pointer"
+                style={{ animation: 'atlas-suggestion-float 4s ease-in-out infinite', animationDelay: '1s' }}
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Wand2 className="w-3 h-3 text-emerald-400/70" />
+                  <span className="text-[10px] font-semibold text-emerald-400/70 uppercase tracking-wider">Plan</span>
+                </div>
+                <p className="text-[11px] text-gray-400 leading-snug">Crea un plan de accion semanal</p>
+              </button>
+            </div>
           </div>
         )}
 
@@ -3587,11 +3623,11 @@ export default function AtlasApp() {
           <input ref={fileInputPdfRef} type="file" accept=".pdf,application/pdf" onChange={handleFileUpload} className="hidden" />
           <input ref={fileInputTxtRef} type="file" accept=".txt,text/plain" onChange={handleFileUpload} className="hidden" />
 
-          {/* ===== Integrated input container ===== */}
-          <div className={`flex-1 flex items-end bg-[#0a0a0a] rounded-[22px] border transition-all ${
+          {/* ===== Integrated input container — glassmorphism ===== */}
+          <div className={`flex-1 flex items-end atlas-glass-input rounded-[22px] transition-all ${
             isListening && !isLocked
-              ? 'border-red-500/40 ring-1 ring-red-500/20'
-              : 'border-white/[0.04]'
+              ? '!border-red-500/40 ring-1 ring-red-500/20'
+              : ''
           }`}>
             {/* Left: Unified "+" button — MOBILE shows mega-dropdown, DESKTOP shows individual buttons */}
             <div className="flex items-center shrink-0 p-1 pl-1.5 self-end">

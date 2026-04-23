@@ -167,7 +167,7 @@ button,
     0 0 0 1px rgba(4, 120, 87, 0.3),
     0 0 20px -4px rgba(4, 120, 87, 0.12),
     0 0 40px -8px rgba(16, 185, 129, 0.06);
-  border-color: rgba(4, 120, 87, 0.2) !important;
+  border-color: rgba(16, 185, 129, 0.2) !important;
 }
 
 /* ===== ELITE LATAM: Globe wireframe animation ===== */
@@ -201,6 +201,66 @@ button,
 
 .atlas-globe-glow {
   animation: atlas-globe-pulse 4s ease-in-out infinite;
+}
+
+/* ===== ELITE LATAM: Logo glow aura ===== */
+@keyframes atlas-logo-glow-pulse {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+.atlas-logo-glow {
+  animation: atlas-logo-glow-pulse 3.5s ease-in-out infinite;
+}
+
+/* ===== ELITE LATAM: Glassmorphism input ===== */
+.atlas-glass-input {
+  background: rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(16, 185, 129, 0.12);
+  box-shadow:
+    0 0 0 1px rgba(4, 120, 87, 0.05),
+    0 4px 24px -4px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  transition: border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.atlas-glass-input:focus-within {
+  border-color: rgba(16, 185, 129, 0.25);
+  box-shadow:
+    0 0 0 1px rgba(4, 120, 87, 0.1),
+    0 0 30px -6px rgba(16, 185, 129, 0.08),
+    0 4px 24px -4px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* ===== ELITE LATAM: Suggestion cards ===== */
+@keyframes atlas-suggestion-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.atlas-suggestion-card {
+  background: rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(16, 185, 129, 0.08);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.atlas-suggestion-card:hover {
+  background: rgba(4, 120, 87, 0.08);
+  border-color: rgba(16, 185, 129, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px -4px rgba(16, 185, 129, 0.1);
 }
 
 /* ===== ELITE LATAM: Monospace terminal style ===== */
