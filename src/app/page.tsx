@@ -297,11 +297,14 @@ export default function AtlasApp() {
   const [lastUserMsgForSug, setLastUserMsgForSug] = useState('');
   const [lastBotMsgForSug, setLastBotMsgForSug] = useState('');
 
-  // ---- Sources State ----
+  // ---- Sources / Research State ----
   const [showSources, setShowSources] = useState(false);
-  const [sourcesResults, setSourcesResults] = useState<Array<{ position: number; url: string; title: string; snippet: string; score: number }>>([]);
+  const [sourcesResults, setSourcesResults] = useState<Array<{ position: number; url: string; title: string; snippet: string; score?: number }>>([]);
   const [sourcesQuery, setSourcesQuery] = useState('');
   const [sourcesLoading, setSourcesLoading] = useState(false);
+  const [researchSummary, setResearchSummary] = useState('');
+  const [researchStreaming, setResearchStreaming] = useState(false);
+  const [researchStreamId, setResearchStreamId] = useState<string | null>(null);
 
   // ---- Favorites & Highlights: Load from localStorage ----
   const FAV_KEY = 'atlas_favorites';
@@ -1632,30 +1635,80 @@ export default function AtlasApp() {
     sendMessageRef.current = sendMessage;
   }, [sendMessage]);
 
-  // ---- SOURCES SEARCH (Tavily) ----
+  // ---- SOURCES SEARCH — Intelligent Research (Perplexity-style) ----
+  // Searches web, reads top pages, generates AI summary with citations
   const handleSourcesSearch = useCallback(async (searchQuery?: string) => {
     const query = searchQuery || inputValue.trim() || lastUserMsgForSug;
     if (!query || query.length < 2) return;
     setSourcesLoading(true);
     setSourcesQuery(query);
     setShowSources(true);
+    setResearchSummary('');
+    setSourcesResults([]);
+    const streamId = `research-${Date.now()}`;
+    setResearchStreamId(streamId);
+    setResearchStreaming(true);
     try {
-      const res = await fetch('/api/sources', {
+      const res = await fetch('/api/research', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, maxResults: 10 }),
+        body: JSON.stringify({ query, maxResults: 8 }),
       });
-      const data = await res.json();
-      if (data.sources) {
-        setSourcesResults(data.sources);
+      // Check if response is SSE stream
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('text/event-stream')) {
+        // Parse SSE stream
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error('No stream reader');
+        const decoder = new TextDecoder();
+        let fullText = '';
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+            const payload = trimmed.slice(6);
+            try {
+              const json = JSON.parse(payload);
+              if (json.token) {
+                fullText += json.token;
+                setResearchSummary(fullText);
+              }
+              if (json.done) {
+                setResearchSummary(json.full || fullText);
+                if (json.sources && json.sources.length > 0) {
+                  setSourcesResults(json.sources);
+                }
+              }
+              if (json.error) {
+                console.error('[RESEARCH] Stream error:', json.error);
+              }
+            } catch {}
+          }
+        }
       } else {
-        setSourcesResults([]);
+        // JSON response (non-streaming fallback)
+        const data = await res.json();
+        if (data.summary) {
+          setResearchSummary(data.summary);
+        }
+        if (data.sources) {
+          setSourcesResults(data.sources);
+        }
       }
     } catch (err) {
-      console.error('[SOURCES] Search error:', err);
+      console.error('[RESEARCH] Search error:', err);
+      setResearchSummary('Error al buscar. Intenta de nuevo.');
       setSourcesResults([]);
     } finally {
       setSourcesLoading(false);
+      setResearchStreaming(false);
+      setResearchStreamId(null);
     }
   }, [inputValue, lastUserMsgForSug]);
 
@@ -3420,8 +3473,8 @@ export default function AtlasApp() {
                 onClick={() => handleSourcesSearch()}
                 disabled={isLoading || isStreaming || (!inputValue.trim() && !lastUserMsgForSug)}
                 className="p-1.5 rounded-full hover:bg-blue-500/10 transition-all active:scale-90 shrink-0 disabled:opacity-30"
-                aria-label="Buscar fuentes en la web"
-                title="Buscar fuentes"
+                aria-label="Investigar en la web"
+                title="Investigar"
               >
                 {sourcesLoading ? (
                   <Loader2 className="w-[16px] h-[16px] text-blue-400 animate-spin" />
@@ -4404,7 +4457,7 @@ export default function AtlasApp() {
         onPaymentConfirmed={handleImagePaymentConfirmed}
       />
 
-      {/* ===== SOURCES PANEL ===== */}
+      {/* ===== SOURCES / RESEARCH PANEL ===== */}
       <AnimatePresence>
         {showSources && (
           <motion.div
@@ -4416,12 +4469,13 @@ export default function AtlasApp() {
             {/* Backdrop */}
             <div className="absolute inset-0 bg-black/50" onClick={() => setShowSources(false)} />
             {/* Panel */}
-            <div className="relative w-full sm:max-w-lg max-h-[70vh] bg-[#1a1a1a] rounded-t-2xl sm:rounded-2xl border border-gray-800/60 overflow-hidden flex flex-col">
+            <div className="relative w-full sm:max-w-xl max-h-[85vh] bg-[#1a1a1a] rounded-t-2xl sm:rounded-2xl border border-gray-800/60 overflow-hidden flex flex-col">
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800/40">
                 <div className="flex items-center gap-2">
                   <Globe className="w-4 h-4 text-blue-400" />
-                  <span className="text-white text-sm font-medium">Fuentes web</span>
+                  <span className="text-white text-sm font-medium">Investigacion web</span>
+                  {researchStreaming && <span className="text-[10px] text-emerald-400 animate-pulse">analizando...</span>}
                 </div>
                 <button onClick={() => setShowSources(false)} className="p-1 rounded-full hover:bg-gray-700/50 transition">
                   <X className="w-4 h-4 text-gray-400" />
@@ -4430,41 +4484,77 @@ export default function AtlasApp() {
               {/* Query */}
               <div className="px-4 py-2 border-b border-gray-800/30">
                 <p className="text-gray-500 text-xs truncate">
-                  Busqueda: <span className="text-gray-300">{sourcesQuery}</span>
+                  Consulta: <span className="text-gray-300">{sourcesQuery}</span>
                 </p>
               </div>
-              {/* Results */}
-              <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
-                {sourcesLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto">
+                {/* AI Summary Section */}
+                {sourcesLoading && !researchSummary ? (
+                  <div className="flex flex-col items-center justify-center py-12 px-4">
+                    <Loader2 className="w-6 h-6 text-blue-400 animate-spin mb-3" />
+                    <p className="text-gray-400 text-sm">Buscando y analizando fuentes...</p>
+                    <p className="text-gray-600 text-xs mt-1">Esto puede tomar unos segundos</p>
                   </div>
-                ) : sourcesResults.length === 0 ? (
-                  <p className="text-gray-500 text-sm text-center py-8">No se encontraron fuentes</p>
                 ) : (
-                  sourcesResults.map((src) => (
-                    <a
-                      key={src.position}
-                      href={src.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block p-2.5 rounded-lg hover:bg-gray-800/40 transition group"
-                    >
-                      <div className="flex items-start gap-2">
-                        <span className="text-[10px] text-gray-600 font-mono mt-0.5 shrink-0">{src.position}.</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[13px] text-blue-400 group-hover:text-blue-300 font-medium leading-snug line-clamp-2">
-                            {src.title}
-                          </p>
-                          <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">{src.snippet}</p>
-                          <p className="text-[10px] text-gray-600 mt-1 flex items-center gap-1">
-                            <ExternalLink className="w-2.5 h-2.5" />
-                            {new URL(src.url).hostname}
-                          </p>
+                  <>
+                    {/* Research Summary */}
+                    {researchSummary && (
+                      <div className="px-4 py-3 border-b border-gray-800/30">
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <span className="text-xs">{'\uD83E\uDD16'}</span>
+                          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Resumen de Atlas</span>
+                        </div>
+                        <div
+                          className="text-[13px] text-gray-200 leading-relaxed whitespace-pre-wrap"
+                          dangerouslySetInnerHTML={{
+                            __html: formatMessageContent(researchSummary) +
+                              (researchStreaming
+                                ? '<span class="inline-block w-[3px] h-[16px] bg-emerald-400 animate-pulse ml-0.5 align-text-bottom rounded-sm"></span>'
+                                : ''),
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Sources List */}
+                    {sourcesResults.length > 0 && (
+                      <div className="px-3 py-2">
+                        <div className="flex items-center gap-1.5 px-1 mb-1.5">
+                          <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Fuentes ({sourcesResults.length})</span>
+                        </div>
+                        <div className="space-y-1">
+                          {sourcesResults.map((src) => (
+                            <a
+                              key={src.position}
+                              href={src.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block p-2.5 rounded-lg hover:bg-gray-800/40 transition group"
+                            >
+                              <div className="flex items-start gap-2">
+                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500/10 border border-blue-500/20 text-[10px] font-bold text-blue-400 mt-0.5 shrink-0">
+                                  {src.position}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[13px] text-blue-400 group-hover:text-blue-300 font-medium leading-snug line-clamp-2">
+                                    {src.title}
+                                  </p>
+                                  {src.snippet && (
+                                    <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">{src.snippet}</p>
+                                  )}
+                                  <p className="text-[10px] text-gray-600 mt-1 flex items-center gap-1">
+                                    <ExternalLink className="w-2.5 h-2.5" />
+                                    {(() => { try { return new URL(src.url).hostname; } catch { return src.url; } })()}
+                                  </p>
+                                </div>
+                              </div>
+                            </a>
+                          ))}
                         </div>
                       </div>
-                    </a>
-                  ))
+                    )}
+                  </>
                 )}
               </div>
             </div>
