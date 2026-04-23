@@ -137,24 +137,65 @@ button,
   word-break: break-word;
   hyphens: auto;
   overflow-x: hidden;
+  overflow-y: visible;
   max-width: 100%;
+  min-width: 0;
+  contain: inline-size;
+}
+
+[data-msg-id] > div {
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow-x: hidden;
 }
 
 [data-msg-id] a {
   overflow-wrap: break-word;
   word-break: break-all;
+  max-width: 100%;
+}
+
+[data-msg-id] strong,
+[data-msg-id] b {
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 [data-msg-id] code {
   overflow-wrap: break-word;
   word-break: break-all;
   white-space: pre-wrap;
+  max-width: 100%;
+  display: inline-block;
 }
 
 /* Force chat area to never overflow horizontally */
 .chat-messages-area {
   overflow-x: hidden !important;
   max-width: 100% !important;
+  min-width: 0;
+  contain: layout;
+}
+
+/* Global containment: prevent any child from expanding beyond viewport */
+.chat-messages-area > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Research panel — prevent horizontal overflow */
+.research-panel-content {
+  overflow-x: hidden;
+  min-w: 0;
+  contain: inline-size;
+}
+
+.research-panel-content strong,
+.research-panel-content b {
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 /* Smooth transitions for all interactive elements */

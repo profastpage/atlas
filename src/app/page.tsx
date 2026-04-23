@@ -3088,13 +3088,13 @@ export default function AtlasApp() {
               initial={{ opacity: 0, y: 10, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
-              className={`flex ${
+              className={`flex min-w-0 ${
                 msg.role === 'user' ? 'justify-end' : 'justify-start'
               }`}
             >
               <div
                 data-msg-id={msg.id}
-                className={`relative max-w-[85%] sm:max-w-[70%] px-3.5 py-2 sm:py-2.5 shadow-sm ${
+                className={`relative max-w-[85%] sm:max-w-[70%] min-w-0 overflow-hidden px-3.5 py-2 sm:py-2.5 shadow-sm ${
                   msg.role === 'user'
                     ? 'bg-[#005c4b] text-white rounded-2xl rounded-br-sm'
                     : 'bg-[#1f2722] text-gray-100 rounded-2xl rounded-bl-sm'
@@ -3138,7 +3138,7 @@ export default function AtlasApp() {
                 {/* Message content — skip rendering text for generated images */}
                 {!(msg.role === 'assistant' && msg.content.startsWith('data:image/')) && (
                 <div
-                  className={`text-[13.5px] leading-relaxed break-words overflow-wrap-anywhere ${
+                  className={`text-[13.5px] leading-relaxed break-words overflow-wrap-anywhere min-w-0 ${
                     msg.role === 'user' ? 'text-white' : 'text-gray-200'
                   }`}
                   dangerouslySetInnerHTML={{
@@ -4661,8 +4661,7 @@ export default function AtlasApp() {
                 </p>
               </div>
               {/* Content */}
-              <div className="flex-1 overflow-y-auto overflow-x-hidden">
-                {/* AI Summary Section */}
+              <div className="flex-1 overflow-y-auto overflow-x-hidden research-panel-content">
                 {sourcesLoading && !researchSummary ? (
                   <div className="flex flex-col items-center justify-center py-12 px-4">
                     <Loader2 className="w-6 h-6 text-blue-400 animate-spin mb-3" />

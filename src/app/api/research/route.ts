@@ -98,7 +98,75 @@ function cleanSnippet(text: string): string {
   return text.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ').trim();
 }
 
-// MULTI-ENGINE SEARCH: Brave + Bing + DuckDuckGo with fallback
+// MULTI-ENGINE SEARCH: SearXNG + DDG Instant + DDG HTML + Brave + Bing (cascading fallback)
+const SEARXNG_INSTANCES = [
+  'https://search.sapti.me',
+  'https://searx.be',
+  'https://search.bus-hit.me',
+  'https://searx.tiekoetter.com',
+];
+
+async function searchSearXNG(query: string, maxResults = 8): Promise<SearchResult[]> {
+  const encodedQuery = encodeURIComponent(query);
+  for (const instance of SEARXNG_INSTANCES) {
+    try {
+      const url = `${instance}/search?q=${encodedQuery}&format=json&categories=general&language=es`;
+      const res = await fetch(url, {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'AtlasBot/2.0 (Research Agent)' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const sources: SearchResult[] = [];
+      for (const item of (data.results || [])) {
+        if (sources.length >= maxResults) break;
+        const itemUrl = item.url || '';
+        const title = cleanSnippet(item.title || '').substring(0, 200);
+        const snippet = cleanSnippet(item.content || '').substring(0, 250);
+        if (!itemUrl || !title || title.length < 3 || itemUrl.includes('searx')) continue;
+        sources.push({ position: sources.length + 1, url: itemUrl, title, snippet, score: 1 - (sources.length * 0.05) });
+      }
+      if (sources.length > 0) {
+        console.log(`[RESEARCH] SearXNG (${instance}) found ${sources.length} results`);
+        return sources;
+      }
+    } catch { continue; }
+  }
+  console.log('[RESEARCH] All SearXNG instances failed');
+  return [];
+}
+
+async function searchDDGInstant(query: string, maxResults = 8): Promise<SearchResult[]> {
+  try {
+    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1&t=atlas_research`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000), headers: { 'Accept': 'application/json' } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const sources: SearchResult[] = [];
+    if (data.Abstract && data.AbstractURL) {
+      sources.push({ position: sources.length + 1, url: data.AbstractURL, title: data.Heading || 'DuckDuckGo', snippet: data.Abstract.substring(0, 250), score: 1 });
+    }
+    if (data.RelatedTopics) {
+      for (const topic of data.RelatedTopics) {
+        if (sources.length >= maxResults) break;
+        if (topic.Text && topic.FirstURL) {
+          sources.push({ position: sources.length + 1, url: topic.FirstURL, title: topic.Text.substring(0, 200), snippet: topic.Text.substring(0, 250), score: 1 - (sources.length * 0.05) });
+        }
+      }
+    }
+    if (data.Results) {
+      for (const result of data.Results) {
+        if (sources.length >= maxResults) break;
+        if (result.FirstURL && result.Text) {
+          sources.push({ position: sources.length + 1, url: result.FirstURL, title: result.Text.substring(0, 200), snippet: result.Text.substring(0, 250), score: 1 - (sources.length * 0.05) });
+        }
+      }
+    }
+    console.log(`[RESEARCH] DDG Instant found ${sources.length} results`);
+    return sources;
+  } catch { return []; }
+}
+
 async function searchBrave(query: string, maxResults = 8): Promise<SearchResult[]> {
   const encodedQuery = encodeURIComponent(query);
   const url = `https://search.brave.com/search?q=${encodedQuery}&source=web`;
@@ -175,13 +243,15 @@ async function searchDuckDuckGo(query: string, maxResults = 8): Promise<SearchRe
   } catch { return []; }
 }
 
-// Multi-engine merge with dedup
+// Cascading multi-engine search: try fast engines first, slow fallbacks last
 async function searchAllEngines(query: string, maxResults = 8): Promise<SearchResult[]> {
-  const [brave, bing, ddg] = await Promise.all([
-    searchBrave(query, maxResults),
-    searchBing(query, maxResults),
+  // Phase 1: Fast engines (JSON APIs, reliable from Edge)
+  const [searxng, ddgInstant, ddg] = await Promise.all([
+    searchSearXNG(query, maxResults),
+    searchDDGInstant(query, maxResults),
     searchDuckDuckGo(query, maxResults),
   ]);
+
   const seenDomains = new Set<string>();
   const merged: SearchResult[] = [];
   function addSources(sources: SearchResult[]) {
@@ -194,10 +264,25 @@ async function searchAllEngines(query: string, maxResults = 8): Promise<SearchRe
       } catch {}
     }
   }
-  addSources(brave);
-  addSources(bing);
+
+  addSources(searxng);
+  addSources(ddgInstant);
   addSources(ddg);
-  console.log(`[RESEARCH] Merged ${merged.length} unique sources (Brave:${brave.length} Bing:${bing.length} DDG:${ddg.length})`);
+
+  // Phase 2: Only try slow scraping engines if fast ones failed
+  if (merged.length < 3) {
+    console.log('[RESEARCH] Fast engines returned < 3 results, trying slow fallbacks...');
+    const [brave, bing] = await Promise.all([
+      searchBrave(query, maxResults),
+      searchBing(query, maxResults),
+    ]);
+    addSources(brave);
+    addSources(bing);
+    console.log(`[RESEARCH] Merged ${merged.length} unique sources (SearXNG:${searxng.length} DDG-Inst:${ddgInstant.length} DDG:${ddg.length} Brave:${brave.length} Bing:${bing.length})`);
+  } else {
+    console.log(`[RESEARCH] Merged ${merged.length} unique sources (SearXNG:${searxng.length} DDG-Inst:${ddgInstant.length} DDG:${ddg.length})`);
+  }
+
   return merged.slice(0, maxResults);
 }
 

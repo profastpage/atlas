@@ -1,8 +1,14 @@
 // ========================================
 // AUTO-RESEARCH — Investigación automática antes de responder
 // Previene alucinaciones: busca web, lee páginas, inyecta fuentes en contexto
-// 100% GRATIS — usa Brave Search HTML + Bing HTML + DuckDuckGo HTML + Wikipedia Search API
-// Fallback chain: Brave -> Bing -> DuckDuckGo -> Wikipedia
+// 100% GRATIS — usa múltiples motores con fallback
+//
+// Motor primario:   SearXNG (API JSON, sin API key, confiable desde Edge)
+// Fallback 1:       DuckDuckGo Lite (HTML scraping mejorado)
+// Fallback 2:       DuckDuckGo Instant Answer API (JSON, confiable)
+// Fallback 3:       Wikipedia API (JSON, altamente confiable)
+// Fallback 4:       Brave Search HTML (scraping, puede fallar desde CF Workers)
+// Fallback 5:       Bing Search HTML (scraping, puede fallar desde CF Workers)
 // ========================================
 
 interface AutoResearchResult {
@@ -149,143 +155,219 @@ const SEARCH_HEADERS = {
 };
 
 // ========================================
-// SEARCH ENGINE 1: Brave Search HTML (most reliable from edge)
+// SEARCH ENGINE 1: SearXNG Public API (JSON, most reliable from Edge)
+// Multiple public instances for redundancy
 // ========================================
 
-async function searchBrave(query: string, maxResults = 5): Promise<AutoSource[]> {
-  const encodedQuery = encodeURIComponent(query);
-  const url = `https://search.brave.com/search?q=${encodedQuery}&source=web`;
+const SEARXNG_INSTANCES = [
+  'https://search.sapti.me',
+  'https://searx.be',
+  'https://search.bus-hit.me',
+  'https://searx.tiekoetter.com',
+];
 
+async function searchSearXNG(query: string, maxResults = 5): Promise<AutoSource[]> {
+  const encodedQuery = encodeURIComponent(query);
+
+  for (const instance of SEARXNG_INSTANCES) {
+    try {
+      const url = `${instance}/search?q=${encodedQuery}&format=json&categories=general&language=es`;
+      const res = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'AtlasBot/2.0 (Research Agent)',
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!res.ok) continue;
+
+      const data = await res.json();
+      const results: AutoSource[] = [];
+
+      for (const item of (data.results || [])) {
+        if (results.length >= maxResults) break;
+        const itemUrl = item.url || '';
+        const title = cleanSnippet(item.title || '').substring(0, 200);
+        const snippet = cleanSnippet(item.content || '').substring(0, 250);
+
+        // Skip low-quality results
+        if (!itemUrl || !title || title.length < 3) continue;
+        if (itemUrl.includes('searx') || itemUrl.includes('search.')) continue;
+
+        results.push({
+          position: results.length + 1,
+          url: itemUrl,
+          title,
+          snippet,
+        });
+      }
+
+      if (results.length > 0) {
+        console.log(`[AUTO-RESEARCH] SearXNG (${instance}) found ${results.length} results`);
+        return results;
+      }
+    } catch (err) {
+      console.warn(`[AUTO-RESEARCH] SearXNG ${instance} failed:`, err instanceof Error ? err.message : 'unknown');
+      continue; // Try next instance
+    }
+  }
+
+  console.log('[AUTO-RESEARCH] All SearXNG instances failed');
+  return [];
+}
+
+// ========================================
+// SEARCH ENGINE 2: DuckDuckGo Instant Answer API (JSON, reliable)
+// Returns instant answers and abstract for queries
+// ========================================
+
+async function searchDDGInstant(query: string, maxResults = 5): Promise<AutoSource[]> {
   try {
+    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1&t=atlas_research`;
     const res = await fetch(url, {
-      headers: SEARCH_HEADERS,
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(6000),
+      headers: { 'Accept': 'application/json' },
     });
 
     if (!res.ok) return [];
 
-    const html = await res.text();
+    const data = await res.json();
     const sources: AutoSource[] = [];
 
-    // Brave search results are in <div class="snippet ..."> with <a> inside
-    // Pattern: <div class="snippet"><a href="URL">TITLE</a>...description...</div>
-    // Also: <div class="result-header"><a href="URL">TITLE</a></div>
-    const resultPattern = /<div[^>]*class="[^"]*result[^"]*"[^>]*>[\s\S]*?<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-    let match;
-    let parsed = 0;
-
-    while ((match = resultPattern.exec(html)) !== null && parsed < maxResults) {
-      let resultUrl = match[1];
-      const titleRaw = match[2];
-
-      // Skip Brave internal URLs
-      if (resultUrl.includes('search.brave.com') || resultUrl.includes('brave.com/search')) continue;
-      if (resultUrl.includes('account.brave.com') || resultUrl.includes('brave.com/ads')) continue;
-
-      const title = cleanSnippet(titleRaw).substring(0, 200);
-
-      // Try to extract snippet from nearby content
-      const blockStart = match.index;
-      const blockHtml = html.substring(blockStart, blockStart + 2000);
-      const snippetMatch = blockHtml.match(/<div[^>]*class="[^"]*(?:snippet-description|result-description|description)[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-      const snippet = snippetMatch ? cleanSnippet(snippetMatch[1]).substring(0, 200) : '';
-
-      if (resultUrl && title && title.length > 3) {
-        sources.push({
-          position: sources.length + 1,
-          url: resultUrl,
-          title,
-          snippet,
-        });
-        parsed++;
-      }
+    // Abstract (main result)
+    if (data.Abstract && data.AbstractURL) {
+      sources.push({
+        position: sources.length + 1,
+        url: data.AbstractURL,
+        title: data.Heading || 'DuckDuckGo',
+        snippet: data.Abstract.substring(0, 250),
+      });
     }
 
-    // Alternative parsing: look for structured result divs
-    if (sources.length === 0) {
-      // Try div id="search" approach
-      const divPattern = /<a[^>]*href="(https?:\/\/[^"]+)"[^>]*class="[^"]*[^"]*"[^>]*>([\s\S]*?)<\/a>\s*<\/div>/gi;
-      while ((match = divPattern.exec(html)) !== null && sources.length < maxResults) {
-        let resultUrl = match[1];
-        const title = cleanSnippet(match[2]).substring(0, 200);
-        if (resultUrl.includes('search.brave.com') || resultUrl.includes('brave.com/')) continue;
-        if (resultUrl && title && title.length > 5) {
-          sources.push({ position: sources.length + 1, url: resultUrl, title, snippet: '' });
+    // Related topics
+    if (data.RelatedTopics) {
+      for (const topic of data.RelatedTopics) {
+        if (sources.length >= maxResults) break;
+        if (topic.Text && topic.FirstURL) {
+          sources.push({
+            position: sources.length + 1,
+            url: topic.FirstURL,
+            title: topic.Text.substring(0, 200),
+            snippet: topic.Text.substring(0, 250),
+          });
         }
       }
     }
 
-    console.log(`[AUTO-RESEARCH] Brave Search found ${sources.length} results`);
+    // Results (standard search results)
+    if (data.Results) {
+      for (const result of data.Results) {
+        if (sources.length >= maxResults) break;
+        if (result.FirstURL && result.Text) {
+          sources.push({
+            position: sources.length + 1,
+            url: result.FirstURL,
+            title: result.Text.substring(0, 200),
+            snippet: result.Text.substring(0, 250),
+          });
+        }
+      }
+    }
+
+    console.log(`[AUTO-RESEARCH] DDG Instant API found ${sources.length} results`);
     return sources;
   } catch (err) {
-    console.warn('[AUTO-RESEARCH] Brave search failed:', err instanceof Error ? err.message : 'unknown');
+    console.warn('[AUTO-RESEARCH] DDG Instant API failed:', err instanceof Error ? err.message : 'unknown');
     return [];
   }
 }
 
 // ========================================
-// SEARCH ENGINE 2: Bing Search HTML (fallback)
+// SEARCH ENGINE 3: DuckDuckGo Lite HTML (improved parser)
 // ========================================
 
-async function searchBing(query: string, maxResults = 5): Promise<AutoSource[]> {
+async function searchDuckDuckGoLite(query: string, maxResults = 5): Promise<AutoSource[]> {
   const encodedQuery = encodeURIComponent(query);
-  const url = `https://www.bing.com/search?q=${encodedQuery}&setlang=es`;
+  const ddgUrl = `https://lite.duckduckgo.com/lite/?q=${encodedQuery}&kl=es-ar`;
 
   try {
-    const res = await fetch(url, {
+    const ddgRes = await fetch(ddgUrl, {
       headers: SEARCH_HEADERS,
       signal: AbortSignal.timeout(8000),
     });
 
-    if (!res.ok) return [];
+    if (!ddgRes.ok) return [];
 
-    const html = await res.text();
+    const html = await ddgRes.text();
     const sources: AutoSource[] = [];
 
-    // Bing results are in <li class="b_algo"> blocks
-    // <a href="URL">TITLE</a>
-    // <div class="b_caption"><p>DESCRIPTION</p></div>
-    const bAlgoBlocks = html.split(/<li[^>]*class="b_algo"[^>]*>/i);
+    // DuckDuckGo Lite uses <table class="result-link"> and <td class="result-snippet">
+    // Alternative: parse all <a> tags within result tables
+    const resultLinks = html.match(/<a[^>]*class="result-link"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi);
+    if (resultLinks) {
+      for (const linkHtml of resultLinks) {
+        if (sources.length >= maxResults) break;
 
-    for (let i = 1; i < bAlgoBlocks.length && sources.length < maxResults; i++) {
-      const block = bAlgoBlocks[i];
+        const hrefMatch = linkHtml.match(/href="([^"]+)"/i);
+        const titleMatch = linkHtml.match(/>([\s\S]*?)<\/a>/i);
 
-      // Extract URL from first <a> tag with href
-      const urlMatch = block.match(/<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>/i);
-      if (!urlMatch) continue;
+        if (!hrefMatch || !titleMatch) continue;
 
-      let resultUrl = urlMatch[1];
-      // Skip Bing internal URLs
-      if (resultUrl.includes('bing.com') || resultUrl.includes('microsoft.com')) continue;
+        let url = hrefMatch[1];
+        // DDG Lite uses relative URLs, prepend the DDG redirect prefix if needed
+        if (url.startsWith('/')) {
+          url = `https://duckduckgo.com${url}`;
+        }
+        // Skip DDG internal URLs
+        if (url.includes('duckduckgo.com') || url.includes('duck.co')) continue;
 
-      // Extract title from same <a> tag
-      const titleMatch = block.match(/<a[^>]*href="[^"]*"[^>]*>([\s\S]*?)<\/a>/i);
-      const title = titleMatch ? cleanSnippet(titleMatch[1]).substring(0, 200) : '';
+        const title = cleanSnippet(titleMatch[1]).substring(0, 200);
 
-      // Extract snippet/description
-      const snippetMatch = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-      const snippet = snippetMatch ? cleanSnippet(snippetMatch[1]).substring(0, 200) : '';
+        // Try to find snippet nearby
+        const idx = html.indexOf(linkHtml);
+        const nearbyHtml = html.substring(idx, idx + 3000);
+        const snippetMatch = nearbyHtml.match(/class="result-snippet"[^>]*>([\s\S]*?)<\/td>/i);
+        const snippet = snippetMatch ? cleanSnippet(snippetMatch[1]).substring(0, 250) : '';
 
-      if (resultUrl && title && title.length > 3) {
-        sources.push({
-          position: sources.length + 1,
-          url: resultUrl,
-          title,
-          snippet,
-        });
+        if (url && title && title.length > 3) {
+          sources.push({ position: sources.length + 1, url, title, snippet });
+        }
       }
     }
 
-    console.log(`[AUTO-RESEARCH] Bing Search found ${sources.length} results`);
+    // Fallback parser: look for standard link patterns in tables
+    if (sources.length === 0) {
+      // Try to parse all external links from the page
+      const allLinks = html.match(/<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi);
+      if (allLinks) {
+        for (const link of allLinks) {
+          if (sources.length >= maxResults) break;
+          const hrefMatch = link.match(/href="(https?:\/\/[^"]+)"/i);
+          const titleMatch = link.match(/>([\s\S]*?)<\/a>/i);
+          if (!hrefMatch || !titleMatch) continue;
+
+          const url = hrefMatch[1];
+          if (url.includes('duckduckgo.com') || url.includes('duck.co') || url.includes('ddg.gg')) continue;
+
+          const title = cleanSnippet(titleMatch[1]).substring(0, 200);
+          if (url && title && title.length > 5) {
+            sources.push({ position: sources.length + 1, url, title, snippet: '' });
+          }
+        }
+      }
+    }
+
+    console.log(`[AUTO-RESEARCH] DDG Lite found ${sources.length} results`);
     return sources;
   } catch (err) {
-    console.warn('[AUTO-RESEARCH] Bing search failed:', err instanceof Error ? err.message : 'unknown');
+    console.warn('[AUTO-RESEARCH] DDG Lite failed:', err instanceof Error ? err.message : 'unknown');
     return [];
   }
 }
 
 // ========================================
-// SEARCH ENGINE 3: DuckDuckGo HTML (last resort)
+// SEARCH ENGINE 4: DuckDuckGo HTML (classic parser, improved)
 // ========================================
 
 async function searchDuckDuckGo(query: string, maxResults = 5): Promise<AutoSource[]> {
@@ -303,39 +385,143 @@ async function searchDuckDuckGo(query: string, maxResults = 5): Promise<AutoSour
     const html = await ddgRes.text();
     const sources: AutoSource[] = [];
 
-    const resultBlocks = html.split(/<div class="result results_links[\s\S]*?web-result\s*"/i);
+    // Improved pattern: DDG uses <div class="result results_links results_links_deep web-result">
+    // and <a class="result__a" href="//duckduckgo.com/l/?uddg=ENCODED_URL">
+    const resultPattern = /<a[^>]*class="result__a"[^>]*href="(?:\/\/|https?:\/\/)duckduckgo\.com\/l\/\?uddg=([^"&]+)"/gi;
+    let urlMatch;
 
-    for (let i = 1; i < resultBlocks.length && sources.length < maxResults; i++) {
-      const block = resultBlocks[i];
-
-      const urlMatch = block.match(/class="result__a"[^>]*href="(?:\/\/|https?:\/\/)duckduckgo\.com\/l\/\?uddg=([^"&]+)/i);
-      if (!urlMatch) continue;
-
+    while ((urlMatch = resultPattern.exec(html)) !== null && sources.length < maxResults) {
       let url = urlMatch[1];
       try { url = decodeURIComponent(url); } catch {}
 
       if (!url || url.includes('duckduckgo.com') || url.includes('bing.com') || url.includes('microsoft.com')) continue;
 
-      const titleMatch = block.match(/class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
+      // Get the title from the same <a> tag
+      const titleMatch = html.substring(urlMatch.index, urlMatch.index + 500).match(/class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
       const title = titleMatch ? cleanSnippet(titleMatch[1]) : '';
 
-      const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i);
-      const snippet = snippetMatch ? cleanSnippet(snippetMatch[1]).substring(0, 200) : '';
+      // Get the snippet
+      const snippetMatch = html.substring(urlMatch.index, urlMatch.index + 2000).match(/class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|span|div)/i);
+      const snippet = snippetMatch ? cleanSnippet(snippetMatch[1]).substring(0, 250) : '';
 
       if (url && title) {
-        sources.push({
-          position: sources.length + 1,
-          url,
-          title,
-          snippet,
-        });
+        sources.push({ position: sources.length + 1, url, title, snippet: snippet || '' });
       }
     }
 
-    console.log(`[AUTO-RESEARCH] DuckDuckGo found ${sources.length} results`);
+    // Alternative pattern: direct URLs without DDG redirect
+    if (sources.length === 0) {
+      const directPattern = /<a[^>]*class="result__a"[^>]*href="(https?:\/\/[^"]+)"[^>]*>/gi;
+      while ((urlMatch = directPattern.exec(html)) !== null && sources.length < maxResults) {
+        const url = urlMatch[1];
+        if (url.includes('duckduckgo.com')) continue;
+        const titleMatch = html.substring(urlMatch.index, urlMatch.index + 500).match(/class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
+        const title = titleMatch ? cleanSnippet(titleMatch[1]) : '';
+        if (url && title) {
+          sources.push({ position: sources.length + 1, url, title, snippet: '' });
+        }
+      }
+    }
+
+    console.log(`[AUTO-RESEARCH] DDG HTML found ${sources.length} results`);
     return sources;
   } catch (err) {
-    console.warn('[AUTO-RESEARCH] DuckDuckGo search failed:', err instanceof Error ? err.message : 'unknown');
+    console.warn('[AUTO-RESEARCH] DDG HTML failed:', err instanceof Error ? err.message : 'unknown');
+    return [];
+  }
+}
+
+// ========================================
+// SEARCH ENGINE 5: Brave Search HTML (scraping, may fail from CF Workers)
+// ========================================
+
+async function searchBrave(query: string, maxResults = 5): Promise<AutoSource[]> {
+  const encodedQuery = encodeURIComponent(query);
+  const url = `https://search.brave.com/search?q=${encodedQuery}&source=web`;
+
+  try {
+    const res = await fetch(url, {
+      headers: SEARCH_HEADERS,
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) return [];
+
+    const html = await res.text();
+    const sources: AutoSource[] = [];
+
+    // Try multiple patterns for Brave's HTML structure
+    const patterns = [
+      /<div[^>]*class="[^"]*snippet[^"]*"[^>]*>[\s\S]*?<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi,
+      /<a[^>]*href="(https?:\/\/[^"]+)"[^>]*class="[^"]*[^"]*"[^>]*>([\s\S]*?)<\/a>\s*<div[^>]*class="[^"]*snippet[^"]*"[^>]*>/gi,
+      /<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<div[^>]*class="[^"]*description[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    ];
+
+    for (const pattern of patterns) {
+      let match;
+      while ((match = pattern.exec(html)) !== null && sources.length < maxResults) {
+        const resultUrl = match[1];
+        const title = cleanSnippet(match[2]).substring(0, 200);
+        if (resultUrl.includes('search.brave.com') || resultUrl.includes('brave.com/search') || resultUrl.includes('brave.com/ads')) continue;
+        if (resultUrl && title && title.length > 3) {
+          sources.push({ position: sources.length + 1, url: resultUrl, title, snippet: '' });
+        }
+      }
+      if (sources.length > 0) break;
+    }
+
+    console.log(`[AUTO-RESEARCH] Brave Search found ${sources.length} results`);
+    return sources;
+  } catch (err) {
+    console.warn('[AUTO-RESEARCH] Brave search failed:', err instanceof Error ? err.message : 'unknown');
+    return [];
+  }
+}
+
+// ========================================
+// SEARCH ENGINE 6: Bing Search HTML (fallback)
+// ========================================
+
+async function searchBing(query: string, maxResults = 5): Promise<AutoSource[]> {
+  const encodedQuery = encodeURIComponent(query);
+  const url = `https://www.bing.com/search?q=${encodedQuery}&setlang=es`;
+
+  try {
+    const res = await fetch(url, {
+      headers: SEARCH_HEADERS,
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) return [];
+
+    const html = await res.text();
+    const sources: AutoSource[] = [];
+
+    const bAlgoBlocks = html.split(/<li[^>]*class="b_algo"[^>]*>/i);
+
+    for (let i = 1; i < bAlgoBlocks.length && sources.length < maxResults; i++) {
+      const block = bAlgoBlocks[i];
+      const urlMatch = block.match(/<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>/i);
+      if (!urlMatch) continue;
+
+      let resultUrl = urlMatch[1];
+      if (resultUrl.includes('bing.com') || resultUrl.includes('microsoft.com')) continue;
+
+      const titleMatch = block.match(/<a[^>]*href="[^"]*"[^>]*>([\s\S]*?)<\/a>/i);
+      const title = titleMatch ? cleanSnippet(titleMatch[1]).substring(0, 200) : '';
+
+      const snippetMatch = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+      const snippet = snippetMatch ? cleanSnippet(snippetMatch[1]).substring(0, 200) : '';
+
+      if (resultUrl && title && title.length > 3) {
+        sources.push({ position: sources.length + 1, url: resultUrl, title, snippet });
+      }
+    }
+
+    console.log(`[AUTO-RESEARCH] Bing Search found ${sources.length} results`);
+    return sources;
+  } catch (err) {
+    console.warn('[AUTO-RESEARCH] Bing search failed:', err instanceof Error ? err.message : 'unknown');
     return [];
   }
 }
@@ -429,8 +615,8 @@ async function fetchWikipedia(query: string): Promise<{ text: string; url: strin
 }
 
 // ========================================
-// MAIN: Perform auto-research with multi-engine fallback
-// Returns context block + sources for injection into LLM prompt
+// MAIN: Perform auto-research with cascading engine fallback
+// Strategy: try engines in order, stop as soon as we get results
 // ========================================
 
 export async function performAutoResearch(message: string): Promise<AutoResearchResult> {
@@ -440,17 +626,33 @@ export async function performAutoResearch(message: string): Promise<AutoResearch
 
   const trimmed = message.trim();
 
-  // Run all search engines AND Wikipedia in parallel (race for speed)
-  console.log('[AUTO-RESEARCH] Starting multi-engine search for:', trimmed.substring(0, 60));
+  console.log('[AUTO-RESEARCH] Starting cascading search for:', trimmed.substring(0, 60));
 
-  const [braveSources, bingSources, ddgSources, wikiResult] = await Promise.all([
-    searchBrave(trimmed, 5),
-    searchBing(trimmed, 5),
-    searchDuckDuckGo(trimmed, 5),
+  // ---- PHASE 1: Run all fast engines in parallel ----
+  const [searxngResults, ddgInstantResults, ddgLiteResults, wikiResult] = await Promise.all([
+    searchSearXNG(trimmed, 5),
+    searchDDGInstant(trimmed, 5),
+    searchDuckDuckGoLite(trimmed, 5),
     fetchWikipedia(trimmed),
   ]);
 
-  // Merge results: prefer Brave > Bing > DDG, deduplicate by URL domain
+  // ---- PHASE 2: If no results from fast engines, try slow ones ----
+  let ddgHtmlResults: AutoSource[] = [];
+  let braveResults: AutoSource[] = [];
+  let bingResults: AutoSource[] = [];
+
+  const fastTotal = searxngResults.length + ddgInstantResults.length + ddgLiteResults.length;
+
+  if (fastTotal === 0) {
+    console.log('[AUTO-RESEARCH] Fast engines returned 0 results, trying slow fallbacks...');
+    [ddgHtmlResults, braveResults, bingResults] = await Promise.all([
+      searchDuckDuckGo(trimmed, 5),
+      searchBrave(trimmed, 5),
+      searchBing(trimmed, 5),
+    ]);
+  }
+
+  // ---- PHASE 3: Merge all results, deduplicate by domain ----
   const seenDomains = new Set<string>();
   const mergedSources: AutoSource[] = [];
 
@@ -467,13 +669,17 @@ export async function performAutoResearch(message: string): Promise<AutoResearch
     }
   }
 
-  addSources(braveSources);
-  addSources(bingSources);
-  addSources(ddgSources);
+  // Priority order: SearXNG > DDG Instant > DDG Lite > DDG HTML > Brave > Bing
+  addSources(searxngResults);
+  addSources(ddgInstantResults);
+  addSources(ddgLiteResults);
+  addSources(ddgHtmlResults);
+  addSources(braveResults);
+  addSources(bingResults);
 
-  console.log(`[AUTO-RESEARCH] Merged ${mergedSources.length} unique sources (Brave:${braveSources.length} Bing:${bingSources.length} DDG:${ddgSources.length})`);
+  console.log(`[AUTO-RESEARCH] Merged ${mergedSources.length} unique sources (SearXNG:${searxngResults.length} DDG-Instant:${ddgInstantResults.length} DDG-Lite:${ddgLiteResults.length} DDG-HTML:${ddgHtmlResults.length} Brave:${braveResults.length} Bing:${bingResults.length})`);
 
-  // Fetch content from top 3 merged sources in parallel
+  // ---- PHASE 4: Fetch content from top 3 merged sources in parallel ----
   const topSources = mergedSources.slice(0, 3);
   const fetchResults = await Promise.all(
     topSources.map(async (src) => {
@@ -482,7 +688,7 @@ export async function performAutoResearch(message: string): Promise<AutoResearch
     })
   );
 
-  // Build context block for LLM
+  // ---- PHASE 5: Build context block for LLM ----
   const parts: string[] = [];
   const allSources: AutoSource[] = [];
 

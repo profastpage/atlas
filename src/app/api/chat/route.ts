@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
         const researchResult = await Promise.race([
           performAutoResearch(message),
           new Promise<{ needed: false; sources: []; contextBlock: '' }>(r =>
-            setTimeout(() => r({ needed: false, sources: [], contextBlock: '' }), 12000)
+            setTimeout(() => r({ needed: false, sources: [], contextBlock: '' }), 6000)
           ),
         ]);
         if (researchResult.needed) {
