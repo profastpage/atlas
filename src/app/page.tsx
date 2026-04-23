@@ -8,7 +8,8 @@ import {
   Pencil, Archive, ArchiveRestore, Check, AlertTriangle,
   Paperclip, FileText, XCircle as XCircleIcon, Loader2,
   Copy, Share2, Bell, Star, Hash, PencilLine,
-  Sparkles, RotateCcw, ChevronRight, Wand2, RefreshCw, Image, Globe, ExternalLink
+  Sparkles, RotateCcw, ChevronRight, Wand2, RefreshCw, Image, Globe, ExternalLink,
+  ThumbsUp, ThumbsDown
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -189,6 +190,15 @@ export default function AtlasApp() {
   const [imageName, setImageName] = useState<string>('');
   const [showPaywallModal, setShowPaywallModal] = useState(false); // Controlled paywall modal
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputImageRef = useRef<HTMLInputElement>(null);
+  const fileInputPdfRef = useRef<HTMLInputElement>(null);
+  const fileInputTxtRef = useRef<HTMLInputElement>(null);
+
+  // ---- Feedback State ----
+  const [feedbackMap, setFeedbackMap] = useState<Record<string, 'up' | 'down'>>({});
+
+  // ---- Clip Dropdown State ----
+  const [showClipDropdown, setShowClipDropdown] = useState(false);
 
   // ---- Attach Prompt State ----
   const [showAttachPrompt, setShowAttachPrompt] = useState(false);
@@ -219,6 +229,36 @@ export default function AtlasApp() {
   const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null); // Latest sendMessage — no stale closure
   const inputValueRef = useRef(inputValue);
   inputValueRef.current = inputValue;
+
+  // Auto-resize textarea when inputValue changes (e.g., voice sets text)
+  useEffect(() => {
+    const ta = inputRef.current;
+    if (ta) {
+      ta.style.height = '40px';
+      ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+    }
+  }, [inputValue]);
+
+  // Click-outside handler for clip dropdown
+  useEffect(() => {
+    if (!showClipDropdown) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-clip-dropdown]')) {
+        setShowClipDropdown(false);
+      }
+    };
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [showClipDropdown]);
+
+  // Load feedback from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('atlas_feedback');
+      if (stored) setFeedbackMap(JSON.parse(stored));
+    } catch {}
+  }, []);
   const sendingVoiceRef = useRef(false); // Prevents double-send of voice messages
   const lastFinalResultTimeRef = useRef(0); // Debounces final results to prevent rapid duplicate sends
 
@@ -2938,6 +2978,50 @@ export default function AtlasApp() {
                       )}
                     </button>
 
+                    {/* Thumbs Up */}
+                    <button
+                      onClick={() => {
+                        const current = feedbackMap[msg.id];
+                        const next = current === 'up' ? undefined : 'up';
+                        setFeedbackMap(prev => {
+                          const updated = { ...prev };
+                          if (next) updated[msg.id] = next; else delete updated[msg.id];
+                          return updated;
+                        });
+                        try {
+                          const stored = JSON.parse(localStorage.getItem('atlas_feedback') || '{}');
+                          if (next) stored[msg.id] = next; else delete stored[msg.id];
+                          localStorage.setItem('atlas_feedback', JSON.stringify(stored));
+                        } catch {}
+                      }}
+                      className={`p-1 rounded-lg transition-all active:scale-90 cursor-pointer select-none ${feedbackMap[msg.id] === 'up' ? 'text-emerald-400' : 'text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10'}`}
+                      title="Buen respuesta"
+                    >
+                      <ThumbsUp className={`w-3.5 h-3.5 ${feedbackMap[msg.id] === 'up' ? 'fill-emerald-400' : ''}`} />
+                    </button>
+
+                    {/* Thumbs Down */}
+                    <button
+                      onClick={() => {
+                        const current = feedbackMap[msg.id];
+                        const next = current === 'down' ? undefined : 'down';
+                        setFeedbackMap(prev => {
+                          const updated = { ...prev };
+                          if (next) updated[msg.id] = next; else delete updated[msg.id];
+                          return updated;
+                        });
+                        try {
+                          const stored = JSON.parse(localStorage.getItem('atlas_feedback') || '{}');
+                          if (next) stored[msg.id] = next; else delete stored[msg.id];
+                          localStorage.setItem('atlas_feedback', JSON.stringify(stored));
+                        } catch {}
+                      }}
+                      className={`p-1 rounded-lg transition-all active:scale-90 cursor-pointer select-none ${feedbackMap[msg.id] === 'down' ? 'text-red-400' : 'text-gray-400 hover:text-red-400 hover:bg-red-500/10'}`}
+                      title="Mala respuesta"
+                    >
+                      <ThumbsDown className={`w-3.5 h-3.5 ${feedbackMap[msg.id] === 'down' ? 'fill-red-400' : ''}`} />
+                    </button>
+
                     {/* Alarm — only for substantive messages (50+ words) */}
                     {wordCount(msg.content) > 50 && (
                       <button
@@ -3204,11 +3288,32 @@ export default function AtlasApp() {
         </AnimatePresence>
 
         <form onSubmit={handleSubmit} className="flex items-end gap-1.5 max-w-3xl mx-auto relative">
-          {/* Hidden file input */}
+          {/* Hidden file inputs — one per type */}
           <input
             ref={fileInputRef}
             type="file"
             accept=".pdf,.txt,.jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,application/pdf,text/plain"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+          <input
+            ref={fileInputImageRef}
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+          <input
+            ref={fileInputPdfRef}
+            type="file"
+            accept=".pdf,application/pdf"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+          <input
+            ref={fileInputTxtRef}
+            type="file"
+            accept=".txt,text/plain"
             onChange={handleFileUpload}
             className="hidden"
           />
@@ -3221,32 +3326,62 @@ export default function AtlasApp() {
           }`}>
             {/* Left: Action buttons inside container */}
             <div className="flex items-center shrink-0 gap-0.5 p-1 pl-1.5 self-end">
-              {/* Paperclip — Document Upload */}
-              <button
-                type="button"
-                onClick={() => {
-                  trackActionButton({ action: 'attach' });
-                  fileInputRef.current?.click();
-                }}
-                disabled={isLoading || isStreaming || isAnalyzingDocument}
-                className={`p-1.5 rounded-full transition-all active:scale-90 disabled:opacity-30 ${
-                  isAnalyzingDocument
-                    ? 'bg-blue-500/15'
-                    : documentText || imageBase64
-                      ? 'bg-blue-500/10'
-                      : 'hover:bg-gray-700/50'
-                }`}
-                aria-label="Adjuntar archivo (PDF, TXT, Imagen)"
-                title="Adjuntar archivo"
-              >
-                {isAnalyzingDocument ? (
-                  <Loader2 className="w-[18px] h-[18px] text-blue-400 animate-spin" />
-                ) : documentText || imageBase64 ? (
-                  <FileText className="w-[18px] h-[18px] text-blue-400" />
-                ) : (
-                  <Paperclip className="w-[18px] h-[18px] text-gray-500 hover:text-gray-300" />
+              {/* Paperclip — Document Upload Dropdown */}
+              <div className="relative" data-clip-dropdown>
+                <button
+                  type="button"
+                  onClick={() => {
+                    trackActionButton({ action: 'attach' });
+                    setShowClipDropdown(prev => !prev);
+                  }}
+                  disabled={isLoading || isStreaming || isAnalyzingDocument}
+                  className={`p-1.5 rounded-full transition-all active:scale-90 disabled:opacity-30 ${
+                    isAnalyzingDocument
+                      ? 'bg-blue-500/15'
+                      : documentText || imageBase64
+                        ? 'bg-blue-500/10'
+                        : 'hover:bg-gray-700/50'
+                  }`}
+                  aria-label="Adjuntar archivo (PDF, TXT, Imagen)"
+                  title="Adjuntar archivo"
+                >
+                  {isAnalyzingDocument ? (
+                    <Loader2 className="w-[18px] h-[18px] text-blue-400 animate-spin" />
+                  ) : documentText || imageBase64 ? (
+                    <FileText className="w-[18px] h-[18px] text-blue-400" />
+                  ) : (
+                    <Paperclip className="w-[18px] h-[18px] text-gray-500 hover:text-gray-300" />
+                  )}
+                </button>
+                {showClipDropdown && (
+                  <div className="absolute bottom-full left-0 mb-2 bg-[#252525] border border-gray-700/60 rounded-xl shadow-xl z-50 py-1 min-w-[140px]">
+                    <button
+                      type="button"
+                      onClick={() => { setShowClipDropdown(false); fileInputImageRef.current?.click(); }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors"
+                    >
+                      <Image className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Imagen</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowClipDropdown(false); fileInputPdfRef.current?.click(); }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-blue-400" />
+                      <span>PDF</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowClipDropdown(false); fileInputTxtRef.current?.click(); }}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-gray-300 hover:bg-gray-700/40 hover:text-white transition-colors"
+                    >
+                      <Pencil className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Texto</span>
+                    </button>
+                  </div>
                 )}
-              </button>
+              </div>
 
               {/* Image Generation — Pro/Executive only */}
               {(IMAGE_LIMITS[userPlanType?.toLowerCase()] > 0 || userPlanType?.startsWith('trial_') || hasPaidExtraImages) && (
@@ -3296,16 +3431,22 @@ export default function AtlasApp() {
               </button>
             </div>
 
-            {/* Textarea — taller for more chat space */}
+            {/* Textarea — auto-expanding */}
             <textarea
               ref={inputRef}
               id="chat-input"
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={(e) => {
+                setInputValue(e.target.value);
+                const ta = e.target;
+                ta.style.height = '40px';
+                ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+              }}
               onKeyDown={handleKeyDown}
               placeholder={'Escribe o habla tu mensaje...'}
-              rows={2}
-              className="flex-1 min-w-0 bg-transparent py-2.5 px-1 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none resize-none overflow-y-auto max-h-36 leading-5 disabled:opacity-50"
+              rows={1}
+              style={{ height: '40px' }}
+              className="flex-1 min-w-0 bg-transparent py-2.5 px-1 text-[13px] sm:text-[14px] text-white placeholder-gray-500 focus:outline-none resize-none overflow-y-auto max-h-40 leading-5 disabled:opacity-50"
               disabled={isLoading || isStreaming}
             />
 

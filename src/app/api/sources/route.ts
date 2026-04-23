@@ -1,23 +1,13 @@
 export const runtime = 'edge';
 
-// ========================================
-// SOURCES API — Web search via Tavily
-// Returns real sources with URLs, titles, snippets
-// ========================================
-
 import { NextRequest, NextResponse } from 'next/server';
 
-const TAVILY_API_KEY = process.env.TAVILY_API_KEY || '';
-
-interface TavilyResult {
+interface SearchResult {
+  position: number;
   url: string;
   title: string;
-  content: string;
+  snippet: string;
   score: number;
-}
-
-interface TavilyResponse {
-  results: TavilyResult[];
 }
 
 export async function POST(request: NextRequest) {
@@ -32,44 +22,62 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!TAVILY_API_KEY) {
-      return NextResponse.json(
-        { error: 'Tavily API key not configured' },
-        { status: 500 }
-      );
-    }
-
-    const tavilyRes = await fetch('https://api.tavily.com/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_key: TAVILY_API_KEY,
-        query: query.trim(),
-        max_results: Math.min(maxResults, 10),
-        include_answer: false,
-        include_raw_content: false,
-        search_depth: 'basic',
-      }),
+    // Use DuckDuckGo Lite (HTML, no JS) for free web search
+    const encodedQuery = encodeURIComponent(query.trim());
+    const ddgUrl = `https://lite.duckduckgo.com/lite/?q=${encodedQuery}`;
+    
+    const ddgRes = await fetch(ddgUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; AtlasBot/1.0)',
+        'Accept': 'text/html',
+      },
     });
 
-    if (!tavilyRes.ok) {
-      const errText = await tavilyRes.text();
-      console.error('[SOURCES] Tavily API error:', tavilyRes.status, errText);
+    if (!ddgRes.ok) {
       return NextResponse.json(
         { error: 'Search service temporarily unavailable' },
         { status: 502 }
       );
     }
 
-    const data: TavilyResponse = await tavilyRes.json();
+    const html = await ddgRes.text();
 
-    const sources = (data.results || []).map((r, i) => ({
-      position: i + 1,
-      url: r.url,
-      title: r.title,
-      snippet: r.content?.substring(0, 200) || '',
-      score: r.score,
-    }));
+    // Parse DuckDuckGo Lite HTML results
+    // DDG Lite uses tables: each result is a table row with class "result-snippet"
+    const sources: SearchResult[] = [];
+    const resultBlocks = html.split(/<td[^>]*class="result-snippet"[^>]*>/i);
+    
+    for (let i = 1; i < resultBlocks.length && sources.length < maxResults; i++) {
+      const block = resultBlocks[i];
+      // Extract URL from the previous block's link
+      const prevBlock = resultBlocks[i - 1];
+      const urlMatch = prevBlock.match(/href="(https?:\/\/duckduckgo\.com\/l\/\?uddg=([^&"]+)[^"]*)"/);
+      
+      if (urlMatch) {
+        let url = urlMatch[2];
+        try { url = decodeURIComponent(url); } catch {}
+        
+        // Extract title
+        const titleMatch = prevBlock.match(/<a[^>]*class="result-link"[^>]*>([\s\S]*?)<\/a>/i);
+        const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+        
+        // Extract snippet
+        const snippetMatch = block.match(/([\s\S]*?)(?:<\/td>|$)/i);
+        const snippet = snippetMatch 
+          ? snippetMatch[1].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim().substring(0, 200)
+          : '';
+
+        if (url && title && !url.includes('duckduckgo.com')) {
+          sources.push({
+            position: sources.length + 1,
+            url,
+            title,
+            snippet: snippet || '',
+            score: 1 - (sources.length * 0.05),
+          });
+        }
+      }
+    }
 
     return NextResponse.json({
       query: query.trim(),
