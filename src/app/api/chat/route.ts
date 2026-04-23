@@ -18,9 +18,7 @@ import {
 import { db } from '@/lib/sql';
 import { getSupabaseServer } from '@/lib/supabase';
 import { enrichContext, buildContextInjection, buildTimeInjection } from '@/lib/context-api';
-
-// Server-side Supabase client — reads env vars at runtime, not build time
-const supabase = getSupabaseServer();
+import { performAutoResearch, AutoSource } from '@/lib/auto-research';
 
 // ========================================
 // POST /api/chat — STREAMING (SSE) + JSON fallback
@@ -88,16 +86,45 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ---- PASO 2.4: AUTO-RESEARCH — Busca web para preguntas factuales ----
+    let autoResearchSources: AutoSource[] = [];
+    let autoResearchContext = '';
+    try {
+      if (message && !documentText && !imageBase64) {
+        console.log('[CEREBRO] Auto-research check for:', message.substring(0, 60));
+        const researchResult = await Promise.race([
+          performAutoResearch(message),
+          new Promise<{ needed: false; sources: []; contextBlock: '' }>(r =>
+            setTimeout(() => r({ needed: false, sources: [], contextBlock: '' }), 6000)
+          ),
+        ]);
+        if (researchResult.needed) {
+          autoResearchSources = researchResult.sources;
+          autoResearchContext = researchResult.contextBlock;
+          console.log('[CEREBRO] Auto-research found', researchResult.sources.length, 'sources');
+        } else {
+          console.log('[CEREBRO] Auto-research not needed for this message');
+        }
+      }
+    } catch (researchErr) {
+      console.warn('[CEREBRO] Auto-research failed (continuing without it):', researchErr);
+    }
+
     // ---- PASO 2.5: CONTEXTO AMBIENTAL (clima + noticias) ----
     let userCity: string | undefined;
     try {
-      if (tenantId && supabase) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('city')
-          .eq('id', tenantId)
-          .single();
-        userCity = profile?.city || undefined;
+      if (tenantId) {
+        try {
+          const supabase = getSupabaseServer();
+          if (supabase) {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('city')
+              .eq('id', tenantId)
+              .single();
+            userCity = profile?.city || undefined;
+          }
+        } catch {}
       }
     } catch {}
 
@@ -198,6 +225,11 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
       systemPrompt += imgPrompt;
     }
 
+    // If auto-research found sources, inject into system prompt (HIGHEST PRIORITY)
+    if (autoResearchContext) {
+      systemPrompt += '\n\n' + autoResearchContext;
+    }
+
     // If weather/news context detected, append to system prompt
     if (contextInjection) {
       systemPrompt += contextInjection;
@@ -255,7 +287,7 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
     }
 
     if (qwenStream) {
-      return createSSEStream(qwenStream, sessionId, tenantId, message, userName, contextSummary);
+      return createSSEStream(qwenStream, sessionId, tenantId, message, userName, contextSummary, autoResearchSources);
     }
 
     // ---- FALLBACK: NON-STREAMING (Qwen only) ----
@@ -270,20 +302,19 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
 
       await saveAssistantAndMemory(sessionId, tenantId, message, responseText, userName, contextSummary);
 
-      return NextResponse.json({ response: responseText });
+      return NextResponse.json({ response: responseText, sources: autoResearchSources.length > 0 ? autoResearchSources : undefined });
     } catch (fallbackErr) {
       console.error('[CEREBRO] Non-streaming also failed:', fallbackErr);
       const msg = fallbackErr instanceof Error ? fallbackErr.message : 'Error desconocido';
       return NextResponse.json(
-        { error: 'Error interno del servidor', detail: msg },
+        { error: 'Error interno del servidor' },
         { status: 500 }
       );
     }
   } catch (error) {
     console.error('[CEREBRO] Error:', error);
-    const msg = error instanceof Error ? error.message : 'Error desconocido';
     return NextResponse.json(
-      { error: 'Error interno del servidor', detail: msg },
+      { error: 'Error interno del servidor' },
       { status: 500 }
     );
   }
@@ -349,11 +380,16 @@ async function handleExpandMode(
   });
 
   // Try streaming first
-  const qwenStream = await streamChatCompletion({
-    messages: llmMessages,
-    temperature: 0.7,
-    max_tokens: 700,
-  });
+  let qwenStream: ReadableStream<Uint8Array> | null = null;
+  try {
+    qwenStream = await streamChatCompletion({
+      messages: llmMessages,
+      temperature: 0.7,
+      max_tokens: 700,
+    });
+  } catch (expandStreamErr) {
+    console.error('[EXPAND] Streaming failed, trying non-streaming:', expandStreamErr);
+  }
 
   if (qwenStream) {
     return createExpandSSEStream(qwenStream, messageId);
@@ -465,6 +501,7 @@ function createSSEStream(
   userMessage: string,
   userName: string,
   contextSummary: string,
+  researchSources: AutoSource[] = [],
 ): Response {
   const encoder = new TextEncoder();
 
@@ -510,7 +547,7 @@ function createSSEStream(
           await saveAssistantAndMemory(sessionId, tenantId, userMessage, fullText.trim(), userName, contextSummary);
         }
 
-        send(`data: ${JSON.stringify({ done: true, full: fullText })}\n\n`);
+        send(`data: ${JSON.stringify({ done: true, full: fullText, sources: researchSources.length > 0 ? researchSources : undefined })}\n\n`);
       } catch (error) {
         console.error('[CEREBRO] Stream error:', error);
         send(`data: ${JSON.stringify({ error: 'Stream error' })}\n\n`);
@@ -733,9 +770,23 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get('sessionId');
+    const tenantId = searchParams.get('tenantId');
 
     if (!sessionId) {
       return NextResponse.json({ error: 'sessionId requerido' }, { status: 400 });
+    }
+
+    // Verify session ownership
+    if (tenantId) {
+      try {
+        const sessionCheck = await db.execute(
+          `SELECT tenantId FROM Session WHERE id = ?`,
+          [sessionId]
+        );
+        if (sessionCheck.rows.length > 0 && sessionCheck.rows[0].tenantId !== tenantId) {
+          return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+        }
+      } catch {}
     }
 
     await db.execute(`DELETE FROM Message WHERE sessionId = ?`, [sessionId]);

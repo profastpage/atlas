@@ -44,6 +44,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  sources?: Array<{ position: number; url: string; title: string; snippet: string }>;
 }
 
 interface SessionInfo {
@@ -307,6 +308,8 @@ export default function AtlasApp() {
   const [sourcesQuery, setSourcesQuery] = useState('');
   const [sourcesLoading, setSourcesLoading] = useState(false);
   const [researchSummary, setResearchSummary] = useState('');
+  // Auto-research sources per message (stored by message ID)
+  const [messageSources, setMessageSources] = useState<Record<string, Array<{ position: number; url: string; title: string; snippet: string }>>>({});
   const [researchStreaming, setResearchStreaming] = useState(false);
   const [researchStreamId, setResearchStreamId] = useState<string | null>(null);
 
@@ -1509,6 +1512,10 @@ export default function AtlasApp() {
                 const parsed = JSON.parse(trimmed.slice(6));
                 if (parsed.done) {
                   fullText = parsed.full;
+                  // Capture auto-research sources
+                  if (parsed.sources && parsed.sources.length > 0) {
+                    setMessageSources(prev => ({ ...prev, [aId]: parsed.sources }));
+                  }
                 } else if (parsed.token) {
                   fullText += parsed.token;
                 } else if (parsed.error) {
@@ -1572,13 +1579,19 @@ export default function AtlasApp() {
           // ====== NON-STREAMING MODE (fallback) ======
           const data = await res.json();
           const responseContent = data.response || data.error || '';
+          const responseSources = data.sources;
           const assistantMsg: Message = {
             id: `assistant-${Date.now()}`,
             role: 'assistant',
             content: responseContent || 'Sin respuesta. Intenta de nuevo.',
             timestamp: new Date().toISOString(),
+            sources: responseSources || undefined,
           };
           setMessages((prev) => [...prev, assistantMsg]);
+          // Store auto-research sources
+          if (responseSources && responseSources.length > 0) {
+            setMessageSources(prev => ({ ...prev, [assistantMsg.id]: responseSources }));
+          }
 
           // ---- PASO 4: INCREMENT COUNTER ONLY ON SUCCESSFUL ASSISTANT RESPONSE ----
           if (assistantMsg.content && assistantMsg.content !== 'Sin respuesta.' && assistantMsg.content !== 'Error de comunicacion.' && !data.error) {
@@ -3024,6 +3037,35 @@ export default function AtlasApp() {
                     <span className="inline-block w-1 h-1 rounded-full bg-amber-400/80" />
                     Conexion interrumpida. La respuesta se corto.
                   </p>
+                )}
+                {/* Auto-Research Sources — inline clickable links */}
+                {msg.role === 'assistant' && messageSources[msg.id] && messageSources[msg.id].length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-gray-700/40">
+                    <div className="flex items-center gap-1 mb-1.5">
+                      <Globe className="w-3 h-3 text-blue-400" />
+                      <span className="text-[9px] font-bold text-blue-400 uppercase tracking-wider">Fuentes verificadas ({messageSources[msg.id].length})</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {messageSources[msg.id].slice(0, 4).map((src) => (
+                        <a
+                          key={src.position}
+                          href={src.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-all group max-w-[200px]"
+                        >
+                          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-500/20 text-[8px] font-bold text-blue-400 shrink-0">
+                            {src.position === 0 ? 'W' : src.position}
+                          </span>
+                          <span className="text-[10px] text-blue-300 group-hover:text-blue-200 truncate">{src.title}</span>
+                          <ExternalLink className="w-2.5 h-2.5 text-blue-400/60 shrink-0" />
+                        </a>
+                      ))}
+                      {messageSources[msg.id].length > 4 && (
+                        <span className="text-[10px] text-gray-500 px-2 py-1">+{messageSources[msg.id].length - 4} mas</span>
+                      )}
+                    </div>
+                  </div>
                 )}
                 {msg.role === 'user' && (
                   <p className="text-[9px] text-emerald-200/50 mt-1 text-right">

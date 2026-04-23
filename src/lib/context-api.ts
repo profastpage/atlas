@@ -142,6 +142,63 @@ export async function fetchWikipedia(topic: string): Promise<string | null> {
   }
 }
 
+// ---- 5. Open Food Facts: Nutrition data for foods (no API key) ----
+export async function fetchFoodNutrition(query: string): Promise<string | null> {
+  try {
+    const encoded = encodeURIComponent(query.trim());
+    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encoded}&search_simple=1&json=1&page_size=3&fields=product_name,brands,nutriments_100g, serving_quantity,nutriscore_grade,allergens,labels,categories`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const products = data.products;
+    if (!products || products.length === 0) return null;
+
+    const lines: string[] = [];
+    for (const p of products.slice(0, 3)) {
+      const name = p.product_name || 'Producto desconocido';
+      const brand = p.brands || '';
+      const n = p.nutriments_100g || {};
+      const lines2: string[] = [];
+
+      lines2.push(`• **${name}**${brand ? ` (${brand})` : ''}`);
+
+      const kcal = n['energy-kcal_100g'] || n['energy-kcal'] || n['energy_100g'];
+      if (kcal !== undefined) lines2.push(`  Calorias: ${Math.round(kcal)} kcal por 100g`);
+
+      const protein = n.proteins_100g || n.proteins;
+      if (protein !== undefined) lines2.push(`  Proteinas: ${protein}g`);
+
+      const carbs = n.carbohydrates_100g || n.carbohydrates;
+      if (carbs !== undefined) lines2.push(`  Carbohidratos: ${carbs}g`);
+
+      const fat = n.fat_100g || n.fat;
+      if (fat !== undefined) lines2.push(`  Grasas: ${fat}g`);
+
+      const fiber = n.fiber_100g || n.fiber;
+      if (fiber !== undefined) lines2.push(`  Fibra: ${fiber}g`);
+
+      const sugar = n.sugars_100g || n.sugars;
+      if (sugar !== undefined) lines2.push(`  Azucares: ${sugar}g`);
+
+      const sodium = n.sodium_100g || n.sodium;
+      if (sodium !== undefined) lines2.push(`  Sodio: ${sodium}g`);
+
+      if (n.salt_100g || n.salt) lines2.push(`  Sal: ${n.salt_100g || n.salt}g`);
+
+      if (p.nutriscore_grade) lines2.push(`  Nutri-Score: ${p.nutriscore_grade.toUpperCase()}`);
+
+      if (p.serving_quantity) lines2.push(`  Porcion: ${p.serving_quantity}g`);
+
+      lines.push(lines2.join('\n'));
+    }
+
+    return `[DATOS NUTRICIONALES REALES — Open Food Facts]\n${lines.join('\n\n')}\n\nUsa estos datos como base. Son valores por 100g. No menciones la fuente API.`;
+  } catch {
+    return null;
+  }
+}
+
 // ========================================
 // KEYWORD DETECTION
 // ========================================
@@ -187,6 +244,17 @@ const FOOTBALL_KEYWORDS = [
   'transferencia', 'fichaje', 'mercado de pases', 'ventana de pases',
 ];
 
+// Nutrition/food keywords — trigger Open Food Facts API
+const NUTRITION_KEYWORDS = [
+  'calorias', 'caloría', 'kcal', 'proteina', 'proteínas', 'carbohidrato',
+  'carbohidratos', 'grasa', 'grasas', 'fibra', 'vitamina', 'mineral',
+  'suplemento', 'creatina', 'whey', 'bcaa', 'preentreno', 'postentreno',
+  'alimento', 'comida', 'nutricional', 'macronutriente', 'micronutriente',
+  'nutriscore', 'valor nutricional', 'informacion nutricional',
+  'cuantas calorias', 'cuanta proteina', 'cuantos carbohidratos',
+  'que contiene', 'valor energetico',
+];
+
 // Football team name detection — trigger context for specific teams
 const FOOTBALL_TEAM_KEYWORDS = [
   'real madrid', 'barcelona', 'atletico madrid', 'manchester city', 'manchester united',
@@ -221,8 +289,8 @@ const WIKI_TRIGGER_PATTERNS = [
 ];
 
 function containsKeyword(text: string, keywords: string[]): boolean {
-  const lower = text.toLowerCase();
-  return keywords.some((kw) => lower.includes(kw));
+  const lower = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return keywords.some(kw => lower.includes(kw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
 }
 
 function containsAnyFootballKeyword(text: string): boolean {
@@ -297,6 +365,7 @@ export interface ContextResult {
   exchangeContext: string | null;
   wikiContext: string | null;
   footballContext: string | null;
+  nutritionContext: string | null;
 }
 
 export async function enrichContext(
@@ -308,10 +377,11 @@ export async function enrichContext(
   const needsExchange = containsKeyword(userMessage, EXCHANGE_KEYWORDS);
   const wikiTopic = extractWikipediaTopic(userMessage);
   const needsFootball = containsAnyFootballKeyword(userMessage);
+  const needsNutrition = containsKeyword(userMessage, NUTRITION_KEYWORDS);
 
   // If nothing matches, skip entirely
-  if (!needsWeather && !needsNews && !needsExchange && !wikiTopic && !needsFootball) {
-    return { weatherContext: null, newsContext: null, exchangeContext: null, wikiContext: null, footballContext: null };
+  if (!needsWeather && !needsNews && !needsExchange && !wikiTopic && !needsFootball && !needsNutrition) {
+    return { weatherContext: null, newsContext: null, exchangeContext: null, wikiContext: null, footballContext: null, nutritionContext: null };
   }
 
   // Fetch football context separately (has its own API)
@@ -331,6 +401,7 @@ export async function enrichContext(
     needsNews ? fetchNews(extractNewsQuery(userMessage)) : Promise.resolve(null),
     needsExchange ? fetchExchangeRate() : Promise.resolve(null),
     wikiTopic ? fetchWikipedia(wikiTopic) : Promise.resolve(null),
+    needsNutrition ? fetchFoodNutrition(userMessage) : Promise.resolve(null),
   ]);
 
   return {
@@ -339,6 +410,7 @@ export async function enrichContext(
     exchangeContext: results[2],
     wikiContext: results[3],
     footballContext,
+    nutritionContext: results[4],
   };
 }
 
@@ -376,6 +448,12 @@ export function buildContextInjection(context: ContextResult): string {
   if (context.footballContext) {
     parts.push(
       `[DATOS DE FUTBOL EN TIEMPO REAL]\n${context.footballContext}\nREGLA CRITICA: Estos son datos REALES y ACTUALES de partidos, posiciones y estadisticas. Usalos como base para tu respuesta. Si el usuario pregunta sobre resultados, marcadores, posiciones o estadisticas, responde con estos datos. No menciones la fuente API.`
+    );
+  }
+
+  if (context.nutritionContext) {
+    parts.push(
+      `${context.nutritionContext}`
     );
   }
 

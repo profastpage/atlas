@@ -5,34 +5,55 @@
 // Models:
 //   qwen/qwen-turbo          — Main chat brain
 //   meta-llama/llama-3.3-70b-instruct  — PDF structured extraction (free on OpenRouter)
-//   google/gemini-2.5-flash-lite       — Image description (future)
+//   google/gemini-2.5-flash-lite       — Image description
+//   black-forest-labs/FLUX.1-schnell    — Image generation (Together AI)
 //
 // Env vars:
 //   QWEN_API_KEY      — OpenRouter API key
 //   QWEN_BASE_URL     — OpenRouter base URL (default: https://openrouter.ai/api/v1)
 //   QWEN_MODEL        — Qwen model name (default: qwen/qwen-turbo)
-//   LLM_MAX_TOKENS    — Max response tokens (default: 150)
+//   LLM_MAX_TOKENS    — Max response tokens (default: 300)
 // ========================================
 
-const QWEN_CONFIG = {
-  baseUrl: process.env.QWEN_BASE_URL || 'https://openrouter.ai/api/v1',
-  apiKey: process.env.QWEN_API_KEY || '',
-  model: process.env.QWEN_MODEL || 'qwen/qwen-turbo',
-  maxTokens: parseInt(process.env.LLM_MAX_TOKENS || '300', 10),
-};
+// Lazy config getters — read env vars on each call (Edge-safe, handles rotation)
+function getQwenConfig() {
+  return {
+    baseUrl: process.env.QWEN_BASE_URL || 'https://openrouter.ai/api/v1',
+    apiKey: process.env.QWEN_API_KEY || '',
+    model: process.env.QWEN_MODEL || 'qwen/qwen-turbo',
+    maxTokens: parseInt(process.env.LLM_MAX_TOKENS || '300', 10),
+  };
+}
 
-// PDF Pipeline Model — Llama 3.3 70B (free on OpenRouter)
-const PDF_EXTRACTOR_CONFIG = {
-  model: process.env.PDF_EXTRACTOR_MODEL || 'meta-llama/llama-3.3-70b-instruct',
-};
+function getPdfConfig() {
+  return { model: process.env.PDF_EXTRACTOR_MODEL || 'meta-llama/llama-3.3-70b-instruct' };
+}
 
-// Image Pipeline Model — Gemini 2.5 Flash Lite (future)
-const IMAGE_DESCRIBER_CONFIG = {
-  model: process.env.IMAGE_DESCRIBER_MODEL || 'google/gemini-2.5-flash-lite-preview-06-05',
-};
+function getImageDescConfig() {
+  return { model: process.env.IMAGE_DESCRIBER_MODEL || 'google/gemini-2.5-flash-lite-preview-06-05' };
+}
 
 function hasQwen(): boolean {
-  return !!QWEN_CONFIG.apiKey;
+  return !!getQwenConfig().apiKey;
+}
+
+// Edge-safe AbortSignal.timeout wrapper
+function timeoutSignal(ms: number): AbortSignal {
+  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms);
+  const ctrl = new AbortController();
+  setTimeout(() => ctrl.abort(), ms);
+  return ctrl.signal;
+}
+
+// Retry wrapper for transient errors (429, 5xx)
+async function fetchWithRetry(url: string, init: RequestInit, retries = 1): Promise<Response> {
+  for (let i = 0; i <= retries; i++) {
+    const res = await fetch(url, init);
+    if (res.status < 500 && res.status !== 429) return res;
+    if (i === retries) return res;
+    await new Promise(r => setTimeout(r, 800 * Math.pow(2, i)));
+  }
+  return res; // unreachable
 }
 
 // ========================================
@@ -47,29 +68,31 @@ export async function createChatCompletion(body: {
   model?: string;
   thinking?: { type: string };
 }) {
-  if (!hasQwen()) {
-    throw new Error('[BRAIN] Qwen API key no configurada. No se permite fallback a otros modelos.');
+  const cfg = getQwenConfig();
+  if (!cfg.apiKey) {
+    throw new Error('Servicio temporalmente no disponible');
   }
 
-  const maxTokens = body.max_tokens || QWEN_CONFIG.maxTokens;
-  const url = `${QWEN_CONFIG.baseUrl}/chat/completions`;
+  const maxTokens = body.max_tokens || cfg.maxTokens;
+  const url = `${cfg.baseUrl}/chat/completions`;
 
-  console.log('[BRAIN] Using Qwen:', QWEN_CONFIG.model);
+  console.log('[BRAIN] Using Qwen:', cfg.model);
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${QWEN_CONFIG.apiKey}`,
+      'Authorization': `Bearer ${cfg.apiKey}`,
       'HTTP-Referer': 'https://atlas-9mv.pages.dev',
       'X-Title': 'Atlas Coach',
     },
     body: JSON.stringify({
-      model: body.model || QWEN_CONFIG.model,
+      model: body.model || cfg.model,
       messages: body.messages,
       temperature: body.temperature ?? 0.7,
       max_tokens: maxTokens,
     }),
+    signal: timeoutSignal(25000),
   });
 
   if (!response.ok) {
@@ -91,30 +114,32 @@ export async function streamChatCompletion(body: {
   max_tokens?: number;
   model?: string;
 }): Promise<ReadableStream<Uint8Array> | null> {
-  if (!hasQwen()) {
-    throw new Error('[BRAIN] Qwen API key no configurada. No se permite fallback a otros modelos.');
+  const cfg = getQwenConfig();
+  if (!cfg.apiKey) {
+    throw new Error('Servicio temporalmente no disponible');
   }
 
-  const maxTokens = body.max_tokens || QWEN_CONFIG.maxTokens;
-  const url = `${QWEN_CONFIG.baseUrl}/chat/completions`;
+  const maxTokens = body.max_tokens || cfg.maxTokens;
+  const url = `${cfg.baseUrl}/chat/completions`;
 
-  console.log('[BRAIN] Streaming Qwen:', QWEN_CONFIG.model);
+  console.log('[BRAIN] Streaming Qwen:', cfg.model);
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${QWEN_CONFIG.apiKey}`,
+      'Authorization': `Bearer ${cfg.apiKey}`,
       'HTTP-Referer': 'https://atlas-9mv.pages.dev',
       'X-Title': 'Atlas Coach',
     },
     body: JSON.stringify({
-      model: body.model || QWEN_CONFIG.model,
+      model: body.model || cfg.model,
       messages: body.messages,
       temperature: body.temperature ?? 0.7,
       max_tokens: maxTokens,
       stream: true,
     }),
+    signal: timeoutSignal(25000),
   });
 
   if (!response.ok) {
@@ -130,31 +155,34 @@ export async function streamChatCompletion(body: {
 // Extracts structured data from document text
 // ========================================
 
-const PDF_EXTRACTOR_SYSTEM_PROMPT = `Eres un asistente de extracción de datos. Analiza el siguiente texto y extrae: 1) Los puntos clave o hechos principales. 2) Las entidades mencionadas (nombres, fechas, montos, problemas). 3) Las conclusiones del texto. Sé exhaustivo, no dejes fuera ningún detalle importante. Estructura tu salida claramente con viñetas.`;
+const PDF_EXTRACTOR_SYSTEM_PROMPT = `Eres un asistente de extraccion de datos. Analiza el siguiente texto y extrae: 1) Los puntos clave o hechos principales. 2) Las entidades mencionadas (nombres, fechas, montos, problemas). 3) Las conclusiones del texto. Se exhaustivo, no dejes fuera ningun detalle importante. Estructura tu salida claramente con vinetas.`;
 
 export async function extractPdfStructured(documentText: string): Promise<string> {
-  const url = `${QWEN_CONFIG.baseUrl}/chat/completions`;
+  const cfg = getQwenConfig();
+  const pdfCfg = getPdfConfig();
+  const url = `${cfg.baseUrl}/chat/completions`;
 
-  console.log('[PDF_PIPELINE] Extracting with Llama:', PDF_EXTRACTOR_CONFIG.model);
+  console.log('[PDF_PIPELINE] Extracting with Llama:', pdfCfg.model);
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${QWEN_CONFIG.apiKey}`,
+      'Authorization': `Bearer ${cfg.apiKey}`,
       'HTTP-Referer': 'https://atlas-9mv.pages.dev',
       'X-Title': 'Atlas Coach — PDF Pipeline',
     },
     body: JSON.stringify({
-      model: PDF_EXTRACTOR_CONFIG.model,
+      model: pdfCfg.model,
       messages: [
         { role: 'system', content: PDF_EXTRACTOR_SYSTEM_PROMPT },
         { role: 'user', content: `Analiza este documento:\n\n---\n${documentText}\n---` },
       ],
-      temperature: 0.3, // Low temp for extraction accuracy
+      temperature: 0.3,
       max_tokens: 2000,
     }),
-  });
+    signal: timeoutSignal(30000),
+  }, 1);
 
   if (!response.ok) {
     const errorBody = await response.text();
@@ -180,23 +208,25 @@ export async function extractPdfStructured(documentText: string): Promise<string
 // Receives base64 data URL from frontend
 // ========================================
 
-const IMAGE_DESCRIBER_SYSTEM_PROMPT = `Eres un asistente que describe imágenes para otro modelo. Describe detalladamente lo que ves en español. Incluye: 1) Elementos principales visibles. 2) Texto legible en la imagen. 3) Colores,布局 y composición. 4) Contexto o escenario si es identifiable. 5) Detalles relevantes que podrían ser útiles para responder preguntas sobre la imagen.`;
+const IMAGE_DESCRIBER_SYSTEM_PROMPT = `Eres un asistente que describe imagenes para otro modelo. Describe detalladamente lo que ves en espanol. Incluye: 1) Elementos principales visibles. 2) Texto legible en la imagen. 3) Colores, distribucion y composicion. 4) Contexto o escenario si es identificable. 5) Detalles relevantes que podrian ser utiles para responder preguntas sobre la imagen.`;
 
 export async function describeImage(base64DataUrl: string): Promise<string> {
-  const url = `${QWEN_CONFIG.baseUrl}/chat/completions`;
+  const cfg = getQwenConfig();
+  const imgCfg = getImageDescConfig();
+  const url = `${cfg.baseUrl}/chat/completions`;
 
-  console.log('[IMAGE_PIPELINE] Describing with Gemini:', IMAGE_DESCRIBER_CONFIG.model);
+  console.log('[IMAGE_PIPELINE] Describing with Gemini:', imgCfg.model);
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${QWEN_CONFIG.apiKey}`,
+      'Authorization': `Bearer ${cfg.apiKey}`,
       'HTTP-Referer': 'https://atlas-9mv.pages.dev',
       'X-Title': 'Atlas Coach — Image Pipeline',
     },
     body: JSON.stringify({
-      model: IMAGE_DESCRIBER_CONFIG.model,
+      model: imgCfg.model,
       messages: [
         { role: 'system', content: IMAGE_DESCRIBER_SYSTEM_PROMPT },
         {
@@ -210,7 +240,8 @@ export async function describeImage(base64DataUrl: string): Promise<string> {
       temperature: 0.3,
       max_tokens: 1500,
     }),
-  });
+    signal: timeoutSignal(30000),
+  }, 1);
 
   if (!response.ok) {
     const errorBody = await response.text();
