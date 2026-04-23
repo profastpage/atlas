@@ -274,6 +274,9 @@ export default function AtlasApp() {
   // ---- Refs ----
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const userHasScrolledUp = useRef(false);
+  const forceScrollRef = useRef(false);
 
   // ---- Settings State ----
   const [token, setToken] = useState('');
@@ -567,9 +570,38 @@ export default function AtlasApp() {
     }
   };
 
+  // Smart scroll: auto-scroll only when user is near bottom OR on explicit action (new message sent).
+  // During streaming, if user scrolled up, never drag them down.
+  const isNearBottom = useCallback(() => {
+    const el = chatContainerRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  }, []);
+
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    if (forceScrollRef.current) {
+      // Explicit action (send message, regenerate, load session) → always scroll
+      forceScrollRef.current = false;
+      userHasScrolledUp.current = false;
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      });
+      return;
+    }
+    // During streaming or loading, only scroll if user hasn't scrolled up
+    if (isStreaming || isLoading) {
+      if (!userHasScrolledUp.current && isNearBottom()) {
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        });
+      }
+      return;
+    }
+    // Not streaming: always scroll to bottom on new message
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
+  }, [messages, isStreaming, isLoading, isNearBottom]);
 
   // Show install prompt after 7 bot responses (guest) or after login (registered)
   useEffect(() => {
@@ -591,7 +623,10 @@ export default function AtlasApp() {
     }
   }, [messages.length, isAuthenticated, trialBotResponses]);
 
-  const scrollToBottom = () => {
+  const scrollToBottom = (force = false) => {
+    if (force) {
+      forceScrollRef.current = true;
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
@@ -1266,6 +1301,7 @@ export default function AtlasApp() {
       );
       setSessionReady(true);
       setShowSessions(false);
+      scrollToBottom(true); // Force scroll when loading a session
     } catch (error) {
       console.error('[SESION] Error al cargar:', error);
     }
@@ -1435,6 +1471,7 @@ export default function AtlasApp() {
       voiceTranscriptRef.current = ''; // Clear voice accumulation on send
       setIsLoading(true);
       setIsStreaming(true); // ---- PASO 3: Activar streaming ANTES del fetch ----
+      scrollToBottom(true); // Force scroll when user sends a message
 
       // ---- POSTHOG: Track mensaje enviado ----
       trackMessageSent({
@@ -2946,7 +2983,17 @@ export default function AtlasApp() {
       </AnimatePresence>
 
       {/* ===== CHAT AREA ===== */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3 space-y-3" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div
+        ref={chatContainerRef}
+        onScroll={() => {
+          // Track if user manually scrolled up (away from bottom)
+          if (isStreaming || isLoading) {
+            userHasScrolledUp.current = !isNearBottom();
+          }
+        }}
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3 space-y-3"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+>
         {messages.length === 0 && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 flex items-center justify-center mb-5 border border-emerald-500/10">
