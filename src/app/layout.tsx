@@ -118,7 +118,17 @@ export default function RootLayout({
                     }
                   }
                 });
-                // 2. Register SW
+                // 2. Capture beforeinstallprompt BEFORE React hydrates
+                //    This event fires very early; if we wait for React useEffect, it's too late.
+                window.addEventListener('beforeinstallprompt', function(e) {
+                  e.preventDefault();
+                  window.__atlasDeferredPrompt = e;
+                });
+                window.addEventListener('appinstalled', function() {
+                  window.__atlasDeferredPrompt = null;
+                  try { localStorage.setItem('atlas_pwa_installed', 'true'); } catch(e) {}
+                });
+                // 3. Register SW
                 if ('serviceWorker' in navigator) {
                   var swKey = 'sw-reloaded';
                   window.addEventListener('load', function() {

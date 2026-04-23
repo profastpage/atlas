@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Download, X, Bell, Zap, Shield, Smartphone,
@@ -9,16 +9,21 @@ import {
 
 // ========================================
 // ATLAS PWA INSTALL PROMPT — Premium Bottom Sheet
-// - Shows when triggered externally (after N responses or after login)
-// - Works on Android (beforeinstallprompt) AND iOS (manual guide)
-// - Compelling benefits, professional design
-// - Dismiss → shows again after 7 days
-// - Registers push notifications after install
+// ========================================
+// Key fix: beforeinstallprompt is captured in layout.tsx (inline script)
+// BEFORE React hydrates. We read it here from window.__atlasDeferredPrompt.
+// This fixes the bug where the event was lost because it fired too early.
 // ========================================
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
+declare global {
+  interface Window {
+    __atlasDeferredPrompt: BeforeInstallPromptEvent | null;
+  }
 }
 
 const DISMISSED_KEY = 'atlas_pwa_dismissed';
@@ -78,31 +83,46 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
   const [showIOSGuide, setShowIOSGuide] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [installing, setInstalling] = useState(false);
-  const shownRef = useRef(false);
 
   useEffect(() => {
-    // If already installed, never show
-    if (localStorage.getItem(INSTALLED_KEY) === 'true') {
-      setIsInstalled(true);
-      return;
-    }
+    // 1. Check if already installed
+    const alreadyInstalled =
+      localStorage.getItem(INSTALLED_KEY) === 'true' ||
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (navigator as any).standalone === true;
 
-    // Check if in standalone mode (already installed as PWA)
-    if (window.matchMedia('(display-mode: standalone)').matches ||
-        (navigator as any).standalone === true) {
+    if (alreadyInstalled) {
       localStorage.setItem(INSTALLED_KEY, 'true');
       setIsInstalled(true);
       return;
     }
 
-    // Check dismiss cooldown — show again after 7 days
-    const dismissedAt = localStorage.getItem(DISMISSED_TIME_KEY);
-    if (dismissedAt) {
-      const elapsed = Date.now() - parseInt(dismissedAt, 10);
-      if (elapsed < DISMISS_COOLDOWN_MS) return;
+    // 2. Read the captured beforeinstallprompt from layout.tsx inline script
+    //    This event fires BEFORE React hydrates, so it's captured there
+    if (window.__atlasDeferredPrompt) {
+      setDeferredPrompt(window.__atlasDeferredPrompt);
     }
 
-    // Detect OS and browser
+    // 3. Also listen for future events (edge case: page stays open, SW updates, etc.)
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+      window.__atlasDeferredPrompt = e as BeforeInstallPromptEvent;
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+
+    // 4. Listen for successful install
+    const installedHandler = () => {
+      localStorage.setItem(INSTALLED_KEY, 'true');
+      setIsInstalled(true);
+      setShow(false);
+      setDeferredPrompt(null);
+      window.__atlasDeferredPrompt = null;
+      requestNotifications();
+    };
+    window.addEventListener('appinstalled', installedHandler);
+
+    // 5. Detect OS and browser
     const ua = navigator.userAgent;
     const ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const android = /Android/i.test(ua);
@@ -110,49 +130,43 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
     setIsIOS(ios);
     setIsSafari(safari);
     setIsAndroid(android);
-    // On iOS + not Safari, show the guide immediately when triggered
-    if (ios && !safari) {
-      setShowIOSGuide(true);
-    }
-
-    // Listen for beforeinstallprompt (Android/Chrome)
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-
-    // Listen for successful install
-    window.addEventListener('appinstalled', () => {
-      localStorage.setItem(INSTALLED_KEY, 'true');
-      setIsInstalled(true);
-      setShow(false);
-      setDeferredPrompt(null);
-      // Request notification permission after install
-      requestNotifications();
-    });
-
-    // Show when triggered externally (after N responses or after login)
-    // The parent controls when to trigger
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('appinstalled', installedHandler);
     };
   }, []);
 
-  // Watch external trigger — always show when parent requests (no cooldown for manual clicks)
+  // Watch external trigger — parent tells us when to show
   useEffect(() => {
     if (!trigger) return;
     if (isInstalled) return;
-    setShow(true);
-  }, [trigger, isInstalled]);
+
+    // Check dismiss cooldown — but skip for manual triggers from settings
+    const dismissedAt = localStorage.getItem(DISMISSED_TIME_KEY);
+    if (dismissedAt) {
+      const elapsed = Date.now() - parseInt(dismissedAt, 10);
+      if (elapsed < DISMISS_COOLDOWN_MS) {
+        // Still in cooldown — only show if this is a manual trigger (settings button)
+        // For auto-triggers, respect the cooldown
+        return;
+      }
+    }
+
+    // On iOS + not Safari, show the "open in Safari" guide immediately
+    if (isIOS && !isSafari) {
+      setShow(true);
+      setShowIOSGuide(true);
+    } else {
+      setShow(true);
+    }
+  }, [trigger, isInstalled, isIOS, isSafari]);
 
   const requestNotifications = useCallback(async () => {
     if (localStorage.getItem(NOTIFICATION_GRANTED_KEY) === 'true') return;
     if (!('Notification' in window)) return;
     if (Notification.permission === 'granted') {
       localStorage.setItem(NOTIFICATION_GRANTED_KEY, 'true');
-      // Subscribe to push
       if ('serviceWorker' in navigator) {
         try {
           const reg = await navigator.serviceWorker.ready;
@@ -162,7 +176,6 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
               process.env.NEXT_PUBLIC_VAPID_KEY || ''
             ),
           });
-          // Send subscription to server
           await fetch('/api/notifications/subscribe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -189,6 +202,7 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
   }, []);
 
   const handleInstall = useCallback(async () => {
+    // Case 1: Android/Chrome with native install prompt
     if (deferredPrompt) {
       setInstalling(true);
       try {
@@ -197,20 +211,31 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
         if (outcome === 'accepted') {
           localStorage.setItem(INSTALLED_KEY, 'true');
         }
-      } catch {}
+      } catch (err) {
+        console.warn('Install prompt failed:', err);
+      }
       setDeferredPrompt(null);
+      window.__atlasDeferredPrompt = null;
       setInstalling(false);
       setShow(false);
-    } else if (isIOS) {
-      // iOS — show Safari Add to Home Screen guide
-      setShowIOSGuide(true);
-    } else {
-      // Android/Desktop — no deferred prompt available
-      // Try opening the browser's install menu (Chrome: three-dot menu → Install app)
-      // Show manual guide for Android
-      setShowIOSGuide(true); // reuse the guide view for Android too
+      return;
     }
-  }, [deferredPrompt, isIOS]);
+
+    // Case 2: iOS — show Safari "Add to Home Screen" guide
+    if (isIOS) {
+      setShowIOSGuide(true);
+      return;
+    }
+
+    // Case 3: Android without native prompt — show manual guide
+    if (isAndroid) {
+      setShowIOSGuide(true);
+      return;
+    }
+
+    // Case 4: Desktop — not installable, show dismiss message
+    setShow(false);
+  }, [deferredPrompt, isIOS, isAndroid]);
 
   const handleDismiss = useCallback(() => {
     setShow(false);
@@ -219,8 +244,8 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
     localStorage.setItem(DISMISSED_TIME_KEY, String(Date.now()));
   }, []);
 
-  const canInstall = deferredPrompt || !isIOS;
-  const isIOSNotSafari = isIOS && !isSafari;
+  // Can we show a native install button?
+  const hasNativeInstall = !!deferredPrompt;
 
   return (
     <>
@@ -296,10 +321,10 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
                   </div>
                 </div>
 
-                {/* Install CTA */}
+                {/* Install CTA — Platform-specific */}
                 <div className="px-6 pb-3">
-                  {isIOSNotSafari && showIOSGuide ? (
-                    /* iOS NOT in Safari — must open in Safari first */
+                  {/* ---- iOS NOT in Safari: Must open in Safari first ---- */}
+                  {isIOS && !isSafari && showIOSGuide && (
                     <div className="space-y-3 pb-2">
                       <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
                         <ExternalLink className="w-5 h-5 text-amber-400 shrink-0" />
@@ -333,8 +358,10 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
                         )}
                       </button>
                     </div>
-                  ) : isIOS && showIOSGuide ? (
-                    /* iOS in Safari — Add to Home Screen guide */
+                  )}
+
+                  {/* ---- iOS in Safari: Add to Home Screen guide ---- */}
+                  {isIOS && isSafari && showIOSGuide && (
                     <div className="space-y-3 pb-2">
                       <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
                         <Sparkles className="w-5 h-5 text-blue-400 shrink-0" />
@@ -356,7 +383,7 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
                           +
                         </div>
                         <p className="text-[12px] text-gray-300">
-                          Selecciona <span className="font-semibold text-emerald-400">&quot;Agregar a pantalla de inicio&quot;</span>
+                          Desliza y selecciona <span className="font-semibold text-emerald-400">&quot;Agregar a pantalla de inicio&quot;</span>
                         </p>
                         <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
                       </div>
@@ -365,17 +392,20 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
                           <Download className="w-4 h-4 text-emerald-400" />
                         </div>
                         <p className="text-[12px] text-gray-300">
-                          Toca <span className="font-semibold text-emerald-400">&quot;Agregar&quot;</span> y listo
+                          Toca <span className="font-semibold text-emerald-400">&quot;Agregar&quot;</span> en la esquina superior derecha
                         </p>
+                        <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
                       </div>
                     </div>
-                  ) : isAndroid && showIOSGuide ? (
-                    /* Android — manual install guide when no deferred prompt */
+                  )}
+
+                  {/* ---- Android without native prompt: Manual guide ---- */}
+                  {isAndroid && showIOSGuide && (
                     <div className="space-y-3 pb-2">
                       <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
                         <Smartphone className="w-5 h-5 text-emerald-400 shrink-0" />
                         <p className="text-[12px] text-emerald-200 leading-relaxed">
-                          <span className="font-semibold">Instala Atlas en tu Android:</span> usa el menu del navegador para agregar la app a tu pantalla de inicio.
+                          <span className="font-semibold">Instala Atlas en tu Android:</span> usa el menu del navegador para agregar la app.
                         </p>
                       </div>
                       <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-800/50 border border-gray-700/30">
@@ -397,10 +427,13 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
                         <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
                       </div>
                     </div>
-                  ) : !showIOSGuide ? (
+                  )}
+
+                  {/* ---- Default: Native install button or "see instructions" ---- */}
+                  {!showIOSGuide && (
                     <button
                       onClick={handleInstall}
-                      disabled={installing || !canInstall}
+                      disabled={installing}
                       className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-[15px] transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/25 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                     >
                       {installing ? (
@@ -411,16 +444,14 @@ export default function InstallPrompt({ trigger }: InstallPromptProps) {
                       ) : (
                         <>
                           <Download className="w-5 h-5" />
-                          {isAndroid
-                            ? 'Instalar App'
-                            : isIOS
-                              ? 'Ver Instrucciones para iPhone'
-                              : 'Instalar App'
+                          {isIOS
+                            ? 'Ver Instrucciones para iPhone'
+                            : 'Instalar App'
                           }
                         </>
                       )}
                     </button>
-                  ) : null}
+                  )}
                 </div>
 
                 {/* Footer */}

@@ -149,6 +149,7 @@ export default function SettingsSidebar({
   const [isIOS, setIsIOS] = useState(false);
   const [isSafari, setIsSafari] = useState(false);
   const [pwaInstalled, setPwaInstalled] = useState(false);
+  const [canNativeInstall, setCanNativeInstall] = useState(false);
 
   const isEjecutivo = userPlanType === 'ejecutivo' || userPlanType === 'executive' || (isDemoUser && trialInfo?.plan === 'executive');
 
@@ -165,8 +166,14 @@ export default function SettingsSidebar({
     const safari = /Safari/i.test(ua) && !/CriOS|FxiOS|OPiOS|WhatsApp|FBAN|FB_IAB|Line|Twitter/i.test(ua);
     setIsSafari(safari);
 
+    // Read the pre-captured beforeinstallprompt from layout.tsx
+    if ((window as any).__atlasDeferredPrompt) {
+      setCanNativeInstall(true);
+    }
+
     const handleInstalled = () => {
- setPwaInstalled(true);
+      setPwaInstalled(true);
+      setCanNativeInstall(false);
       localStorage.setItem('atlas_pwa_installed', 'true');
     };
     window.addEventListener('appinstalled', handleInstalled);
@@ -637,7 +644,12 @@ export default function SettingsSidebar({
                     <div className="text-left flex-1 min-w-0">
                       <p className="text-sm font-semibold text-white">Instalar App Atlas</p>
                       <p className="text-[10px] text-gray-400 mt-0.5">
-                        {isIOS ? 'Toca para ver instrucciones en iPhone' : 'Toca para instalar en tu dispositivo'}
+                        {isIOS
+                          ? 'Toca para ver instrucciones en iPhone'
+                          : canNativeInstall
+                            ? 'Toca para instalar en tu dispositivo'
+                            : 'Toca para ver instrucciones de instalación'
+                        }
                       </p>
                     </div>
                     <Smartphone className="w-4 h-4 text-gray-600 group-hover/pwa:text-emerald-400 transition-colors shrink-0" />
