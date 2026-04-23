@@ -64,6 +64,9 @@ server.log
 # Mini services
 /mini-services/
 upload/
+
+# Broken submodule (empty, causes Cloudflare build failures)
+atlas-repo/
 .vercel/
 .vercel/
 prisma/schema-turso.prisma
