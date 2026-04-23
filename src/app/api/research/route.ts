@@ -89,7 +89,18 @@ function extractArticleText(html: string): string {
 // STEP 1: Search DuckDuckGo
 // ========================================
 async function searchDuckDuckGo(query: string, maxResults = 8): Promise<SearchResult[]> {
-  const encodedQuery = encodeURIComponent(query.trim());
+  const trimmed = query.trim();
+  // For football queries, add "site filters" to prioritize quality sources
+  const footballTerms = ['futbol', 'fútbol', 'soccer', 'partido', 'goles', 'liga', 'champions', 'libertadores', 'premier', 'la liga', 'bundesliga', 'serie a', 'messi', 'ronaldo', 'mbappe', 'haaland'];
+  const isFootballQuery = footballTerms.some(term => trimmed.toLowerCase().includes(term));
+  
+  let enrichedQuery = trimmed;
+  if (isFootballQuery) {
+    // Add quality football sites to the query for better results
+    enrichedQuery = `${trimmed} (transfermarkt OR flashscore OR sofascore OR marca OR goal OR espn soccer OR fotmob)`;
+  }
+  
+  const encodedQuery = encodeURIComponent(enrichedQuery);
   const ddgUrl = `https://lite.duckduckgo.com/lite/?q=${encodedQuery}`;
 
   const ddgRes = await fetch(ddgUrl, {
@@ -244,6 +255,9 @@ export async function POST(request: NextRequest) {
 
     // ---- STEP 3: Generate AI summary with citations ----
     console.log('[RESEARCH] Step 3: Generating AI summary...');
+    // Detect if it's a football query for specialized handling
+    const isFootballQ = /futbol|fútbol|soccer|partido|goles?|liga|champions|libertadores|premier|bundesliga|serie a|ligue 1|messi|ronaldo|mbappe|haaland|balon de oro|mundial|seleccion|equipo|jugador|entrenador|marcador|posiciones|clasificacion|goleador|transferencia|fichaje/i.test(query);
+    
     const researchPrompt = `Eres un asistente de investigacion experto. Analiza las siguientes fuentes web y responde a la consulta del usuario de forma completa y bien estructurada.
 
 REGLAS IMPORTANTES:
@@ -256,6 +270,7 @@ REGLAS IMPORTANTES:
 - Sé objetivo y basado en las fuentes proporcionadas
 - Si las fuentes no son suficientes, indicalo claramente
 - NO inventes información que no este en las fuentes
+${isFootballQ ? `- PARA TEMAS DE FUTBOL: Eres un experto en futbol. Si la consulta es sobre futbol, da datos especificos (marcadores, goleadores, posiciones, estadisticas). Usa formato "EquipoA X-Y EquipoB" para resultados. Incluye nombres de jugadores, fechas y datos tacticos si estan disponibles.` : ''}
 
 CONSULTA DEL USUARIO: ${query.trim()}
 

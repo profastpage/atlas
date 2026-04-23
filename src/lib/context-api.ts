@@ -166,6 +166,37 @@ const EXCHANGE_KEYWORDS = [
   'cotizacion', 'divisa', 'dinero',
 ];
 
+const FOOTBALL_KEYWORDS = [
+  // General football
+  'futbol', 'fútbol', 'soccer', 'partido', 'partidos', 'goles', 'gol',
+  'equipo', 'liga', 'champions', 'libertadores', 'copa', 'torneo',
+  // Matches & scores
+  'marcador', 'resultado', 'resultados', 'en vivo', 'live score',
+  'jugando', 'minuto', 'estadio', 'cancha', 'arbitro',
+  // Positions & standings
+  'posiciones', 'clasificacion', 'tabla', 'ranking', 'lider', 'campeon',
+  // Players & stats
+  'goleador', 'goleadores', 'artillero', 'jugador', 'delantero', 'medio',
+  'defensa', 'portero', 'guardameta', 'dt', 'entrenador',
+  // Leagues
+  'premier league', 'la liga', 'serie a', 'bundesliga', 'ligue 1',
+  'liga mx', 'mls', 'brasileirao', 'liga 1', 'liga profesional',
+  // Specific actions
+  'cuando juega', 'que marco', 'marco gol', 'quien gano', 'quien perdio',
+  'cuantos puntos', 'como quedo', 'alineacion', 'convocatoria',
+  'transferencia', 'fichaje', 'mercado de pases', 'ventana de pases',
+];
+
+// Football team name detection — trigger context for specific teams
+const FOOTBALL_TEAM_KEYWORDS = [
+  'real madrid', 'barcelona', 'atletico madrid', 'manchester city', 'manchester united',
+  'liverpool', 'arsenal', 'chelsea', 'juventus', 'inter milan', 'milan',
+  'bayern', 'dortmund', 'psg', 'napoli', 'river plate', 'boca juniors',
+  'flamengo', 'palmeiras', 'universitario', 'alianza lima', 'sporting cristal',
+  'messi', 'cristiano ronaldo', 'ronaldo', 'neymar', 'mbappe', 'haaland',
+  'vinicius', 'bellingham', 'rodri', 'salah', 'de bruyne',
+];
+
 // Wikipedia triggers: questions about concepts, definitions, people, history, sports
 const WIKI_TRIGGER_PATTERNS = [
   /^(que es|quien (?:es|fue)|que (?:significa|quiere decir)|que (?:fue|son)|explica(?:r)?me?|cuentame sobre|que sabes de|hablemos de|dime sobre|que (?:es|son) (?:el|la|los|las|un|una))/i,
@@ -192,6 +223,16 @@ const WIKI_TRIGGER_PATTERNS = [
 function containsKeyword(text: string, keywords: string[]): boolean {
   const lower = text.toLowerCase();
   return keywords.some((kw) => lower.includes(kw));
+}
+
+function containsAnyFootballKeyword(text: string): boolean {
+  const lower = text.toLowerCase();
+  // Check team names (higher priority — more specific)
+  for (const team of FOOTBALL_TEAM_KEYWORDS) {
+    if (lower.includes(team)) return true;
+  }
+  // Check general football keywords
+  return containsKeyword(text, FOOTBALL_KEYWORDS);
 }
 
 function extractNewsQuery(text: string): string {
@@ -255,6 +296,7 @@ export interface ContextResult {
   newsContext: string | null;
   exchangeContext: string | null;
   wikiContext: string | null;
+  footballContext: string | null;
 }
 
 export async function enrichContext(
@@ -265,10 +307,23 @@ export async function enrichContext(
   const needsNews = containsKeyword(userMessage, NEWS_KEYWORDS);
   const needsExchange = containsKeyword(userMessage, EXCHANGE_KEYWORDS);
   const wikiTopic = extractWikipediaTopic(userMessage);
+  const needsFootball = containsAnyFootballKeyword(userMessage);
 
   // If nothing matches, skip entirely
-  if (!needsWeather && !needsNews && !needsExchange && !wikiTopic) {
-    return { weatherContext: null, newsContext: null, exchangeContext: null, wikiContext: null };
+  if (!needsWeather && !needsNews && !needsExchange && !wikiTopic && !needsFootball) {
+    return { weatherContext: null, newsContext: null, exchangeContext: null, wikiContext: null, footballContext: null };
+  }
+
+  // Fetch football context separately (has its own API)
+  let footballContext: string | null = null;
+  if (needsFootball) {
+    try {
+      // Dynamic import to avoid circular dependency in Edge runtime
+      const { getFootballContext } = await import('@/app/api/football/route');
+      footballContext = await getFootballContext(userMessage);
+    } catch (footballErr) {
+      console.warn('[CONTEXT] Football context fetch failed:', footballErr);
+    }
   }
 
   const results = await Promise.all([
@@ -283,6 +338,7 @@ export async function enrichContext(
     newsContext: results[1],
     exchangeContext: results[2],
     wikiContext: results[3],
+    footballContext,
   };
 }
 
@@ -314,6 +370,12 @@ export function buildContextInjection(context: ContextResult): string {
   if (context.wikiContext) {
     parts.push(
       `[DATOS FACTUALES VERIFICADOS — USA ESTO COMO FUENTE UNICA]\n${context.wikiContext}\nREGLA: Usa ESTA información como base para tu respuesta. NO inventes datos que no aparezcan aquí. NO mezcles datos de otras personas. Si el usuario pregunta algo que no está cubierto en estos datos, aclara que no tienes esa información exacta. No menciones Wikipedia.`
+    );
+  }
+
+  if (context.footballContext) {
+    parts.push(
+      `[DATOS DE FUTBOL EN TIEMPO REAL]\n${context.footballContext}\nREGLA CRITICA: Estos son datos REALES y ACTUALES de partidos, posiciones y estadisticas. Usalos como base para tu respuesta. Si el usuario pregunta sobre resultados, marcadores, posiciones o estadisticas, responde con estos datos. No menciones la fuente API.`
     );
   }
 
