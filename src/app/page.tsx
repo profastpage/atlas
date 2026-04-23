@@ -3588,24 +3588,6 @@ export default function AtlasApp() {
       {/* ===== INPUT AREA ===== */}
       <div className="shrink-0 atlas-input-area px-1.5 sm:px-6 sm:pb-6 pt-0.5 pb-[max(0.25rem,env(safe-area-inset-bottom))] z-10 relative">
         <div className="max-w-3xl mx-auto">
-        {/* Remaining responses bar — guests AND registered free users */}
-        {remainingResponses > 0 && hasActivePlan !== true && !checkingPlan && (
-          <div className="text-center mb-1">
-            <span className="text-[9px] sm:text-[10px] text-gray-600">
-              {!isAuthenticated ? (
-                <>
-                  <span className="text-emerald-400/60 font-medium">{remainingResponses}</span>/{messageLimit} gratis.{' '}
-                  <a href="/login" className="text-emerald-400/50 hover:text-emerald-400 underline">Registrate</a>
-                </>
-              ) : (
-                <>
-                  <span className="text-emerald-400/60 font-medium">{remainingResponses}</span>/{messageLimit} este mes.{' '}
-                  <span className="text-emerald-400/50">Mejora tu plan</span>
-                </>
-              )}
-            </span>
-          </div>
-        )}
 
         {/* Listening / Locked / Document analyzing indicator — ABOVE the input */}
         <AnimatePresence>
