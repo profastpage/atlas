@@ -263,21 +263,29 @@ export async function describeImage(base64DataUrl: string): Promise<string> {
 
 // ========================================
 // IMAGE GENERATION — FLUX.1 Schnell via Together AI
+// Modelo FIJO: black-forest-labs/FLUX.1-schnell (destilado, 4 pasos)
 // $0.003 per image — excellent quality
 // Returns base64 image data URL
+// NO se usan otros modelos (sin Stable Diffusion, sin Flux Pro/Dev)
 // ========================================
 
-const IMAGE_GEN_CONFIG = {
-  baseUrl: process.env.IMAGE_GEN_BASE_URL || 'https://api.together.xyz',
-  apiKey: process.env.IMAGE_GEN_API_KEY || '',
-  model: process.env.IMAGE_GEN_MODEL || 'black-forest-labs/FLUX.1-schnell',
-};
+const FLUX_SCHNELL_MODEL = 'black-forest-labs/FLUX.1-schnell';
+
+function getImageGenConfig() {
+  return {
+    baseUrl: process.env.IMAGE_GEN_BASE_URL || 'https://api.together.xyz',
+    apiKey: process.env.IMAGE_GEN_API_KEY || '',
+  };
+}
 
 export async function generateImage(prompt: string): Promise<string> {
-  const apiKey = IMAGE_GEN_CONFIG.apiKey;
-  const baseUrl = IMAGE_GEN_CONFIG.baseUrl;
+  const { baseUrl, apiKey } = getImageGenConfig();
 
-  console.log('[IMAGE_GEN] Generating with:', IMAGE_GEN_CONFIG.model, 'via Together AI');
+  if (!apiKey) {
+    throw new Error('Servicio de generación de imágenes no configurado');
+  }
+
+  console.log('[IMAGE_GEN] Generating with:', FLUX_SCHNELL_MODEL, 'via Together AI (4 steps)');
 
   const response = await fetch(`${baseUrl}/v1/images/generations`, {
     method: 'POST',
@@ -286,10 +294,13 @@ export async function generateImage(prompt: string): Promise<string> {
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: IMAGE_GEN_CONFIG.model,
+      model: FLUX_SCHNELL_MODEL,    // FIJO — nunca usa otro modelo
       prompt: prompt,
       n: 1,
       response_format: 'b64_json',
+      steps: 4,                      // Óptimo para Schnell (destilado)
+      width: 1024,
+      height: 1024,
     }),
   });
 
