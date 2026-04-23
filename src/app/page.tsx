@@ -3151,9 +3151,11 @@ export default function AtlasApp() {
       {/* ===== CHAT AREA ===== */}
       <div
         ref={chatContainerRef}
-        className="chat-messages-area relative z-[1] flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3 space-y-3"
+        className="chat-messages-area relative z-[1] flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-6 py-3 space-y-3"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
+        {/* Desktop: center messages in a max-w-3xl column */}
+        <div className="max-w-3xl mx-auto flex flex-col gap-3">
         {messages.length === 0 && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             {/* Wireframe Globe — CSS/SVG Animated */}
@@ -3261,10 +3263,10 @@ export default function AtlasApp() {
             >
               <div
                 data-msg-id={msg.id}
-                className={`relative max-w-[92%] sm:max-w-[70%] min-w-0 overflow-visible px-3.5 py-2 sm:py-2.5 shadow-sm ${
+                className={`relative max-w-[92%] sm:max-w-[75%] min-w-0 overflow-visible px-4 py-2.5 sm:py-3 ${
                   msg.role === 'user'
-                    ? 'bg-[#047857] text-white rounded-2xl rounded-br-sm'
-                    : 'bg-[#0a0a0a] text-gray-100 rounded-2xl rounded-bl-sm border border-white/[0.04]'
+                    ? 'bg-gradient-to-br from-emerald-600 to-emerald-700 text-white rounded-2xl rounded-br-sm shadow-sm shadow-emerald-900/20'
+                    : 'bg-[#0d0d0d] text-gray-100 rounded-2xl rounded-bl-sm border border-white/[0.06] shadow-sm'
                 }`}
               >
                 {msg.role === 'assistant' && (
@@ -3533,10 +3535,12 @@ export default function AtlasApp() {
         )}
 
         <div ref={messagesEndRef} />
-      </div>
+        </div>{/* End max-w-3xl wrapper */}
+      </div>{/* End chat-messages-area */}
 
       {/* ===== INPUT AREA ===== */}
-      <div className="shrink-0 atlas-input-area px-1.5 sm:px-3 pt-0.5 pb-[max(0.25rem,env(safe-area-inset-bottom))] z-10 relative">
+      <div className="shrink-0 atlas-input-area px-1.5 sm:px-6 sm:pb-6 pt-0.5 pb-[max(0.25rem,env(safe-area-inset-bottom))] z-10 relative">
+        <div className="max-w-3xl mx-auto">
         {/* Remaining responses bar — guests AND registered free users */}
         {remainingResponses > 0 && hasActivePlan !== true && !checkingPlan && (
           <div className="text-center mb-1">
@@ -3956,7 +3960,8 @@ export default function AtlasApp() {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
+        </div>{/* End max-w-3xl input wrapper */}
+      </div>{/* End input area */}
 
       {/* ===== SUGGESTIONS MINI MODAL ===== */}
       <AnimatePresence>
