@@ -196,6 +196,25 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: true, action: 'unarchive' });
     }
 
+    if (action === 'auto_title') {
+      // Generate a short title from the first user message
+      const { firstMessage } = await request.json();
+      if (!firstMessage || typeof firstMessage !== 'string') {
+        return NextResponse.json({ error: 'firstMessage requerido' }, { status: 400 });
+      }
+
+      // Use AI to generate a concise title (max 40 chars)
+      const title = await generateTitleFromMessage(firstMessage);
+      if (title) {
+        await db.execute(
+          `UPDATE Session SET title = ?, updatedAt = ? WHERE id = ?`,
+          [title, new Date().toISOString(), sessionId]
+        );
+        return NextResponse.json({ success: true, action: 'auto_title', title });
+      }
+      return NextResponse.json({ success: false, action: 'auto_title' });
+    }
+
     return NextResponse.json(
       { error: 'action no válida. Usa: rename, archive, unarchive' },
       { status: 400 }
@@ -203,5 +222,69 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     console.error('[SESION] Error al actualizar:', error);
     return NextResponse.json({ error: 'Error interno' }, { status: 500 });
+  }
+}
+
+// ========================================
+// AUTO-TITLE GENERATION
+// Generates a short session title from the first user message using AI.
+// Falls back to truncation if AI fails.
+// ========================================
+
+async function generateTitleFromMessage(firstMessage: string): Promise<string | null> {
+  // Fallback: truncate the first message to 40 chars
+  const fallback = () => {
+    const clean = firstMessage.replace(/\n/g, ' ').trim();
+    return clean.length > 40 ? clean.substring(0, 37) + '...' : clean;
+  };
+
+  try {
+    const aiKey = process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY || '';
+    if (!aiKey) return fallback();
+
+    const isGroq = !!process.env.GROQ_API_KEY && !process.env.OPENAI_API_KEY;
+    const baseUrl = isGroq ? 'https://api.groq.com/openai/v1' : 'https://api.openai.com/v1';
+    const model = isGroq ? 'llama-3.1-8b-instant' : 'gpt-4o-mini';
+
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${aiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: `Genera un titulo corto y descriptivo para una conversacion de consultoria estrategica basandote en el primer mensaje del usuario. REGLAS:
+- Maximo 40 caracteres
+- Sin comillas, sin puntos al final
+- En espanol
+- Conciso y especifico (ej: "Estrategia de Trading", "Plan de Marketing", "Curso de 7 dias")
+- Si es una pregunta generica, usa el tema principal
+Responde SOLO con el titulo, nada mas.`,
+          },
+          {
+            role: 'user',
+            content: firstMessage.substring(0, 300),
+          },
+        ],
+        max_tokens: 20,
+        temperature: 0.3,
+      }),
+    });
+
+    if (!res.ok) return fallback();
+
+    const data = await res.json();
+    let title = data.choices?.[0]?.message?.content?.trim() || '';
+    // Clean up: remove quotes if the AI wrapped them
+    title = title.replace(/^["'|«]|["'|»]$/g, '').trim();
+    // Truncate if still too long
+    if (title.length > 40) title = title.substring(0, 37) + '...';
+    return title || fallback();
+  } catch {
+    return fallback();
   }
 }

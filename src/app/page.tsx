@@ -449,7 +449,7 @@ export default function AtlasApp() {
           identifyUser({ id: oauthTenantId, email: parsedUser.email || '', name: parsedUser.name || '', tenantId: oauthTenantId });
         } catch {}
         checkPlanAfterLogin(oauthTenantId);
-        fetchSessions(oauthTenantId);
+        fetchSessions(oauthTenantId, false, true);
         // ---- LOAD USER CITY FOR IDENTITY PERSISTENCE ----
         fetch(`/api?action=get_city&tenantId=${oauthTenantId}`)
           .then((r) => r.json())
@@ -489,7 +489,7 @@ export default function AtlasApp() {
                   setUserInfo(parsed);
                 } catch {}
               }
-              fetchSessions(savedTenantId);
+              fetchSessions(savedTenantId, false, true);
               return null;
             }
             return res.json();
@@ -509,7 +509,7 @@ export default function AtlasApp() {
               }
               // ---- CHECK PLAN TYPE AFTER LOGIN ----
               checkPlanAfterLogin(savedTenantId);
-              fetchSessions(savedTenantId);
+              fetchSessions(savedTenantId, false, true);
               // ---- LOAD USER CITY FOR IDENTITY PERSISTENCE ----
               fetch(`/api?action=get_city&tenantId=${savedTenantId}`)
                 .then((r) => r.json())
@@ -528,7 +528,7 @@ export default function AtlasApp() {
                 setUserInfo(parsed);
               } catch {}
             }
-            fetchSessions(savedTenantId);
+            fetchSessions(savedTenantId, false, true);
           });
       }
     } else {
@@ -1397,15 +1397,29 @@ export default function AtlasApp() {
     }
   }, [tenantId]);
 
-  const fetchSessions = async (tId: string, archived = false) => {
+  // ---- Fetch sessions and optionally auto-load the most recent ----
+  const fetchSessions = useCallback(async (tId: string, archived = false, autoLoadLatest = false) => {
     try {
       const res = await fetch(`/api/session?tenantId=${tId}&archived=${archived}`);
       const data = await res.json();
-      setSessions(data.sessions || []);
+      const sessionList = data.sessions || [];
+      setSessions(sessionList);
+
+      // Auto-load the most recent active session on page refresh
+      if (autoLoadLatest && !archived && sessionList.length > 0 && !sessionId) {
+        const latestSession = sessionList[0];
+        if (latestSession && latestSession._count?.messages > 0) {
+          loadSession(latestSession.id);
+        } else if (latestSession) {
+          // Session exists but has no messages (welcome-only) — just set the ID
+          setSessionId(latestSession.id);
+          setSessionReady(true);
+        }
+      }
     } catch (error) {
       console.error('[SESION] Error al listar:', error);
     }
-  };
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadSession = async (sId: string) => {
     try {
@@ -1427,9 +1441,10 @@ export default function AtlasApp() {
     }
   };
 
-  const deleteSession = async (sId: string) => {
+  const deleteSession = useCallback(async (sId: string) => {
     try {
-      await fetch(`/api/chat?sessionId=${sId}`, { method: 'DELETE' });
+      // Pass tenantId for ownership security check
+      await fetch(`/api/chat?sessionId=${sId}&tenantId=${tenantId}`, { method: 'DELETE' });
       setSessions((prev) => prev.filter((s) => s.id !== sId));
       setDeleteConfirmId(null);
       if (sessionId === sId) {
@@ -1440,7 +1455,7 @@ export default function AtlasApp() {
     } catch (error) {
       console.error('[SESION] Error al eliminar:', error);
     }
-  };
+  }, [sessionId, tenantId]);
 
   const renameSession = async (sId: string, newTitle: string) => {
     if (!newTitle.trim()) {

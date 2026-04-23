@@ -61,6 +61,30 @@ export async function POST(request: NextRequest) {
         `INSERT INTO Message (id, sessionId, role, content, timestamp) VALUES (?, ?, ?, ?, ?)`,
         [msgId, sessionId, 'user', userContent, new Date().toISOString()]
       );
+
+      // ---- AUTO-TITLE: Generate title from first user message ----
+      if (message && message.trim()) {
+        try {
+          const countResult = await db.execute(
+            `SELECT COUNT(*) as cnt FROM Message WHERE sessionId = ? AND role = 'user'`,
+            [sessionId]
+          );
+          const msgCount = Number(countResult.rows[0]?.cnt || 0);
+          if (msgCount <= 1) {
+            // This is the first user message — generate title async (don't block response)
+            const sessionUrl = new URL('/api/session', request.url);
+            fetch(sessionUrl.toString(), {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'auto_title',
+                sessionId,
+                firstMessage: message.trim(),
+              }),
+            }).catch(() => {});
+          }
+        } catch {}
+      }
     } catch (dbError) {
       console.error('[CEREBRO] DB write error:', dbError);
     }
