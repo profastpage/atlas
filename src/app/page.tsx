@@ -614,31 +614,76 @@ export default function AtlasApp() {
     }
   };
 
-  // Scroll policy: NUNCA arrastrar al usuario durante streaming/generacion.
-  // Solo auto-scrollear cuando NO hay streaming activo (nuevo mensaje finalizado, carga de sesion).
+  // ========================================
+  // LOCAL STORAGE: Chat history persistence
+  // ========================================
+  const CHAT_HISTORY_KEY = 'atlas_chat_history';
+
+  // Save messages to localStorage whenever they change
+  useEffect(() => {
+    if (messages.length === 0) return;
+    // Don't persist loading messages or empty assistant messages
+    const persistable = messages.filter(m => m.content && m.content.trim());
+    if (persistable.length === 0) return;
+    try {
+      localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify({
+        messages: persistable,
+        sessionId,
+        savedAt: Date.now(),
+      }));
+    } catch {}
+  }, [messages, sessionId]);
+
+  // Load messages from localStorage on first mount (guest only, no server session)
+  useEffect(() => {
+    if (messages.length > 0 || isLoading) return; // Don't overwrite existing messages
+    try {
+      const stored = localStorage.getItem(CHAT_HISTORY_KEY);
+      if (!stored) return;
+      const data = JSON.parse(stored);
+      if (data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
+        // Only restore if less than 2 hours old
+        if (data.savedAt && Date.now() - data.savedAt < 2 * 60 * 60 * 1000) {
+          setMessages(data.messages);
+          if (data.sessionId) {
+            setSessionId(data.sessionId);
+          }
+        } else {
+          // Expired — clear
+          localStorage.removeItem(CHAT_HISTORY_KEY);
+        }
+      }
+    } catch {}
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear chat history when starting a new session or logging out
+  const clearChatHistory = useCallback(() => {
+    try { localStorage.removeItem(CHAT_HISTORY_KEY); } catch {}
+  }, []);
+
+  // Scroll policy: Auto-scroll to bottom on new messages
+  // During streaming: scroll if user is near bottom (within 200px)
+  // After streaming: always scroll to bottom
   const isNearBottom = useCallback(() => {
     const el = chatContainerRef.current;
     if (!el) return true;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 200;
   }, []);
 
   useEffect(() => {
     if (forceScrollRef.current) {
-      // Explicit action (load session) → scroll to show loaded messages
       forceScrollRef.current = false;
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       });
       return;
     }
-    // During streaming or loading: NEVER scroll — user reads where they want
-    if (isStreaming || isLoading) return;
-    // Not streaming: only scroll if user is near bottom
-    if (isNearBottom()) {
-      requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      });
-    }
+    // During streaming: scroll only if user is near bottom (auto-follow)
+    if (isStreaming && !isNearBottom()) return;
+    // Loading state or new messages: always scroll
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
   }, [messages, isStreaming, isLoading, isNearBottom]);
 
   // Show install prompt after 7 bot responses (guest) or after login (registered)
@@ -1487,6 +1532,10 @@ export default function AtlasApp() {
         return;
       }
 
+      // Double-click guard: set loading immediately to block rapid taps
+      setIsLoading(true);
+      setIsStreaming(true);
+
       // ---- CHECK PLAN FOR DOCUMENT UPLOADS ----
       if (documentText && isAuthenticated) {
         const isPro = await checkUserPlan();
@@ -1528,8 +1577,7 @@ export default function AtlasApp() {
       setMessages((prev) => [...prev, userMsg]);
       setInputValue('');
       voiceTranscriptRef.current = ''; // Clear voice accumulation on send
-      setIsLoading(true);
-      setIsStreaming(true); // ---- PASO 3: Activar streaming ANTES del fetch ----
+      // isLoading and isStreaming already set above (double-click guard)
 
       // ---- POSTHOG: Track mensaje enviado ----
       trackMessageSent({
@@ -1740,7 +1788,7 @@ export default function AtlasApp() {
       } finally {
         setIsLoading(false);
         setStreamingId(null);
-        setIsStreaming(false); // ---- SIEMPRE apagar isStreaming en finally ----
+        setIsStreaming(false);
         inputRef.current?.focus();
       }
     },
@@ -3457,24 +3505,28 @@ export default function AtlasApp() {
           ))}
         </AnimatePresence>
 
-        {/* Typing indicator */}
+        {/* Thinking / Loading skeleton */}
         {isLoading && !streamingId && (
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
             className="flex justify-start"
           >
-            <div className="bg-gray-800/70 border border-gray-700/40 rounded-2xl rounded-bl-md px-4 py-3">
-              <div className="flex items-center gap-1.5 mb-1">
-                <span className="text-xs">{'\uD83E\uDDED'}</span>
-                <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest">
-                  Atlas
+            <div className="atlas-suggestion-card rounded-2xl rounded-bl-md px-4 py-3.5 min-w-[140px]">
+              <div className="flex items-center gap-2 mb-2.5">
+                <div className="w-5 h-5 rounded-full bg-emerald-500/15 flex items-center justify-center">
+                  <Sparkles className="w-3 h-3 text-emerald-400/70" />
+                </div>
+                <span className="text-[10px] font-bold text-emerald-400/80 uppercase tracking-widest">
+                  Atlas piensa
                 </span>
               </div>
-              <div className="flex gap-1.5">
-                <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:0ms]" />
-                <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:150ms]" />
-                <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:300ms]" />
+              {/* Skeleton lines */}
+              <div className="space-y-2">
+                <div className="h-2.5 rounded-full bg-white/[0.04] animate-pulse" style={{ width: '85%' }} />
+                <div className="h-2.5 rounded-full bg-white/[0.04] animate-pulse [animation-delay:150ms]" style={{ width: '65%' }} />
+                <div className="h-2.5 rounded-full bg-white/[0.04] animate-pulse [animation-delay:300ms]" style={{ width: '45%' }} />
               </div>
             </div>
           </motion.div>

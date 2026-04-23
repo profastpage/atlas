@@ -11,18 +11,19 @@ const inter = Inter({
 const SITE_URL = 'https://atlas-9mv.pages.dev';
 
 export const metadata: Metadata = {
-  title: "Atlas - Consultor Estratégico de Élite 24/7",
+  title: "Atlas | Consultor Estratégico",
   description:
-    "Tu asesor de inteligencia artificial privado. Resuelve problemas de trabajo, estudios, emociones y estrategia con respuestas directas y sin relleno. Disponible las 24 horas.",
+    "Asesor estratégico de inteligencia artificial 24/7. Analiza, planifica y ejecuta con respuestas precisas. Estrategia empresarial, productividad y decision-making.",
   keywords: [
     "Atlas",
     "Consultor Estratégico",
-    "Coach",
     "IA",
     "Inteligencia Artificial",
     "Asesor",
+    "Estrategia empresarial",
     "Productividad",
-    "Estrategia",
+    "Coach ejecutivo",
+    "Decision-making",
   ],
   manifest: "/manifest.json",
   appleWebApp: {
@@ -31,9 +32,9 @@ export const metadata: Metadata = {
     title: "Atlas",
   },
   openGraph: {
-    title: "Atlas – Tu Consultor Estratégico 24/7",
+    title: "Atlas | Consultor Estratégico",
     description:
-      "Resuelve el problema de raíz. Sin relleno, sin listas aburridas. Asesoría en cualquier nicho: trabajo, estudios, salud y productividad.",
+      "Asesor estratégico de IA 24/7. Analiza, planifica y ejecuta con respuestas precisas y sin relleno.",
     type: "website",
     url: SITE_URL,
     siteName: "Atlas",
@@ -42,15 +43,15 @@ export const metadata: Metadata = {
         url: `${SITE_URL}/og-image.png`,
         width: 1200,
         height: 630,
-        alt: "Atlas – Consultor Estratégico de Élite",
+        alt: "Atlas | Consultor Estratégico",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Atlas – Tu Consultor Estratégico 24/7",
+    title: "Atlas | Consultor Estratégico",
     description:
-      "Resuelve el problema de raíz. Sin relleno, sin listas aburridas. Asesoría en cualquier nicho.",
+      "Asesor estratégico de IA 24/7. Analiza, planifica y ejecuta.",
     images: [`${SITE_URL}/og-image.png`],
   },
   icons: {
