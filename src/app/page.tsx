@@ -3140,7 +3140,7 @@ export default function AtlasApp() {
             >
               <div
                 data-msg-id={msg.id}
-                className={`relative max-w-[85%] sm:max-w-[70%] min-w-0 overflow-hidden px-3.5 py-2 sm:py-2.5 shadow-sm ${
+                className={`relative max-w-[92%] sm:max-w-[70%] min-w-0 overflow-visible px-3.5 py-2 sm:py-2.5 shadow-sm ${
                   msg.role === 'user'
                     ? 'bg-[#047857] text-white rounded-2xl rounded-br-sm'
                     : 'bg-[#0a0a0a] text-gray-100 rounded-2xl rounded-bl-sm border border-white/[0.04]'
@@ -3216,7 +3216,7 @@ export default function AtlasApp() {
                           href={src.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-all group max-w-[200px]"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-all group max-w-[160px]"
                         >
                           <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-500/20 text-[8px] font-bold text-blue-400 shrink-0">
                             {src.position === 0 ? 'W' : src.position}
