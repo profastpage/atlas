@@ -275,7 +275,6 @@ export default function AtlasApp() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const userHasScrolledUp = useRef(false);
   const forceScrollRef = useRef(false);
 
   // ---- Settings State ----
@@ -570,8 +569,8 @@ export default function AtlasApp() {
     }
   };
 
-  // Smart scroll: auto-scroll only when user is near bottom OR on explicit action (new message sent).
-  // During streaming, if user scrolled up, never drag them down.
+  // Scroll policy: NUNCA arrastrar al usuario durante streaming/generacion.
+  // Solo auto-scrollear cuando NO hay streaming activo (nuevo mensaje finalizado, carga de sesion).
   const isNearBottom = useCallback(() => {
     const el = chatContainerRef.current;
     if (!el) return true;
@@ -580,27 +579,21 @@ export default function AtlasApp() {
 
   useEffect(() => {
     if (forceScrollRef.current) {
-      // Explicit action (send message, regenerate, load session) → always scroll
+      // Explicit action (load session) → scroll to show loaded messages
       forceScrollRef.current = false;
-      userHasScrolledUp.current = false;
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       });
       return;
     }
-    // During streaming or loading, only scroll if user hasn't scrolled up
-    if (isStreaming || isLoading) {
-      if (!userHasScrolledUp.current && isNearBottom()) {
-        requestAnimationFrame(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-        });
-      }
-      return;
+    // During streaming or loading: NEVER scroll — user reads where they want
+    if (isStreaming || isLoading) return;
+    // Not streaming: only scroll if user is near bottom
+    if (isNearBottom()) {
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      });
     }
-    // Not streaming: always scroll to bottom on new message
-    requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    });
   }, [messages, isStreaming, isLoading, isNearBottom]);
 
   // Show install prompt after 7 bot responses (guest) or after login (registered)
@@ -1471,7 +1464,6 @@ export default function AtlasApp() {
       voiceTranscriptRef.current = ''; // Clear voice accumulation on send
       setIsLoading(true);
       setIsStreaming(true); // ---- PASO 3: Activar streaming ANTES del fetch ----
-      scrollToBottom(true); // Force scroll when user sends a message
 
       // ---- POSTHOG: Track mensaje enviado ----
       trackMessageSent({
@@ -2985,15 +2977,9 @@ export default function AtlasApp() {
       {/* ===== CHAT AREA ===== */}
       <div
         ref={chatContainerRef}
-        onScroll={() => {
-          // Track if user manually scrolled up (away from bottom)
-          if (isStreaming || isLoading) {
-            userHasScrolledUp.current = !isNearBottom();
-          }
-        }}
         className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3 space-y-3"
         style={{ WebkitOverflowScrolling: 'touch' }}
->
+      >
         {messages.length === 0 && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 flex items-center justify-center mb-5 border border-emerald-500/10">
