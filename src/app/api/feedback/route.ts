@@ -3,6 +3,8 @@
 // Permite mejorar el bot analizando patrones de respuestas buenas/malas
 // ========================================
 
+export const runtime = 'edge';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/sql';
 
