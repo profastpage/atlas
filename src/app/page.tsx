@@ -414,6 +414,11 @@ export default function AtlasApp() {
         } catch {}
         checkPlanAfterLogin(oauthTenantId);
         fetchSessions(oauthTenantId);
+        // ---- LOAD USER CITY FOR IDENTITY PERSISTENCE ----
+        fetch(`/api?action=get_city&tenantId=${oauthTenantId}`)
+          .then((r) => r.json())
+          .then((d) => { if (d.city) try { localStorage.setItem('atlas_user_city', d.city); } catch {} })
+          .catch(() => {});
         return;
       }
     }
@@ -469,6 +474,11 @@ export default function AtlasApp() {
               // ---- CHECK PLAN TYPE AFTER LOGIN ----
               checkPlanAfterLogin(savedTenantId);
               fetchSessions(savedTenantId);
+              // ---- LOAD USER CITY FOR IDENTITY PERSISTENCE ----
+              fetch(`/api?action=get_city&tenantId=${savedTenantId}`)
+                .then((r) => r.json())
+                .then((d) => { if (d.city) try { localStorage.setItem('atlas_user_city', d.city); } catch {} })
+                .catch(() => {});
             }
           })
           .catch((err) => {
@@ -1242,8 +1252,23 @@ export default function AtlasApp() {
         setTimeout(() => {
           let welcomeContent = WELCOME_MESSAGE_NEW;
 
-          if (!data.isNewUser && data.userName && data.contextSummary) {
-            welcomeContent = `${data.userName}, otra vez aqui. Volvamos a tu problema: **${data.contextSummary.substring(0, 60)}**. Hubo algun cambio o seguimos en el mismo punto?`;
+          if (!data.isNewUser && data.userName) {
+            // Returning user — personalized welcome with city if known
+            const cityRef = data.userCity ? ` desde ${data.userCity}` : '';
+            if (data.contextSummary) {
+              // Extract non-ubicacion topics for the summary reference
+              const otherTopics = data.contextSummary
+                .replace(/\[Ubicaci[oó]n\][^|]*\|?\s*/g, '')
+                .trim();
+              const summaryRef = otherTopics ? otherTopics.substring(0, 60) : '';
+              if (summaryRef) {
+                welcomeContent = `${data.userName}${cityRef}, otra vez aqui. Volvamos a tu tema: **${summaryRef}**. Hubo algun cambio o seguimos en el mismo punto?`;
+              } else {
+                welcomeContent = `${data.userName}${cityRef}, que bueno verte de vuelta. Que necesitas hoy?`;
+              }
+            } else {
+              welcomeContent = `${data.userName}${cityRef}, que bueno verte de vuelta. En que te puedo ayudar hoy?`;
+            }
           } else if (!data.isNewUser && data.contextSummary) {
             welcomeContent = `Ya hemos hablado. Tu situacion previa: **${data.contextSummary.substring(0, 60)}**. Que hay de nuevo?`;
           }

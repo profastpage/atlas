@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
     let isNewUser = true;
     let userName = '';
     let contextSummary = '';
+    let userCity = '';
 
     try {
       const memResult = await db.execute(
@@ -50,8 +51,29 @@ export async function POST(request: NextRequest) {
         isNewUser = false;
         userName = (memResult.rows[0].userName as string) || '';
         contextSummary = (memResult.rows[0].contextSummary as string) || '';
+        // Extract city from context summary
+        const ubicMatch = contextSummary.match(/\[Ubicaci[oó]n\]\s*([^|]+)/);
+        if (ubicMatch?.[1]?.trim()) {
+          userCity = ubicMatch[1].trim();
+        }
       }
     } catch {}
+
+    // Also try to get city from Supabase profiles
+    if (!userCity) {
+      try {
+        const { getSupabaseServer } = await import('@/lib/supabase');
+        const supabase = getSupabaseServer();
+        if (supabase) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('city')
+            .eq('id', tenantId)
+            .single();
+          if (profile?.city) userCity = profile.city;
+        }
+      } catch {}
+    }
 
     // Create UserMemory if new user
     if (isNewUser) {
@@ -70,6 +92,7 @@ export async function POST(request: NextRequest) {
       isNewUser,
       userName,
       contextSummary,
+      userCity,
     });
   } catch (error) {
     console.error('[SESION] Error al crear:', error);

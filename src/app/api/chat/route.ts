@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
       console.warn('[CEREBRO] Auto-research failed (continuing without it):', researchErr);
     }
 
-    // ---- PASO 2.5: CONTEXTO AMBIENTAL (clima + noticias) ----
+    // ---- PASO 2.5: CONTEXTO AMBIENTAL (clima + noticias) + CIUDAD DEL USUARIO ----
     let userCity: string | undefined;
     try {
       if (tenantId) {
@@ -125,6 +125,22 @@ export async function POST(request: NextRequest) {
             userCity = profile?.city || undefined;
           }
         } catch {}
+        // Fallback: check UserMemory for [Ubicacion] topic if Supabase has no city
+        if (!userCity) {
+          try {
+            const memResult = await db.execute(
+              `SELECT contextSummary FROM UserMemory WHERE tenantId = ?`,
+              [tenantId]
+            );
+            if (memResult.rows.length > 0) {
+              const summary = (memResult.rows[0].contextSummary as string) || '';
+              const ubicMatch = summary.match(/\[Ubicaci[oó]n\]\s*([^|]+)/);
+              if (ubicMatch?.[1]?.trim()) {
+                userCity = ubicMatch[1].trim();
+              }
+            }
+          } catch {}
+        }
       }
     } catch {}
 
@@ -213,6 +229,11 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
         contextSummary || 'Sin información previa. Es un nuevo usuario.'
       );
 
+    // Inject user's city into system prompt if available (identity persistence)
+    if (userCity) {
+      systemPrompt += `\n\n[CIUDAD DEL USUARIO] El usuario vive en **${userCity}**. Usa esta información naturalmente en la conversación (por ejemplo, cuando hables de clima, horarios, eventos locales, referencias geográficas). No le preguntes su ciudad — ya la sabes. Inclúyela como contexto conocido.`;
+    }
+
     // If document was processed by Llama, add Qwen-specific instructions
     if (documentText) {
       const docPrompt = `\n\n[CONTEXTO DE DOCUMENTO ADJUNTO]\nEl usuario subió un documento. Los datos extraidos ya estan incluidos en el mensaje del usuario. Responde como Atlas de manera directa y estratégica basandote en los datos extraidos. Manten tu tono habitual, usa vinetas y negritas.`;
@@ -238,8 +259,11 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
     // Always inject server time (zero cost, enables time-relative calculations)
     systemPrompt += buildTimeInjection();
 
+    // ---- MEMORY EFFICIENCY: Limit history to avoid excessive token usage ----
+    // Load recent messages + use condensed summary for older context
     let history: Array<{ role: string; content: string }> = [];
     try {
+      // Get last 30 messages for actual conversation context
       const result = await db.execute(
         `SELECT role, content FROM Message WHERE sessionId = ? ORDER BY timestamp ASC LIMIT 30`,
         [sessionId]
@@ -630,11 +654,12 @@ async function postResponseMemoryCycle(
   }
 
   const topicPatterns = [
-    // Personal
+    // Personal — UBICACION (enhanced to be more specific)
+    { pattern: /(?:vivo en|resido en|estoy radicado en|me mud[eé] a|ubicado en|based in)\s+(.+?)(?:\.|,|$)/i, label: 'Ubicacion', priority: true },
+    { pattern: /(?:soy de|mi ciudad es|mi ciudad|mi pa[ií]s|mi pueblo|nací en|crecí en)\s+(.+?)(?:\.|,|$)/i, label: 'Ubicacion', priority: true },
     { pattern: /(?:problema|situación|tema|asunto|conflicto|dificultad)\s+(?:es|con|sobre|de)\s+(.+?)(?:\.|,|$)/i, label: 'Problema' },
     { pattern: /(?:tengo|mi)\s+(?:edad|anos|cumpleaños)\s+(?:de\s+)?(\d+)/i, label: 'Edad' },
-    { pattern: /(?:vivo en|soy de|mi ciudad|mi país|resido)\s+(.+?)(?:\.|,|$)/i, label: 'Ubicación' },
-    { pattern: /(?:mi\s+)?(?:profesion|ocupacion|trabajo como|soy)\s+(.+?)(?:\.|,|$)/i, label: 'Profesión' },
+    { pattern: /(?:profesion|ocupacion|trabajo como)\s+(?:es\s+|soy\s+)?(.+?)(?:\.|,|$)/i, label: 'Profesión' },
     // Relaciones
     { pattern: /(?:mi\s+)?(?:pareja|novi[oa]|espos[oa]|marido|mujer|pololo|polola)\s+(.+?)(?:\.|,|$)/i, label: 'Pareja' },
     { pattern: /(?:mi\s+)?(?:hij[oa]|niñ[oa]|bebe|familia|herman[oa]|mamá|papá|mami|papi|padre|madre)\s+(.+?)(?:\.|,|$)/i, label: 'Familia' },
@@ -689,7 +714,7 @@ async function postResponseMemoryCycle(
     { pattern: /(?:compr[ea]|mudar[se]|cambiar de|renunciar|empezar|dejar|terminar|iniciar)\s+(.+?)(?:\.|,|$)/i, label: 'Decisión' },
   ];
 
-  for (const { pattern, label } of topicPatterns) {
+  for (const { pattern, label, priority } of topicPatterns) {
     const match = userMessage.match(pattern);
     if (match && match[1] && match[1].trim().length > 3) {
       const newTopic = `[${label}] ${match[1].trim().substring(0, 120)}`;
@@ -698,14 +723,26 @@ async function postResponseMemoryCycle(
       } else {
         if (!updatedSummary.includes(newTopic.substring(0, 20))) {
           const lines = updatedSummary.split(' | ');
-          // Keep up to 15 topics for richer memory
-          if (lines.length >= 15) lines.shift();
-          lines.push(newTopic);
+          // Keep up to 20 topics for richer memory (increased from 15)
+          if (lines.length >= 20) {
+            // Remove oldest non-priority topic to make room
+            const priorityIdx = lines.findIndex(l => !l.startsWith('[Ubicacion]') && !l.startsWith('[Profesión]') && !l.startsWith('[Edad]') && !l.startsWith('[Pareja]'));
+            if (priorityIdx >= 0) {
+              lines.splice(priorityIdx, 1);
+            } else {
+              lines.shift();
+            }
+          }
+          // For priority topics (Ubicacion), always put them near the front
+          if (priority) {
+            lines.unshift(newTopic);
+          } else {
+            lines.push(newTopic);
+          }
           updatedSummary = lines.join(' | ');
         }
       }
       needsUpdate = true;
-      // Capture ALL matching topics, not just the first
     }
   }
 

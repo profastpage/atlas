@@ -143,6 +143,7 @@ export default function SettingsSidebar({
   const [userCity, setUserCity] = useState('');
   const [savingCity, setSavingCity] = useState(false);
   const [citySaved, setCitySaved] = useState(false);
+  const cityFetchedRef = useRef(false); // Prevent redundant fetches
 
   // ---- PWA Install state ----
   const [isIOS, setIsIOS] = useState(false);
@@ -195,13 +196,45 @@ export default function SettingsSidebar({
     setPaymentModal({ isOpen: true, planName, planPrice, planFeatures });
   };
 
-  // ---- Fetch user city on open ----
+  // ---- Fetch user city on mount (persistent, not just when sidebar opens) ----
+  // This ensures Atlas always knows where the user lives
+  useEffect(() => {
+    if (!user?.tenantId || cityFetchedRef.current) return;
+    cityFetchedRef.current = true;
+
+    // First: try localStorage for instant load (no network delay)
+    try {
+      const cachedCity = localStorage.getItem('atlas_user_city');
+      if (cachedCity) {
+        setUserCity(cachedCity);
+      }
+    } catch {}
+
+    // Then: fetch from server as source of truth
+    fetch(`/api?action=get_city&tenantId=${user.tenantId}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.city) {
+          setUserCity(data.city);
+          // Cache in localStorage for instant reload
+          try {
+            localStorage.setItem('atlas_user_city', data.city);
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, [user?.tenantId]);
+
+  // ---- Also refresh city when sidebar opens (in case changed elsewhere) ----
   useEffect(() => {
     if (isOpen && user?.tenantId) {
       fetch(`/api?action=get_city&tenantId=${user.tenantId}`)
         .then((res) => res.json())
         .then((data) => {
-          if (data.city) setUserCity(data.city);
+          if (data.city) {
+            setUserCity(data.city);
+            try { localStorage.setItem('atlas_user_city', data.city); } catch {}
+          }
         })
         .catch(() => {});
     }
@@ -209,11 +242,20 @@ export default function SettingsSidebar({
 
   const saveCity = useCallback(async () => {
     if (!user?.tenantId || savingCity) return;
+    const trimmedCity = userCity.trim();
+    if (!trimmedCity) return;
     setSavingCity(true);
     try {
-      await fetch(`/api?action=save_city&tenantId=${user.tenantId}&city=${encodeURIComponent(userCity.trim())}`);
-      setCitySaved(true);
-      setTimeout(() => setCitySaved(false), 2000);
+      const res = await fetch(`/api?action=save_city&tenantId=${user.tenantId}&city=${encodeURIComponent(trimmedCity)}`);
+      const data = await res.json();
+      if (data.success) {
+        setCitySaved(true);
+        setTimeout(() => setCitySaved(false), 2000);
+        // Persist in localStorage for instant access on reload
+        try {
+          localStorage.setItem('atlas_user_city', trimmedCity);
+        } catch {}
+      }
     } catch {}
     setSavingCity(false);
   }, [user?.tenantId, userCity, savingCity]);

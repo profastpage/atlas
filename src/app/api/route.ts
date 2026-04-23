@@ -1045,18 +1045,60 @@ async function handleCancelAlarm(request: NextRequest) {
 // ========================================
 
 async function handleGetCity(request: NextRequest) {
-  if (!supabase) return NextResponse.json({ city: '' });
   const { searchParams } = new URL(request.url);
   const tenantId = searchParams.get('tenantId');
   if (!tenantId) return NextResponse.json({ city: '' });
 
-  const { data } = await supabase
-    .from('profiles')
-    .select('city')
-    .eq('id', tenantId)
-    .single();
+  // Try Supabase first (primary source of truth)
+  if (supabase) {
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('city')
+        .eq('id', tenantId)
+        .single();
+      if (data?.city) {
+        return NextResponse.json({ city: data.city, source: 'supabase' });
+      }
+    } catch {}
+  }
 
-  return NextResponse.json({ city: data?.city || '' });
+  // Fallback: check UserMemory for [Ubicacion] topic
+  try {
+    const memResult = await db.execute(
+      `SELECT contextSummary FROM UserMemory WHERE tenantId = ?`,
+      [tenantId]
+    );
+    if (memResult.rows.length > 0) {
+      const summary = (memResult.rows[0].contextSummary as string) || '';
+      const ubicMatch = summary.match(/\[Ubicaci[oó]n\]\s*([^|]+)/);
+      if (ubicMatch?.[1]?.trim()) {
+        const cityFromMem = ubicMatch[1].trim();
+        // Sync back to Supabase if available
+        if (supabase) {
+          try {
+            const sbAdmin = getSupabaseAdmin();
+            if (sbAdmin) {
+              // Check if profile exists first
+              const { data: existing } = await sbAdmin
+                .from('profiles')
+                .select('id')
+                .eq('id', tenantId)
+                .single();
+              if (existing) {
+                await sbAdmin.from('profiles').update({ city: cityFromMem }).eq('id', tenantId);
+              } else {
+                await sbAdmin.from('profiles').upsert({ id: tenantId, city: cityFromMem, plan_type: 'free' }, { onConflict: 'id' });
+              }
+            }
+          } catch {}
+        }
+        return NextResponse.json({ city: cityFromMem, source: 'memory' });
+      }
+    }
+  } catch {}
+
+  return NextResponse.json({ city: '' });
 }
 
 async function handleSaveCity(request: NextRequest) {
@@ -1067,10 +1109,63 @@ async function handleSaveCity(request: NextRequest) {
   const city = searchParams.get('city') || '';
   if (!tenantId) return NextResponse.json({ error: 'tenantId requerido' }, { status: 400 });
 
-  await supabaseAdmin
+  // Use upsert to handle cases where profile doesn't exist yet
+  // First try to fetch existing profile to preserve all fields
+  const { data: existing } = await supabaseAdmin
     .from('profiles')
-    .update({ city })
-    .eq('id', tenantId);
+    .select('*')
+    .eq('id', tenantId)
+    .single();
+
+  if (existing) {
+    // Profile exists — just update city
+    await supabaseAdmin
+      .from('profiles')
+      .update({ city })
+      .eq('id', tenantId);
+  } else {
+    // Profile doesn't exist — create with city
+    await supabaseAdmin
+      .from('profiles')
+      .upsert({
+        id: tenantId,
+        city,
+        plan_type: 'free',
+      }, { onConflict: 'id' });
+  }
+
+  // Also save city to UserMemory contextSummary as [Ubicacion] topic for long-term memory
+  try {
+    const memResult = await db.execute(
+      `SELECT contextSummary FROM UserMemory WHERE tenantId = ?`,
+      [tenantId]
+    );
+    if (memResult.rows.length > 0) {
+      let summary = (memResult.rows[0].contextSummary as string) || '';
+      // Remove old [Ubicacion] topic if exists
+      summary = summary.replace(/\[Ubicaci[oó]n\][^|]*/g, '').replace(/\|\s*$/, '').replace(/^\s*\|\s*/, '');
+      // Add new city topic
+      const newTopic = `[Ubicacion] ${city}`;
+      if (summary) {
+        summary = summary + ' | ' + newTopic;
+      } else {
+        summary = newTopic;
+      }
+      await db.execute(
+        `UPDATE UserMemory SET contextSummary = ?, updatedAt = ? WHERE tenantId = ?`,
+        [summary, new Date().toISOString(), tenantId]
+      );
+    } else {
+      // Create UserMemory with city as first topic
+      const memId = crypto.randomUUID();
+      await db.execute(
+        `INSERT INTO UserMemory (id, tenantId, userName, contextSummary, updatedAt) VALUES (?, ?, ?, ?, ?)`,
+        [memId, tenantId, '', `[Ubicacion] ${city}`, new Date().toISOString()]
+      );
+    }
+  } catch (memErr) {
+    console.warn('[SAVE_CITY] Memory update failed (non-critical):', memErr);
+  }
 
   return NextResponse.json({ success: true, city });
 }
