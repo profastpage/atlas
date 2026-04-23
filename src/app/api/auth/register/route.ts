@@ -77,6 +77,20 @@ export async function POST(request: NextRequest) {
       [memId, tenantId, (name || '').trim(), '', now]
     );
 
+    // Create Supabase profile if missing (ensures plan sync works across devices)
+    try {
+      const { getSupabaseAdmin } = await import('@/lib/supabase');
+      const sbAdmin = getSupabaseAdmin();
+      if (sbAdmin) {
+        await sbAdmin.from('profiles').upsert(
+          { id: tenantId, plan_type: 'free' },
+          { onConflict: 'id' }
+        );
+      }
+    } catch (profileErr) {
+      console.error('[REGISTER] Supabase profile creation failed:', profileErr);
+    }
+
     // Crear token de sesión (7 días)
     const token = generateToken();
     const expiresAt = new Date();

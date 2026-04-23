@@ -5,8 +5,10 @@ import { db } from '@/lib/sql';
 import { getSupabaseServer } from '@/lib/supabase';
 import { getSupabaseAdmin } from '@/lib/supabase';
 
-// Server-side Supabase client — reads env vars at runtime, not build time
-const supabase = getSupabaseServer();
+// Supabase client — initialized inline per-request to avoid cold-start null issues
+function getSupabaseAnon() {
+  return getSupabaseServer();
+}
 
 // ========================================
 // HEALTH CHECK + ADMIN API
@@ -136,6 +138,7 @@ const PLAN_PRICES: Record<string, number> = {
 };
 
 async function handleDashboardMetrics() {
+  const supabase = getSupabaseAnon();
   // Default zeroed result
   const zeroResult = {
     totalUsers: 0,
@@ -270,6 +273,7 @@ const PLAN_BADGES: Record<string, { label: string; variant: string }> = {
 };
 
 async function handleUsers() {
+  const supabase = getSupabaseAnon();
   // Turso: AuthUser with session count
   const result = await db.execute(`
     SELECT u.id, u.email, u.name, u.isAdmin, u.tenantId, u.createdAt,
@@ -512,12 +516,14 @@ async function handleTrialStatus(request: NextRequest) {
     return NextResponse.json({ error: 'tenantId requerido' }, { status: 400 });
   }
 
-  if (!supabase) {
+  // Use admin client to bypass RLS — consistent with handleSubscription
+  const sbAdmin = getSupabaseAdmin();
+  if (!sbAdmin) {
     return NextResponse.json({ trial: null });
   }
 
   try {
-    const { data: profile } = await supabase
+    const { data: profile } = await sbAdmin
       .from('profiles')
       .select('trial_plan, trial_ends_at, plan_type')
       .eq('id', tenantId)
@@ -554,12 +560,13 @@ async function handleTrialStatus(request: NextRequest) {
 // PLAN FEATURES (Supabase)
 // ========================================
 async function handlePlanFeatures() {
-  if (!supabase) {
+  const sbAnon = getSupabaseAnon();
+  if (!sbAnon) {
     return NextResponse.json({ features: getDefaultFeatures() });
   }
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await sbAnon
       .from('plan_features')
       .select('*')
       .order('plan_id')
@@ -608,6 +615,7 @@ function getDefaultFeatures() {
 // SYSTEM SETTINGS (Supabase)
 // ========================================
 async function handleSettings() {
+  const supabase = getSupabaseAnon();
   if (!supabase) {
     return NextResponse.json({ settings: {} });
   }
@@ -974,6 +982,7 @@ async function handleSaveAlarm(request: NextRequest) {
 // LIST ALARMS — Pending alarms for a user
 // ========================================
 async function handleListAlarms(request: NextRequest) {
+  const supabase = getSupabaseAnon();
   if (!supabase) {
     return NextResponse.json({ error: 'Supabase no configurado' }, { status: 503 });
   }
@@ -1045,6 +1054,7 @@ async function handleCancelAlarm(request: NextRequest) {
 // ========================================
 
 async function handleGetCity(request: NextRequest) {
+  const supabase = getSupabaseAnon();
   const { searchParams } = new URL(request.url);
   const tenantId = searchParams.get('tenantId');
   if (!tenantId) return NextResponse.json({ city: '' });
@@ -1328,16 +1338,15 @@ async function handleSaveProfile(request: NextRequest) {
         );
       } catch {}
 
-      if (supabase) {
-        try {
-          const supabaseAdmin = getSupabaseAdmin();
-          const sb = supabaseAdmin || supabase;
+      try {
+        const sb = getSupabaseAdmin() || getSupabaseAnon();
+        if (sb) {
           await sb
             .from('profiles')
             .update({ avatar_url: avatarUrl })
             .eq('id', tenantId);
-        } catch {}
-      }
+        }
+      } catch {}
     }
 
     return NextResponse.json({ success: true });

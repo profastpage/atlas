@@ -145,6 +145,20 @@ export async function POST(request: NextRequest) {
       } catch (memErr) {
         console.error('[FIREBASE_SYNC] UserMemory creation failed:', memErr);
       }
+
+      // Create Supabase profile if missing (ensures plan sync works across devices)
+      try {
+        const { getSupabaseAdmin } = await import('@/lib/supabase');
+        const sbAdmin = getSupabaseAdmin();
+        if (sbAdmin) {
+          await sbAdmin.from('profiles').upsert(
+            { id: tenantId, plan_type: 'free' },
+            { onConflict: 'id' }
+          );
+        }
+      } catch (profileErr) {
+        console.error('[FIREBASE_SYNC] Supabase profile creation failed:', profileErr);
+      }
     }
 
     // ---- CREATE TURSO AUTH TOKEN (7 days) ----

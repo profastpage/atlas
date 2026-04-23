@@ -1168,10 +1168,11 @@ export default function AtlasApp() {
     // Only show loading overlay on explicit login checks
     if (!silent) setCheckingPlan(true);
     try {
-      // Fetch subscription AND trial status in parallel
+      // Fetch subscription AND trial status in parallel (with cache-busting)
+      const cacheBust = `&_t=${Date.now()}`;
       const [subRes, trialRes] = await Promise.all([
-        fetch(`/api?action=subscription&tenantId=${tId}`),
-        fetch(`/api?action=trial_status&tenantId=${tId}`),
+        fetch(`/api?action=subscription&tenantId=${tId}${cacheBust}`),
+        fetch(`/api?action=trial_status&tenantId=${tId}${cacheBust}`),
       ]);
       const subData = await subRes.json();
       const trialData = await trialRes.json();
@@ -1186,9 +1187,9 @@ export default function AtlasApp() {
         // Store actual plan name for feature gating
         const pName = sub?.planId?.replace('plan_', '') || sub?.planName?.toLowerCase() || '';
         // Normalize plan names: 'ejecutivo' and 'elite' → 'ejecutivo'
-        const normalizedName = ['ejecutivo', 'elite', 'plan_ejecutivo'].includes(pName) ? 'ejecutivo'
-          : ['pro', 'profesional', 'plan_pro'].includes(pName) ? 'pro'
-          : ['basico', 'basico', 'plan_basico'].includes(pName) ? 'basico'
+        const normalizedName = ['ejecutivo', 'executive', 'elite', 'plan_ejecutivo', 'plan_executive'].includes(pName) ? 'ejecutivo'
+          : ['pro', 'profesional', 'plan_pro', 'plan_profesional'].includes(pName) ? 'pro'
+          : ['basico', 'basico', 'plan_basico', 'plan_basico'].includes(pName) ? 'basico'
           : pName;
         setUserPlanType(normalizedName);
         // Clear message counter — paid users don't need limits
@@ -1226,8 +1227,13 @@ export default function AtlasApp() {
         const saved = parseInt(localStorage.getItem(monthKey) || '0', 10);
         setRegisteredMsgCount(saved);
       }
-    } catch {
-      setHasActivePlan(false);
+    } catch (err) {
+      console.error('[PLAN_CHECK] Failed for tenant', tId, err);
+      // Don't overwrite a previously-confirmed active plan on transient errors
+      // (e.g., mobile works fine but PC behind proxy fails)
+      if (hasActivePlan !== true) {
+        setHasActivePlan(false);
+      }
       setTrialInfo(null);
     } finally {
       if (!silent) setCheckingPlan(false);
@@ -3153,42 +3159,42 @@ export default function AtlasApp() {
               Domina la incertidumbre. Define tu objetivo.
             </p>
             {/* Floating suggestion cards */}
-            <div className="flex flex-wrap justify-center gap-2 mt-5 px-2 max-w-[360px]">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 sm:gap-3 mt-6 px-4 w-full max-w-[380px]">
               <button
                 type="button"
                 onClick={() => { if (!isLoading && !isStreaming) sendMessage('Analiza mi negocio y sugiere estrategias de crecimiento'); }}
-                className="atlas-suggestion-card rounded-xl px-3.5 py-2.5 text-left max-w-[160px] cursor-pointer"
+                className="atlas-suggestion-card rounded-xl px-4 py-3 text-left w-full sm:w-auto sm:max-w-[160px] cursor-pointer"
                 style={{ animation: 'atlas-suggestion-float 4s ease-in-out infinite', animationDelay: '0s' }}
               >
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Sparkles className="w-3 h-3 text-emerald-400/70" />
-                  <span className="text-[10px] font-semibold text-emerald-400/70 uppercase tracking-wider">Estrategia</span>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-400/80" />
+                  <span className="text-[10px] font-semibold text-emerald-400/80 uppercase tracking-wider">Estrategia</span>
                 </div>
-                <p className="text-[11px] text-gray-400 leading-snug">Analiza mi negocio y sugiere crecimiento</p>
+                <p className="text-[12px] text-gray-300 leading-snug">Analiza mi negocio y sugiere crecimiento</p>
               </button>
               <button
                 type="button"
                 onClick={() => { if (!isLoading && !isStreaming) sendMessage('Resumir las tendencias del mercado actual'); }}
-                className="atlas-suggestion-card rounded-xl px-3.5 py-2.5 text-left max-w-[160px] cursor-pointer"
+                className="atlas-suggestion-card rounded-xl px-4 py-3 text-left w-full sm:w-auto sm:max-w-[160px] cursor-pointer"
                 style={{ animation: 'atlas-suggestion-float 4s ease-in-out infinite', animationDelay: '0.5s' }}
               >
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Globe className="w-3 h-3 text-emerald-400/70" />
-                  <span className="text-[10px] font-semibold text-emerald-400/70 uppercase tracking-wider">Mercado</span>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Globe className="w-3.5 h-3.5 text-emerald-400/80" />
+                  <span className="text-[10px] font-semibold text-emerald-400/80 uppercase tracking-wider">Mercado</span>
                 </div>
-                <p className="text-[11px] text-gray-400 leading-snug">Tendencias del mercado actual</p>
+                <p className="text-[12px] text-gray-300 leading-snug">Tendencias del mercado actual</p>
               </button>
               <button
                 type="button"
                 onClick={() => { if (!isLoading && !isStreaming) sendMessage('Ayudame a crear un plan de accion semanal'); }}
-                className="atlas-suggestion-card rounded-xl px-3.5 py-2.5 text-left max-w-[160px] cursor-pointer"
+                className="atlas-suggestion-card rounded-xl px-4 py-3 text-left w-full sm:w-auto sm:max-w-[160px] cursor-pointer"
                 style={{ animation: 'atlas-suggestion-float 4s ease-in-out infinite', animationDelay: '1s' }}
               >
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Wand2 className="w-3 h-3 text-emerald-400/70" />
-                  <span className="text-[10px] font-semibold text-emerald-400/70 uppercase tracking-wider">Plan</span>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Wand2 className="w-3.5 h-3.5 text-emerald-400/80" />
+                  <span className="text-[10px] font-semibold text-emerald-400/80 uppercase tracking-wider">Plan</span>
                 </div>
-                <p className="text-[11px] text-gray-400 leading-snug">Crea un plan de accion semanal</p>
+                <p className="text-[12px] text-gray-300 leading-snug">Crea un plan de accion semanal</p>
               </button>
             </div>
           </div>
