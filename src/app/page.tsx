@@ -4972,7 +4972,15 @@ export default function AtlasApp() {
                 ].map(tab => (
                   <button
                     key={tab.key}
-                    onClick={() => handleFootballFetch(tab.key)}
+                    onClick={() => {
+                      if (tab.key === 'standings' || tab.key === 'scorers') {
+                        // These tabs need a league code — just switch tab, show league picker
+                        setFootballTab(tab.key);
+                        setFootballData(prev => prev ? { ...prev, error: undefined } : prev);
+                      } else {
+                        handleFootballFetch(tab.key);
+                      }
+                    }}
                     className={`flex-1 py-2.5 text-[11px] font-medium transition-colors ${
                       footballTab === tab.key
                         ? 'text-emerald-400 border-b-2 border-emerald-400'
@@ -4990,7 +4998,7 @@ export default function AtlasApp() {
                     <Loader2 className="w-6 h-6 text-emerald-400 animate-spin mb-3" />
                     <p className="text-gray-400 text-sm">Cargando datos de futbol...</p>
                   </div>
-                ) : footballData?.error ? (
+                ) : footballData?.error && !footballData?.needsLeague ? (
                   <div className="px-4 py-8 text-center">
                     <p className="text-gray-400 text-sm">{footballData.error}</p>
                     {footballData.setup && <p className="text-gray-600 text-xs mt-2">{footballData.setup}</p>}

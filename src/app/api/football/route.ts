@@ -434,7 +434,7 @@ export async function POST(request: NextRequest) {
     // ---- STANDINGS ----
     if (detectedAction === 'standings') {
       if (!detectedLeague) {
-        return NextResponse.json({ error: 'Especifica una liga.' });
+        return NextResponse.json({ type: 'standings', needsLeague: true, error: 'Selecciona una liga para ver posiciones' });
       }
       const data = await fetchFootballAPI(`/competitions/${detectedLeague}/standings`);
       if (data?.standings) {
@@ -484,7 +484,7 @@ export async function POST(request: NextRequest) {
     // ---- SCORERS ----
     if (detectedAction === 'scorers') {
       if (!detectedLeague) {
-        return NextResponse.json({ error: 'Especifica una liga.' });
+        return NextResponse.json({ type: 'scorers', needsLeague: true, error: 'Selecciona una liga para ver goleadores' });
       }
       const data = await fetchFootballAPI(`/competitions/${detectedLeague}/scorers`);
       if (data?.scorers) {
@@ -648,7 +648,10 @@ export async function GET(request: NextRequest) {
     }
 
     // ---- STANDINGS ----
-    if (action === 'standings' && leagueCode) {
+    if (action === 'standings') {
+      if (!leagueCode) {
+        return NextResponse.json({ type: 'standings', needsLeague: true, error: 'Selecciona una liga para ver posiciones' });
+      }
       const data = await fetchFootballAPI(`/competitions/${leagueCode}/standings`);
       if (data?.standings) {
         return NextResponse.json({
@@ -667,7 +670,10 @@ export async function GET(request: NextRequest) {
     }
 
     // ---- SCORERS ----
-    if (action === 'scorers' && leagueCode) {
+    if (action === 'scorers') {
+      if (!leagueCode) {
+        return NextResponse.json({ type: 'scorers', needsLeague: true, error: 'Selecciona una liga para ver goleadores' });
+      }
       const data = await fetchFootballAPI(`/competitions/${leagueCode}/scorers`);
       if (data?.scorers) {
         return NextResponse.json({
