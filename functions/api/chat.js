@@ -11,13 +11,25 @@
 // para la tienda Urban Style.
 // ================================================
 
-export async function onRequestPost(context) {
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': 'https://vercel.app',
+// Allowed origins for CORS
+const ALLOWED_ORIGINS = [
+  'https://tienda-online-oficial.vercel.app',
+  'https://tiendaonlineoficial.com',
+  'https://www.tiendaonlineoficial.com',
+];
+
+function getCorsHeaders(origin) {
+  return {
+    'Access-Control-Allow-Origin': ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Content-Type': 'application/json',
   };
+}
+
+export async function onRequestPost(context) {
+  const origin = context.request.headers.get('Origin') || '';
+  const corsHeaders = getCorsHeaders(origin);
 
   try {
     const req = context.request;
@@ -177,13 +189,8 @@ Reglas:
 
 // ---- Handle OPTIONS (CORS preflight) ----
 export async function onRequestOptions(context) {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': 'https://vercel.app',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Max-Age': '86400',
-    },
-  });
+  const origin = context.request.headers.get('Origin') || '';
+  const headers = getCorsHeaders(origin);
+  headers['Access-Control-Max-Age'] = '86400';
+  return new Response(null, { status: 204, headers });
 }
