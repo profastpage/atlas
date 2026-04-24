@@ -9,7 +9,7 @@ import {
   Paperclip, FileText, XCircle as XCircleIcon, Loader2,
   Copy, Share2, Bell, Star, Hash, PencilLine,
   Sparkles, RotateCcw, ChevronRight, Wand2, RefreshCw, Image, Globe, ExternalLink,
-  ThumbsUp, ThumbsDown, CircleDot, Clock, FileDown
+  ThumbsUp, ThumbsDown, CircleDot, Clock, FileDown, ArrowLeft
 } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -356,6 +356,19 @@ export default function AtlasApp() {
   const [footballData, setFootballData] = useState<any>(null);
   const [footballLoading, setFootballLoading] = useState(false);
   const [footballTab, setFootballTab] = useState<'live' | 'standings' | 'fixtures' | 'scorers'>('live');
+  const [footballDetailView, setFootballDetailView] = useState(false);
+  const [footballLeagueCode, setFootballLeagueCode] = useState<string>('2028'); // Default Liga 1 Perú
+
+  // Football leagues — Liga 1 Perú always first (priority)
+  const FOOTBALL_LEAGUES = [
+    { label: 'Liga 1 Perú', code: '2028' },
+    { label: 'Premier League', code: '2021' },
+    { label: 'La Liga', code: '2014' },
+    { label: 'Champions League', code: '2001' },
+    { label: 'Serie A', code: '2019' },
+    { label: 'Bundesliga', code: '2002' },
+    { label: 'Ligue 1', code: '2015' },
+  ];
 
   // ---- Favorites & Highlights: Load from localStorage ----
   const FAV_KEY = 'atlas_favorites';
@@ -1914,6 +1927,8 @@ export default function AtlasApp() {
     setFootballLoading(true);
     setFootballTab(action);
     setShowFootball(true);
+    if (leagueCode) setFootballLeagueCode(String(leagueCode));
+    if (action !== 'live') setFootballDetailView(true);
     try {
       let url = `/api/football?action=${action}`;
       if (leagueCode) url += `&league=${leagueCode}`;
@@ -1926,6 +1941,13 @@ export default function AtlasApp() {
     } finally {
       setFootballLoading(false);
     }
+  }, []);
+
+  // Navigate back from football detail to tab menu
+  const handleFootballBack = useCallback(() => {
+    setFootballDetailView(false);
+    setFootballTab('live');
+    setFootballData(null);
   }, []);
 
   // ---- IMAGE GENERATION (FLUX) ----
@@ -4955,42 +4977,57 @@ export default function AtlasApp() {
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
                 <div className="flex items-center gap-2">
+                  {footballDetailView && (
+                    <button
+                      onClick={handleFootballBack}
+                      className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-white transition mr-1"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Regresar</span>
+                    </button>
+                  )}
                   <CircleDot className="w-4 h-4 text-emerald-400" />
-                  <span className="text-white text-sm font-medium">Futbol en vivo</span>
+                  <span className="text-white text-sm font-medium">
+                    {footballDetailView
+                      ? footballTab === 'live' ? 'En vivo' : footballTab === 'standings' ? 'Posiciones' : footballTab === 'fixtures' ? 'Calendario' : 'Goleadores'
+                      : 'Fútbol en vivo'}
+                  </span>
                 </div>
-                <button onClick={() => setShowFootball(false)} className="p-1 rounded-full hover:bg-gray-700/50 transition">
+                <button onClick={() => { setShowFootball(false); setFootballDetailView(false); }} className="p-1 rounded-full hover:bg-gray-700/50 transition">
                   <X className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
-              {/* Tabs */}
-              <div className="flex border-b border-white/[0.04]">
-                {[
-                  { key: 'live' as const, label: 'En vivo' },
-                  { key: 'standings' as const, label: 'Posiciones' },
-                  { key: 'fixtures' as const, label: 'Calendario' },
-                  { key: 'scorers' as const, label: 'Goleadores' },
-                ].map(tab => (
-                  <button
-                    key={tab.key}
-                    onClick={() => {
-                      if (tab.key === 'standings' || tab.key === 'scorers') {
-                        // These tabs need a league code — just switch tab, show league picker
-                        setFootballTab(tab.key);
-                        setFootballData(prev => prev ? { ...prev, error: undefined } : prev);
-                      } else {
-                        handleFootballFetch(tab.key);
-                      }
-                    }}
-                    className={`flex-1 py-2.5 text-[11px] font-medium transition-colors ${
-                      footballTab === tab.key
-                        ? 'text-emerald-400 border-b-2 border-emerald-400'
-                        : 'text-gray-500 hover:text-gray-300'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+              {/* Tabs — only in menu view */}
+              {!footballDetailView && (
+                <div className="flex border-b border-white/[0.04]">
+                  {[
+                    { key: 'live' as const, label: 'En vivo' },
+                    { key: 'standings' as const, label: 'Posiciones' },
+                    { key: 'fixtures' as const, label: 'Calendario' },
+                    { key: 'scorers' as const, label: 'Goleadores' },
+                  ].map(tab => (
+                    <button
+                      key={tab.key}
+                      onClick={() => {
+                        if (tab.key === 'live') {
+                          setFootballDetailView(false);
+                          handleFootballFetch(tab.key);
+                        } else {
+                          // Auto-load Liga 1 Perú first (priority)
+                          handleFootballFetch(tab.key, '2028');
+                        }
+                      }}
+                      className={`flex-1 py-2.5 text-[11px] font-medium transition-colors ${
+                        footballTab === tab.key
+                          ? 'text-emerald-400 border-b-2 border-emerald-400'
+                          : 'text-gray-500 hover:text-gray-300'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               {/* Content */}
               <div className="flex-1 overflow-y-auto overflow-x-hidden">
                 {footballLoading ? (
@@ -5040,51 +5077,93 @@ export default function AtlasApp() {
                             )}
                           </div>
                         )}
-                        {footballData?.live?.length > 0 && (
-                          <div className="mb-3">
-                            <div className="flex items-center gap-1.5 px-1 mb-1.5">
-                              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                              <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">En vivo ({footballData.live.length})</span>
-                            </div>
-                            <div className="space-y-1">
-                              {footballData.live.map((m: string, i: number) => (
-                                <div key={i} className="px-3 py-2 bg-red-500/5 border border-red-500/10 rounded-lg">
-                                  <p className="text-[12px] text-gray-200 font-mono">{m}</p>
+                        {footballData?.live?.length > 0 && (() => {
+                          const sortedLive = [...footballData.live].sort((a: string, b: string) => {
+                            const aPeru = /liga 1|per[uú]/i.test(a);
+                            const bPeru = /liga 1|per[uú]/i.test(b);
+                            if (aPeru && !bPeru) return -1;
+                            if (!aPeru && bPeru) return 1;
+                            return 0;
+                          });
+                          const peruCount = sortedLive.filter((m: string) => /liga 1|per[uú]/i.test(m)).length;
+                          return (
+                            <div className="mb-3">
+                              <div className="flex items-center gap-1.5 px-1 mb-1.5">
+                                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">En vivo ({footballData.live.length})</span>
+                              </div>
+                              {peruCount > 0 && (
+                                <div className="px-1 mb-1.5">
+                                  <span className="text-[9px] text-emerald-400/70 uppercase tracking-wider font-medium">Liga 1 Perú primero</span>
                                 </div>
-                              ))}
+                              )}
+                              <div className="space-y-1">
+                                {sortedLive.map((m: string, i: number) => {
+                                  const isPeru = /liga 1|per[uú]/i.test(m);
+                                  return (
+                                    <div key={i} className={`px-3 py-2 rounded-lg ${isPeru ? 'bg-emerald-500/5 border border-emerald-500/15' : 'bg-red-500/5 border border-red-500/10'}`}>
+                                      <p className="text-[12px] text-gray-200 font-mono">{m}</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        )}
-                        {footballData?.finished?.length > 0 && (
-                          <div className="mb-3">
-                            <div className="flex items-center gap-1.5 px-1 mb-1.5">
-                              <Check className="w-2.5 h-2.5 text-gray-400" />
-                              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Finalizados ({footballData.finished.length})</span>
+                          );
+                        })()}
+                        {footballData?.finished?.length > 0 && (() => {
+                          const sortedFinished = [...footballData.finished].sort((a: string, b: string) => {
+                            const aPeru = /liga 1|per[uú]/i.test(a);
+                            const bPeru = /liga 1|per[uú]/i.test(b);
+                            if (aPeru && !bPeru) return -1;
+                            if (!aPeru && bPeru) return 1;
+                            return 0;
+                          });
+                          return (
+                            <div className="mb-3">
+                              <div className="flex items-center gap-1.5 px-1 mb-1.5">
+                                <Check className="w-2.5 h-2.5 text-gray-400" />
+                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Finalizados ({footballData.finished.length})</span>
+                              </div>
+                              <div className="space-y-1">
+                                {sortedFinished.slice(0, 5).map((m: string, i: number) => {
+                                  const isPeru = /liga 1|per[uú]/i.test(m);
+                                  return (
+                                    <div key={i} className={`px-3 py-2 rounded-lg ${isPeru ? 'bg-emerald-500/5 border border-emerald-500/10' : 'bg-gray-800/20'}`}>
+                                      <p className={`text-[12px] font-mono ${isPeru ? 'text-gray-300' : 'text-gray-400'}`}>{m}</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                            <div className="space-y-1">
-                              {footballData.finished.slice(0, 5).map((m: string, i: number) => (
-                                <div key={i} className="px-3 py-2 bg-gray-800/20 rounded-lg">
-                                  <p className="text-[12px] text-gray-400 font-mono">{m}</p>
-                                </div>
-                              ))}
+                          );
+                        })()}
+                        {footballData?.scheduled?.length > 0 && (() => {
+                          const sortedScheduled = [...footballData.scheduled].sort((a: string, b: string) => {
+                            const aPeru = /liga 1|per[uú]/i.test(a);
+                            const bPeru = /liga 1|per[uú]/i.test(b);
+                            if (aPeru && !bPeru) return -1;
+                            if (!aPeru && bPeru) return 1;
+                            return 0;
+                          });
+                          return (
+                            <div>
+                              <div className="flex items-center gap-1.5 px-1 mb-1.5">
+                                <Clock className="w-2.5 h-2.5 text-gray-500" />
+                                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Por jugar ({footballData.scheduled.length})</span>
+                              </div>
+                              <div className="space-y-1">
+                                {sortedScheduled.slice(0, 8).map((m: string, i: number) => {
+                                  const isPeru = /liga 1|per[uú]/i.test(m);
+                                  return (
+                                    <div key={i} className={`px-3 py-2 rounded-lg ${isPeru ? 'bg-emerald-500/5 border border-emerald-500/10' : 'bg-gray-800/10'}`}>
+                                      <p className={`text-[12px] font-mono ${isPeru ? 'text-gray-300' : 'text-gray-500'}`}>{m}</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        )}
-                        {footballData?.scheduled?.length > 0 && (
-                          <div>
-                            <div className="flex items-center gap-1.5 px-1 mb-1.5">
-                              <Clock className="w-2.5 h-2.5 text-gray-500" />
-                              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Por jugar ({footballData.scheduled.length})</span>
-                            </div>
-                            <div className="space-y-1">
-                              {footballData.scheduled.slice(0, 8).map((m: string, i: number) => (
-                                <div key={i} className="px-3 py-2 bg-gray-800/10 rounded-lg">
-                                  <p className="text-[12px] text-gray-500 font-mono">{m}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                          );
+                        })()}
                         {(!footballData?.live?.length && !footballData?.finished?.length && !footballData?.scheduled?.length && !footballData?.noLive && !footballData?.newsSummary) && (
                           <div className="text-center py-8">
                             <p className="text-gray-500 text-sm">No hay partidos hoy</p>
@@ -5098,25 +5177,29 @@ export default function AtlasApp() {
                       <div>
                         <div className="flex items-center gap-1.5 px-1 mb-2">
                           <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">{footballData.league}</span>
+                          {footballData._fallback && footballData._source !== 'news_summary' && <Globe className="w-3 h-3 text-amber-400" />}
                         </div>
                         <div className="bg-gray-900/50 rounded-lg overflow-hidden">
                           <pre className="text-[10px] text-gray-300 font-mono p-3 whitespace-pre overflow-x-auto">{footballData.table}</pre>
+                        </div>
+                        {/* Other leagues */}
+                        <div className="mt-3 pt-3 border-t border-white/[0.04]">
+                          <p className="text-[10px] text-gray-500 mb-2 px-1">Otras ligas:</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {FOOTBALL_LEAGUES.filter(l => l.code !== footballLeagueCode).map(l => (
+                              <button key={l.code} onClick={() => handleFootballFetch('standings', l.code)} className="px-2.5 py-1 text-[10px] rounded-md bg-gray-800/30 text-gray-400 hover:bg-gray-700/50 hover:text-gray-200 transition">
+                                {l.label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     )}
                     {footballTab === 'standings' && !footballData?.table && !footballData?.newsSummary && (
                       <div className="text-center py-8">
-                        <p className="text-gray-500 text-sm">Selecciona una liga para ver posiciones</p>
+                        <p className="text-gray-500 text-sm">No se encontraron posiciones para esta liga</p>
                         <div className="flex flex-wrap justify-center gap-2 mt-3">
-                          {[
-                            { label: 'Liga 1 Peru', code: '2028' },
-                            { label: 'Premier', code: '2021' },
-                            { label: 'La Liga', code: '2014' },
-                            { label: 'Serie A', code: '2019' },
-                            { label: 'Bundesliga', code: '2002' },
-                            { label: 'Ligue 1', code: '2015' },
-                            { label: 'Champions', code: '2001' },
-                          ].map(l => (
+                          {FOOTBALL_LEAGUES.map(l => (
                             <button key={l.code} onClick={() => handleFootballFetch('standings', l.code)} className={`px-3 py-1.5 text-[11px] rounded-lg hover:bg-gray-700/50 transition ${l.code === '2028' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/20' : 'bg-gray-800/30 text-gray-300'}`}>
                               {l.label}
                             </button>
@@ -5128,7 +5211,10 @@ export default function AtlasApp() {
                     {footballTab === 'fixtures' && footballData?.fixtures?.length > 0 && (
                       <div>
                         <div className="flex items-center gap-1.5 px-1 mb-2">
-                          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Proximos partidos ({footballData.total})</span>
+                          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">
+                            {footballData.league || 'Próximos partidos'} ({footballData.total})
+                          </span>
+                          {footballData._fallback && footballData._source !== 'news_summary' && <Globe className="w-3 h-3 text-amber-400" />}
                         </div>
                         <div className="space-y-1">
                           {footballData.fixtures.map((f: string, i: number) => (
@@ -5137,11 +5223,29 @@ export default function AtlasApp() {
                             </div>
                           ))}
                         </div>
+                        {/* League filter */}
+                        <div className="mt-3 pt-3 border-t border-white/[0.04]">
+                          <p className="text-[10px] text-gray-500 mb-2 px-1">Filtrar por liga:</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {FOOTBALL_LEAGUES.filter(l => l.code !== footballLeagueCode).map(l => (
+                              <button key={l.code} onClick={() => handleFootballFetch('fixtures', l.code)} className="px-2.5 py-1 text-[10px] rounded-md bg-gray-800/30 text-gray-400 hover:bg-gray-700/50 hover:text-gray-200 transition">
+                                {l.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     )}
                     {footballTab === 'fixtures' && !footballData?.fixtures?.length && !footballData?.newsSummary && (
                       <div className="text-center py-8">
-                        <p className="text-gray-500 text-sm">No hay fixtures disponibles</p>
+                        <p className="text-gray-500 text-sm">No hay partidos programados para esta liga</p>
+                        <div className="flex flex-wrap justify-center gap-2 mt-3">
+                          {FOOTBALL_LEAGUES.map(l => (
+                            <button key={l.code} onClick={() => handleFootballFetch('fixtures', l.code)} className={`px-3 py-1.5 text-[11px] rounded-lg hover:bg-gray-700/50 transition ${l.code === '2028' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/20' : 'bg-gray-800/30 text-gray-300'}`}>
+                              {l.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
                     {/* Scorers */}
@@ -5149,6 +5253,7 @@ export default function AtlasApp() {
                       <div>
                         <div className="flex items-center gap-1.5 px-1 mb-2">
                           <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">{footballData.league} — Goleadores</span>
+                          {footballData._fallback && footballData._source !== 'news_summary' && <Globe className="w-3 h-3 text-amber-400" />}
                         </div>
                         <div className="space-y-1">
                           {footballData.scorers.map((s: string, i: number) => (
@@ -5160,21 +5265,24 @@ export default function AtlasApp() {
                             </div>
                           ))}
                         </div>
+                        {/* Other leagues */}
+                        <div className="mt-3 pt-3 border-t border-white/[0.04]">
+                          <p className="text-[10px] text-gray-500 mb-2 px-1">Otras ligas:</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {FOOTBALL_LEAGUES.filter(l => l.code !== footballLeagueCode).map(l => (
+                              <button key={l.code} onClick={() => handleFootballFetch('scorers', l.code)} className="px-2.5 py-1 text-[10px] rounded-md bg-gray-800/30 text-gray-400 hover:bg-gray-700/50 hover:text-gray-200 transition">
+                                {l.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     )}
                     {footballTab === 'scorers' && !footballData?.scorers?.length && !footballData?.newsSummary && (
                       <div className="text-center py-8">
-                        <p className="text-gray-500 text-sm">Selecciona una liga para ver goleadores</p>
+                        <p className="text-gray-500 text-sm">No se encontraron goleadores para esta liga</p>
                         <div className="flex flex-wrap justify-center gap-2 mt-3">
-                          {[
-                            { label: 'Liga 1 Peru', code: '2028' },
-                            { label: 'Premier', code: '2021' },
-                            { label: 'La Liga', code: '2014' },
-                            { label: 'Serie A', code: '2019' },
-                            { label: 'Bundesliga', code: '2002' },
-                            { label: 'Ligue 1', code: '2015' },
-                            { label: 'Champions', code: '2001' },
-                          ].map(l => (
+                          {FOOTBALL_LEAGUES.map(l => (
                             <button key={l.code} onClick={() => handleFootballFetch('scorers', l.code)} className={`px-3 py-1.5 text-[11px] rounded-lg hover:bg-gray-700/50 transition ${l.code === '2028' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/20' : 'bg-gray-800/30 text-gray-300'}`}>
                               {l.label}
                             </button>

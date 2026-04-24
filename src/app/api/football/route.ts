@@ -378,11 +378,19 @@ export async function POST(request: NextRequest) {
       const liveMatches = data?.matches?.filter((m: any) => m.status === 'IN_PLAY' || m.status === 'PAUSED') || [];
 
       if (liveMatches.length > 0) {
+        // Sort: Peruvian matches first (Liga 1), then international
+        const sortedLive = [...liveMatches].sort((a: any, b: any) => {
+          const aPeru = (a.competition?.code === 2028) || /liga 1|per[uú]/i.test(a.competition?.name || '');
+          const bPeru = (b.competition?.code === 2028) || /liga 1|per[uú]/i.test(b.competition?.name || '');
+          if (aPeru && !bPeru) return -1;
+          if (!aPeru && bPeru) return 1;
+          return 0;
+        });
         return NextResponse.json({
           type: 'live',
           date: nowLimaDate(),
           time: nowLimaTime(),
-          live: liveMatches.map(formatLiveMatch),
+          live: sortedLive.map(formatLiveMatch),
           total: liveMatches.length,
         });
       }
@@ -395,8 +403,16 @@ export async function POST(request: NextRequest) {
       const todayData = await fetchFootballAPI(todayEndpoint, 5000);
 
       const todayMatches = todayData?.matches || [];
-      const finished = todayMatches.filter((m: any) => m.status === 'FINISHED');
-      const scheduled = todayMatches.filter((m: any) => m.status === 'SCHEDULED' || m.status === 'TIMED');
+      // Sort: Peruvian matches first
+      const sortedToday = [...todayMatches].sort((a: any, b: any) => {
+        const aPeru = (a.competition?.code === 2028) || /liga 1|per[uú]/i.test(a.competition?.name || '');
+        const bPeru = (b.competition?.code === 2028) || /liga 1|per[uú]/i.test(b.competition?.name || '');
+        if (aPeru && !bPeru) return -1;
+        if (!aPeru && bPeru) return 1;
+        return 0;
+      });
+      const finished = sortedToday.filter((m: any) => m.status === 'FINISHED');
+      const scheduled = sortedToday.filter((m: any) => m.status === 'SCHEDULED' || m.status === 'TIMED');
 
       // If primary API returned matches, use them
       if (todayMatches.length > 0) {
@@ -466,8 +482,10 @@ export async function POST(request: NextRequest) {
 
       const data = await fetchFootballAPI(endpoint);
       if (data?.matches?.length > 0) {
+        const leagueName = data.matches[0]?.competition?.name || (detectedLeague ? `Liga ${detectedLeague}` : '');
         return NextResponse.json({
           type: 'fixtures',
+          league: leagueName,
           fixtures: data.matches.slice(0, 20).map(formatFixture),
           total: data.matches.length,
         });
@@ -558,11 +576,19 @@ export async function GET(request: NextRequest) {
       const liveMatches = data?.matches?.filter((m: any) => m.status === 'IN_PLAY' || m.status === 'PAUSED') || [];
 
       if (liveMatches.length > 0) {
+        // Sort: Peruvian matches first (Liga 1), then international
+        const sortedLive = [...liveMatches].sort((a: any, b: any) => {
+          const aPeru = (a.competition?.code === 2028) || /liga 1|per[uú]/i.test(a.competition?.name || '');
+          const bPeru = (b.competition?.code === 2028) || /liga 1|per[uú]/i.test(b.competition?.name || '');
+          if (aPeru && !bPeru) return -1;
+          if (!aPeru && bPeru) return 1;
+          return 0;
+        });
         return NextResponse.json({
           type: 'live',
           date: nowLimaDate(),
           time: nowLimaTime(),
-          live: liveMatches.map(formatLiveMatch),
+          live: sortedLive.map(formatLiveMatch),
           total: liveMatches.length,
         });
       }
@@ -575,8 +601,16 @@ export async function GET(request: NextRequest) {
       const todayData = await fetchFootballAPI(todayEndpoint, 5000);
 
       const todayMatches = todayData?.matches || [];
-      const finished = todayMatches.filter((m: any) => m.status === 'FINISHED');
-      const scheduled = todayMatches.filter((m: any) => m.status === 'SCHEDULED' || m.status === 'TIMED');
+      // Sort: Peruvian matches first
+      const sortedToday = [...todayMatches].sort((a: any, b: any) => {
+        const aPeru = (a.competition?.code === 2028) || /liga 1|per[uú]/i.test(a.competition?.name || '');
+        const bPeru = (b.competition?.code === 2028) || /liga 1|per[uú]/i.test(b.competition?.name || '');
+        if (aPeru && !bPeru) return -1;
+        if (!aPeru && bPeru) return 1;
+        return 0;
+      });
+      const finished = sortedToday.filter((m: any) => m.status === 'FINISHED');
+      const scheduled = sortedToday.filter((m: any) => m.status === 'SCHEDULED' || m.status === 'TIMED');
 
       // If primary API returned matches, use them
       if (todayMatches.length > 0) {
@@ -704,8 +738,10 @@ export async function GET(request: NextRequest) {
 
       const data = await fetchFootballAPI(endpoint);
       if (data?.matches?.length > 0) {
+        const leagueName = data.matches[0]?.competition?.name || (leagueCode ? `Liga ${leagueCode}` : '');
         return NextResponse.json({
           type: 'fixtures',
+          league: leagueName,
           fixtures: data.matches.slice(0, 20).map(formatFixture),
           total: data.matches.length,
         });
