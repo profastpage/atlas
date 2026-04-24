@@ -4997,6 +4997,23 @@ export default function AtlasApp() {
                   </div>
                 ) : (
                   <div className="p-3">
+                    {/* Fallback source indicator */}
+                    {footballData?._fallback && footballData._source !== 'news_summary' && (
+                      <div className="flex items-center gap-1.5 px-1 mb-2">
+                        <Globe className="w-3 h-3 text-amber-400" />
+                        <span className="text-[9px] text-amber-400/70 uppercase tracking-wider">Fuente: {footballData._source}</span>
+                      </div>
+                    )}
+                    {/* News summary fallback */}
+                    {footballData?._fallback && footballData._source === 'news_summary' && footballData.newsSummary && (
+                      <div className="mb-3 px-3 py-2.5 bg-amber-500/5 border border-amber-500/10 rounded-lg">
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <Globe className="w-3 h-3 text-amber-400" />
+                          <span className="text-[9px] text-amber-400 uppercase tracking-wider font-medium">Resumen deportivo actual</span>
+                        </div>
+                        <p className="text-[11px] text-gray-300 leading-relaxed">{footballData.newsSummary}</p>
+                      </div>
+                    )}
                     {/* Live matches */}
                     {(footballTab === 'live' || footballTab === 'today') && (
                       <>
@@ -5060,7 +5077,7 @@ export default function AtlasApp() {
                             </div>
                           </div>
                         )}
-                        {(!footballData?.live?.length && !footballData?.finished?.length && !footballData?.scheduled?.length && !footballData?.noLive) && (
+                        {(!footballData?.live?.length && !footballData?.finished?.length && !footballData?.scheduled?.length && !footballData?.noLive && !footballData?.newsSummary) && (
                           <div className="text-center py-8">
                             <p className="text-gray-500 text-sm">No hay partidos hoy</p>
                             <p className="text-gray-600 text-[10px] mt-1">Prueba con el calendario de otra fecha o liga</p>
@@ -5079,7 +5096,7 @@ export default function AtlasApp() {
                         </div>
                       </div>
                     )}
-                    {footballTab === 'standings' && !footballData?.table && (
+                    {footballTab === 'standings' && !footballData?.table && !footballData?.newsSummary && (
                       <div className="text-center py-8">
                         <p className="text-gray-500 text-sm">Selecciona una liga para ver posiciones</p>
                         <div className="flex flex-wrap justify-center gap-2 mt-3">
@@ -5114,7 +5131,7 @@ export default function AtlasApp() {
                         </div>
                       </div>
                     )}
-                    {footballTab === 'fixtures' && !footballData?.fixtures?.length && (
+                    {footballTab === 'fixtures' && !footballData?.fixtures?.length && !footballData?.newsSummary && (
                       <div className="text-center py-8">
                         <p className="text-gray-500 text-sm">No hay fixtures disponibles</p>
                       </div>
@@ -5137,7 +5154,7 @@ export default function AtlasApp() {
                         </div>
                       </div>
                     )}
-                    {footballTab === 'scorers' && !footballData?.scorers?.length && (
+                    {footballTab === 'scorers' && !footballData?.scorers?.length && !footballData?.newsSummary && (
                       <div className="text-center py-8">
                         <p className="text-gray-500 text-sm">Selecciona una liga para ver goleadores</p>
                         <div className="flex flex-wrap justify-center gap-2 mt-3">

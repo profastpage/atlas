@@ -12,9 +12,16 @@ export const runtime = 'edge';
 //   - All times converted to America/Lima (UTC-5)
 //   - Friendly empty-state when no live matches
 //   - Fixtures use ?status=SCHEDULED + today+7d range
+//
+// v3 ADDITIONS:
+//   - Plan B Fallback: web search + AI structuring when API fails
+//   - Priority sources: Transfermarkt, ESPN, Flashscore, FBref, Soccerway
+//   - Geographic priority: Liga 1 Perú > Top European leagues
+//   - News summary as last resort when no data available
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getFootballFallback } from '@/lib/football-fallback';
 
 const FOOTBALL_API_BASE = 'https://api.football-data.org/v4';
 
@@ -391,15 +398,36 @@ export async function POST(request: NextRequest) {
       const finished = todayMatches.filter((m: any) => m.status === 'FINISHED');
       const scheduled = todayMatches.filter((m: any) => m.status === 'SCHEDULED' || m.status === 'TIMED');
 
+      // If primary API returned matches, use them
+      if (todayMatches.length > 0) {
+        return NextResponse.json({
+          type: 'live',
+          date: nowLimaDate(),
+          time: nowLimaTime(),
+          live: [],
+          finished: finished.slice(0, 8).map(formatLiveMatch),
+          scheduled: scheduled.slice(0, 10).map(formatLiveMatch),
+          total: todayMatches.length,
+          noLive: true,
+        });
+      }
+
+      // PLAN B: Web search fallback
+      console.log('[FOOTBALL] Primary API empty for live, activating fallback...');
+      const fallback = await getFootballFallback('live', detectedLeague);
+      if (fallback) {
+        return NextResponse.json(fallback);
+      }
+
       return NextResponse.json({
         type: 'live',
         date: nowLimaDate(),
         time: nowLimaTime(),
         live: [],
-        finished: finished.slice(0, 8).map(formatLiveMatch),
-        scheduled: scheduled.slice(0, 10).map(formatLiveMatch),
-        total: todayMatches.length,
-        noLive: true, // Flag for frontend to show friendly message
+        finished: [],
+        scheduled: [],
+        total: 0,
+        noLive: true,
       });
     }
 
@@ -415,6 +443,12 @@ export async function POST(request: NextRequest) {
           league: data.competition?.name,
           table: formatStandingsTable(data.standings),
         });
+      }
+      // PLAN B: Web search fallback
+      console.log('[FOOTBALL] Primary API empty for standings, activating fallback...');
+      const fallback = await getFootballFallback('standings', detectedLeague);
+      if (fallback) {
+        return NextResponse.json(fallback);
       }
       return NextResponse.json({ error: 'No se encontraron datos para esa liga.' }, { status: 404 });
     }
@@ -438,6 +472,12 @@ export async function POST(request: NextRequest) {
           total: data.matches.length,
         });
       }
+      // PLAN B: Web search fallback
+      console.log('[FOOTBALL] Primary API empty for fixtures, activating fallback...');
+      const fallback = await getFootballFallback('fixtures', detectedLeague);
+      if (fallback) {
+        return NextResponse.json(fallback);
+      }
       return NextResponse.json({ type: 'fixtures', fixtures: [], total: 0 });
     }
 
@@ -453,6 +493,12 @@ export async function POST(request: NextRequest) {
           league: data.competition?.name,
           scorers: data.scorers.slice(0, 15).map(formatScorer),
         });
+      }
+      // PLAN B: Web search fallback
+      console.log('[FOOTBALL] Primary API empty for scorers, activating fallback...');
+      const fallback = await getFootballFallback('scorers', detectedLeague);
+      if (fallback) {
+        return NextResponse.json(fallback);
       }
       return NextResponse.json({ error: 'No se encontraron datos de goleadores.' }, { status: 404 });
     }
@@ -532,14 +578,35 @@ export async function GET(request: NextRequest) {
       const finished = todayMatches.filter((m: any) => m.status === 'FINISHED');
       const scheduled = todayMatches.filter((m: any) => m.status === 'SCHEDULED' || m.status === 'TIMED');
 
+      // If primary API returned matches, use them
+      if (todayMatches.length > 0) {
+        return NextResponse.json({
+          type: 'live',
+          date: nowLimaDate(),
+          time: nowLimaTime(),
+          live: [],
+          finished: finished.slice(0, 8).map(formatLiveMatch),
+          scheduled: scheduled.slice(0, 10).map(formatLiveMatch),
+          total: todayMatches.length,
+          noLive: true,
+        });
+      }
+
+      // PLAN B: Web search fallback
+      console.log('[FOOTBALL] GET live — primary API empty, activating fallback...');
+      const fallback = await getFootballFallback('live', leagueCode);
+      if (fallback) {
+        return NextResponse.json(fallback);
+      }
+
       return NextResponse.json({
         type: 'live',
         date: nowLimaDate(),
         time: nowLimaTime(),
         live: [],
-        finished: finished.slice(0, 8).map(formatLiveMatch),
-        scheduled: scheduled.slice(0, 10).map(formatLiveMatch),
-        total: todayMatches.length,
+        finished: [],
+        scheduled: [],
+        total: 0,
         noLive: true,
       });
     }
@@ -551,7 +618,7 @@ export async function GET(request: NextRequest) {
       if (leagueCode) endpoint += `&competitions=${leagueCode}`;
 
       const data = await fetchFootballAPI(endpoint);
-      if (data?.matches) {
+      if (data?.matches && data.matches.length > 0) {
         return NextResponse.json({
           type: 'today',
           date: nowLimaDate(),
@@ -561,6 +628,12 @@ export async function GET(request: NextRequest) {
           scheduled: data.matches.filter((m: any) => m.status === 'SCHEDULED' || m.status === 'TIMED').map(formatLiveMatch),
           total: data.matches.length,
         });
+      }
+      // PLAN B: Web search fallback
+      console.log('[FOOTBALL] GET today — primary API empty, activating fallback...');
+      const fallback = await getFootballFallback('live', leagueCode);
+      if (fallback) {
+        return NextResponse.json({ ...fallback, type: 'today' });
       }
       return NextResponse.json({
         type: 'today',
@@ -584,6 +657,12 @@ export async function GET(request: NextRequest) {
           table: formatStandingsTable(data.standings),
         });
       }
+      // PLAN B: Web search fallback
+      console.log('[FOOTBALL] GET standings — primary API empty, activating fallback...');
+      const fallback = await getFootballFallback('standings', leagueCode);
+      if (fallback) {
+        return NextResponse.json(fallback);
+      }
       return NextResponse.json({ error: 'Liga no encontrada.' }, { status: 404 });
     }
 
@@ -596,6 +675,12 @@ export async function GET(request: NextRequest) {
           league: data.competition?.name,
           scorers: data.scorers.slice(0, 15).map(formatScorer),
         });
+      }
+      // PLAN B: Web search fallback
+      console.log('[FOOTBALL] GET scorers — primary API empty, activating fallback...');
+      const fallback = await getFootballFallback('scorers', leagueCode);
+      if (fallback) {
+        return NextResponse.json(fallback);
       }
       return NextResponse.json({ error: 'Goleadores no encontrados.' }, { status: 404 });
     }
@@ -618,6 +703,12 @@ export async function GET(request: NextRequest) {
           fixtures: data.matches.slice(0, 20).map(formatFixture),
           total: data.matches.length,
         });
+      }
+      // PLAN B: Web search fallback
+      console.log('[FOOTBALL] GET fixtures — primary API empty, activating fallback...');
+      const fallback = await getFootballFallback('fixtures', leagueCode);
+      if (fallback) {
+        return NextResponse.json(fallback);
       }
       return NextResponse.json({ type: 'fixtures', fixtures: [], total: 0 });
     }
