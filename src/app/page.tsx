@@ -5000,6 +5000,21 @@ export default function AtlasApp() {
                     {/* Live matches */}
                     {(footballTab === 'live' || footballTab === 'today') && (
                       <>
+                        {/* Friendly message when no live matches */}
+                        {footballData?.noLive && !footballData?.live?.length && (
+                          <div className="text-center py-4 mb-3 px-3">
+                            <div className="flex items-center justify-center gap-2 mb-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-gray-600" />
+                              <span className="text-[12px] font-semibold text-gray-400">No hay partidos en vivo ahora</span>
+                            </div>
+                            {footballData?.time && (
+                              <p className="text-[10px] text-gray-600 mb-1">Hora de Lima: {footballData.time}</p>
+                            )}
+                            {footballData?.date && (
+                              <p className="text-[10px] text-gray-600">{footballData.date}</p>
+                            )}
+                          </div>
+                        )}
                         {footballData?.live?.length > 0 && (
                           <div className="mb-3">
                             <div className="flex items-center gap-1.5 px-1 mb-1.5">
@@ -5045,9 +5060,10 @@ export default function AtlasApp() {
                             </div>
                           </div>
                         )}
-                        {(!footballData?.live?.length && !footballData?.finished?.length && !footballData?.scheduled?.length) && (
+                        {(!footballData?.live?.length && !footballData?.finished?.length && !footballData?.scheduled?.length && !footballData?.noLive) && (
                           <div className="text-center py-8">
                             <p className="text-gray-500 text-sm">No hay partidos hoy</p>
+                            <p className="text-gray-600 text-[10px] mt-1">Prueba con el calendario de otra fecha o liga</p>
                           </div>
                         )}
                       </>
@@ -5068,6 +5084,7 @@ export default function AtlasApp() {
                         <p className="text-gray-500 text-sm">Selecciona una liga para ver posiciones</p>
                         <div className="flex flex-wrap justify-center gap-2 mt-3">
                           {[
+                            { label: 'Liga 1 Peru', code: '2028' },
                             { label: 'Premier', code: '2021' },
                             { label: 'La Liga', code: '2014' },
                             { label: 'Serie A', code: '2019' },
@@ -5075,7 +5092,7 @@ export default function AtlasApp() {
                             { label: 'Ligue 1', code: '2015' },
                             { label: 'Champions', code: '2001' },
                           ].map(l => (
-                            <button key={l.code} onClick={() => handleFootballFetch('standings', l.code)} className="px-3 py-1.5 text-[11px] bg-gray-800/30 text-gray-300 rounded-lg hover:bg-gray-700/50 transition">
+                            <button key={l.code} onClick={() => handleFootballFetch('standings', l.code)} className={`px-3 py-1.5 text-[11px] rounded-lg hover:bg-gray-700/50 transition ${l.code === '2028' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/20' : 'bg-gray-800/30 text-gray-300'}`}>
                               {l.label}
                             </button>
                           ))}
@@ -5125,6 +5142,7 @@ export default function AtlasApp() {
                         <p className="text-gray-500 text-sm">Selecciona una liga para ver goleadores</p>
                         <div className="flex flex-wrap justify-center gap-2 mt-3">
                           {[
+                            { label: 'Liga 1 Peru', code: '2028' },
                             { label: 'Premier', code: '2021' },
                             { label: 'La Liga', code: '2014' },
                             { label: 'Serie A', code: '2019' },
@@ -5132,7 +5150,7 @@ export default function AtlasApp() {
                             { label: 'Ligue 1', code: '2015' },
                             { label: 'Champions', code: '2001' },
                           ].map(l => (
-                            <button key={l.code} onClick={() => handleFootballFetch('scorers', l.code)} className="px-3 py-1.5 text-[11px] bg-gray-800/30 text-gray-300 rounded-lg hover:bg-gray-700/50 transition">
+                            <button key={l.code} onClick={() => handleFootballFetch('scorers', l.code)} className={`px-3 py-1.5 text-[11px] rounded-lg hover:bg-gray-700/50 transition ${l.code === '2028' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/20' : 'bg-gray-800/30 text-gray-300'}`}>
                               {l.label}
                             </button>
                           ))}

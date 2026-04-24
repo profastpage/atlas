@@ -6,13 +6,19 @@ export const runtime = 'edge';
 // Covers: Live scores, Standings, Fixtures, Scorers
 // Leagues: Premier League, La Liga, Serie A, Bundesliga,
 //           Ligue 1, Champions League, Libertadores, Liga 1 Peru, etc.
+//
+// v2 FIXES:
+//   - Live endpoint uses ?status=IN_PLAY,PAUSED (no date filter)
+//   - All times converted to America/Lima (UTC-5)
+//   - Friendly empty-state when no live matches
+//   - Fixtures use ?status=SCHEDULED + today+7d range
 // ========================================
 
 import { NextRequest, NextResponse } from 'next/server';
 
 const FOOTBALL_API_BASE = 'https://api.football-data.org/v4';
 
-// Popular team name → league code mapping
+// Popular team name → league competition code mapping
 const TEAM_LEAGUES: Record<string, number> = {
   'manchester city': 2021, 'man city': 2021, 'arsenal': 2021, 'liverpool': 2021,
   'chelsea': 2021, 'manchester united': 2021, 'man utd': 2021, 'tottenham': 2021,
@@ -41,9 +47,53 @@ function getApiKey(): string {
 }
 
 // ========================================
+// TIMEZONE: Convert UTC → America/Lima
+// Works in Edge Runtime (V8 Intl support)
+// ========================================
+
+function toLimaTime(utcDate: string, options: Intl.DateTimeFormatOptions = {}): string {
+  if (!utcDate) return '';
+  try {
+    return new Date(utcDate).toLocaleString('es-PE', {
+      timeZone: 'America/Lima',
+      ...options,
+    });
+  } catch {
+    // Fallback for runtimes without es-PE locale
+    return new Date(utcDate).toLocaleString('en-US', {
+      timeZone: 'America/Lima',
+      ...options,
+    });
+  }
+}
+
+function toLimaTimeOnly(utcDate: string): string {
+  return toLimaTime(utcDate, { hour: '2-digit', minute: '2-digit' });
+}
+
+function toLimaDateShort(utcDate: string): string {
+  return toLimaTime(utcDate, { weekday: 'short', day: '2-digit', month: 'short' });
+}
+
+function toLimaDateTime(utcDate: string): string {
+  return toLimaTime(utcDate, {
+    weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+// Current time in Lima for display
+function nowLimaDate(): string {
+  return toLimaTime(new Date().toISOString(), { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function nowLimaTime(): string {
+  return toLimaTime(new Date().toISOString(), { hour: '2-digit', minute: '2-digit' });
+}
+
+// ========================================
 // HELPER: Fetch from football-data.org
 // ========================================
-async function fetchFootballAPI(endpoint: string, timeoutMs = 6000): Promise<any> {
+async function fetchFootballAPI(endpoint: string, timeoutMs = 8000): Promise<any> {
   const apiKey = getApiKey();
   if (!apiKey) return null;
 
@@ -61,10 +111,13 @@ async function fetchFootballAPI(endpoint: string, timeoutMs = 6000): Promise<any
     clearTimeout(timer);
 
     if (res.status === 429) {
-      console.warn('[FOOTBALL] Rate limited');
+      console.warn('[FOOTBALL] Rate limited (429)');
+      return { _rateLimited: true };
+    }
+    if (!res.ok) {
+      console.warn(`[FOOTBALL] HTTP ${res.status}`);
       return null;
     }
-    if (!res.ok) return null;
 
     return await res.json();
   } catch (err) {
@@ -115,7 +168,7 @@ function detectActionFromMessage(message: string): FootballAction {
 }
 
 // ========================================
-// FORMATTERS
+// FORMATTERS (all times in America/Lima)
 // ========================================
 
 function formatLiveMatch(match: any): string {
@@ -131,11 +184,22 @@ function formatLiveMatch(match: any): string {
   if (status === 'IN_PLAY') statusText = minute ? `${minute}'` : 'En vivo';
   else if (status === 'PAUSED') statusText = 'Descanso';
   else if (status === 'FINISHED') statusText = 'Final';
-  else if (status === 'SCHEDULED') statusText = match.utcDate ? new Date(match.utcDate).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : 'Por jugar';
+  else if (status === 'SCHEDULED') statusText = match.utcDate ? toLimaTimeOnly(match.utcDate) : 'Por jugar';
   else if (status === 'POSTPONED') statusText = 'Postergado';
+  else if (status === 'CANCELLED') statusText = 'Cancelado';
+  else if (status === 'SUSPENDED') statusText = 'Suspendido';
   else statusText = status;
 
   return `${home} ${homeScore}-${awayScore} ${away} [${statusText}] (${league})`;
+}
+
+function formatFixture(match: any): string {
+  const home = match.homeTeam?.shortName || match.homeTeam?.name || '?';
+  const away = match.awayTeam?.shortName || match.awayTeam?.name || '?';
+  const date = match.utcDate ? toLimaDateTime(match.utcDate) : 'Por confirmar';
+  const league = match.competition?.name || '';
+
+  return `${home} vs ${away} — ${date} (${league})`;
 }
 
 function formatStandingsTable(standings: any[]): string {
@@ -165,17 +229,6 @@ function formatStandingsTable(standings: any[]): string {
   return lines.join('\n');
 }
 
-function formatFixture(match: any): string {
-  const home = match.homeTeam?.shortName || match.homeTeam?.name || '?';
-  const away = match.awayTeam?.shortName || match.awayTeam?.name || '?';
-  const date = match.utcDate ? new Date(match.utcDate).toLocaleString('es-PE', {
-    weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
-  }) : 'Por confirmar';
-  const league = match.competition?.name || '';
-
-  return `${home} vs ${away} — ${date} (${league})`;
-}
-
 function formatScorer(scorer: any): string {
   const name = scorer.player?.name || '?';
   const team = scorer.team?.shortName || scorer.team?.name || '';
@@ -197,16 +250,30 @@ export async function getFootballContext(message: string): Promise<string | null
   const leagueCode = detectLeagueFromMessage(message);
 
   try {
-    // ---- LIVE SCORES ----
+    // ---- LIVE SCORES: use ?status=IN_PLAY,PAUSED (no date filter) ----
     if (action === 'live') {
-      const today = new Date().toISOString().split('T')[0];
-      let endpoint = `/matches?dateFrom=${today}&dateTo=${today}`;
+      let endpoint = `/matches?status=IN_PLAY,PAUSED`;
       if (leagueCode) endpoint += `&competitions=${leagueCode}`;
 
       const data = await fetchFootballAPI(endpoint);
       if (data?.matches?.length > 0) {
         const matches = data.matches.slice(0, 10).map(formatLiveMatch).join('\n');
-        return `[PARTIDOS EN VIVO - ${new Date().toLocaleDateString('es-PE')}]\n${matches}\n\nDato en tiempo real. Responde con analisis actualizado.`;
+        return `[PARTIDOS EN VIVO - ${nowLimaDate()}]\n${matches}\n\nDato en tiempo real. Responde con analisis actualizado.`;
+      }
+      // Fallback: if no live matches, check today's schedule
+      const today = new Date().toISOString().split('T')[0];
+      const fallbackEndpoint = leagueCode
+        ? `/matches?dateFrom=${today}&dateTo=${today}&competitions=${leagueCode}`
+        : `/matches?dateFrom=${today}&dateTo=${today}`;
+      const fallbackData = await fetchFootballAPI(fallbackEndpoint);
+      if (fallbackData?.matches?.length > 0) {
+        const upcoming = fallbackData.matches
+          .filter((m: any) => m.status === 'SCHEDULED')
+          .slice(0, 5)
+          .map(formatFixture).join('\n');
+        if (upcoming) {
+          return `[PARTIDOS DE HOY - ${nowLimaDate()}]\nNo hay partidos en vivo ahora mismo. Proximos partidos:\n${upcoming}\n\nResponde que no hay partidos en vivo y muestra los proximos.`;
+        }
       }
       return null;
     }
@@ -260,7 +327,7 @@ export async function getFootballContext(message: string): Promise<string | null
     const data = await fetchFootballAPI(endpoint);
     if (data?.matches?.length > 0) {
       const matches = data.matches.slice(0, 8).map(formatLiveMatch).join('\n');
-      return `[PARTIDOS DE HOY - ${new Date().toLocaleDateString('es-PE')}]\n${matches}\n\nContexto actual de futbol.`;
+      return `[PARTIDOS DE HOY - ${nowLimaDate()}]\n${matches}\n\nContexto actual de futbol.`;
     }
 
     return null;
@@ -291,29 +358,55 @@ export async function POST(request: NextRequest) {
     const detectedAction = (action as FootballAction) || detectActionFromMessage(searchQuery);
     const detectedLeague = (typeof league === 'number') ? league : detectLeagueFromMessage(searchQuery);
 
+    // ---- LIVE: ?status=IN_PLAY,PAUSED (server-side filter, no date limit) ----
     if (detectedAction === 'live') {
-      const today = new Date().toISOString().split('T')[0];
-      let endpoint = `/matches?dateFrom=${today}&dateTo=${today}`;
+      let endpoint = `/matches?status=IN_PLAY,PAUSED`;
       if (detectedLeague) endpoint += `&competitions=${detectedLeague}`;
 
       const data = await fetchFootballAPI(endpoint);
-      if (data?.matches) {
+      if (data?._rateLimited) {
+        return NextResponse.json({ error: 'Limite de consultas alcanzado. Espera unos segundos e intenta de nuevo.' }, { status: 429 });
+      }
+
+      const liveMatches = data?.matches?.filter((m: any) => m.status === 'IN_PLAY' || m.status === 'PAUSED') || [];
+
+      if (liveMatches.length > 0) {
         return NextResponse.json({
           type: 'live',
-          date: today,
-          live: data.matches.filter((m: any) => m.status === 'IN_PLAY' || m.status === 'PAUSED').map(formatLiveMatch),
-          finished: data.matches.filter((m: any) => m.status === 'FINISHED').map(formatLiveMatch),
-          scheduled: data.matches.filter((m: any) => m.status === 'SCHEDULED').map(formatLiveMatch),
-          total: data.matches.length,
+          date: nowLimaDate(),
+          time: nowLimaTime(),
+          live: liveMatches.map(formatLiveMatch),
+          total: liveMatches.length,
         });
       }
+
+      // No live matches — fetch today's full schedule as fallback
+      const today = new Date().toISOString().split('T')[0];
+      const todayEndpoint = detectedLeague
+        ? `/matches?dateFrom=${today}&dateTo=${today}&competitions=${detectedLeague}`
+        : `/matches?dateFrom=${today}&dateTo=${today}`;
+      const todayData = await fetchFootballAPI(todayEndpoint, 5000);
+
+      const todayMatches = todayData?.matches || [];
+      const finished = todayMatches.filter((m: any) => m.status === 'FINISHED');
+      const scheduled = todayMatches.filter((m: any) => m.status === 'SCHEDULED' || m.status === 'TIMED');
+
+      return NextResponse.json({
+        type: 'live',
+        date: nowLimaDate(),
+        time: nowLimaTime(),
+        live: [],
+        finished: finished.slice(0, 8).map(formatLiveMatch),
+        scheduled: scheduled.slice(0, 10).map(formatLiveMatch),
+        total: todayMatches.length,
+        noLive: true, // Flag for frontend to show friendly message
+      });
     }
 
+    // ---- STANDINGS ----
     if (detectedAction === 'standings') {
       if (!detectedLeague) {
-        return NextResponse.json({
-          error: 'Especifica una liga.',
-        });
+        return NextResponse.json({ error: 'Especifica una liga.' });
       }
       const data = await fetchFootballAPI(`/competitions/${detectedLeague}/standings`);
       if (data?.standings) {
@@ -323,8 +416,10 @@ export async function POST(request: NextRequest) {
           table: formatStandingsTable(data.standings),
         });
       }
+      return NextResponse.json({ error: 'No se encontraron datos para esa liga.' }, { status: 404 });
     }
 
+    // ---- FIXTURES ----
     if (detectedAction === 'fixtures') {
       const today = new Date();
       const nextWeek = new Date(today);
@@ -336,15 +431,17 @@ export async function POST(request: NextRequest) {
       if (detectedLeague) endpoint += `&competitions=${detectedLeague}`;
 
       const data = await fetchFootballAPI(endpoint);
-      if (data?.matches) {
+      if (data?.matches?.length > 0) {
         return NextResponse.json({
           type: 'fixtures',
           fixtures: data.matches.slice(0, 20).map(formatFixture),
           total: data.matches.length,
         });
       }
+      return NextResponse.json({ type: 'fixtures', fixtures: [], total: 0 });
     }
 
+    // ---- SCORERS ----
     if (detectedAction === 'scorers') {
       if (!detectedLeague) {
         return NextResponse.json({ error: 'Especifica una liga.' });
@@ -357,6 +454,7 @@ export async function POST(request: NextRequest) {
           scorers: data.scorers.slice(0, 15).map(formatScorer),
         });
       }
+      return NextResponse.json({ error: 'No se encontraron datos de goleadores.' }, { status: 404 });
     }
 
     // Default: today's matches
@@ -365,8 +463,11 @@ export async function POST(request: NextRequest) {
     if (data?.matches) {
       return NextResponse.json({
         type: 'today',
-        date: today,
-        matches: data.matches.slice(0, 15).map(formatLiveMatch),
+        date: nowLimaDate(),
+        time: nowLimaTime(),
+        live: data.matches.filter((m: any) => m.status === 'IN_PLAY' || m.status === 'PAUSED').map(formatLiveMatch),
+        finished: data.matches.filter((m: any) => m.status === 'FINISHED').map(formatLiveMatch),
+        scheduled: data.matches.filter((m: any) => m.status === 'SCHEDULED' || m.status === 'TIMED').map(formatLiveMatch),
         total: data.matches.length,
       });
     }
@@ -379,13 +480,13 @@ export async function POST(request: NextRequest) {
 }
 
 // ========================================
-// GET /api/football — Quick access
+// GET /api/football — Quick access (used by frontend button)
 // ========================================
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const action = searchParams.get('action') || 'today';
+    const action = searchParams.get('action') || 'live';
     const league = searchParams.get('league');
 
     const apiKey = getApiKey();
@@ -398,7 +499,53 @@ export async function GET(request: NextRequest) {
 
     const leagueCode = league ? parseInt(league) : null;
 
-    if (action === 'live' || action === 'today') {
+    // ---- LIVE: use ?status=IN_PLAY,PAUSED ----
+    if (action === 'live') {
+      let endpoint = `/matches?status=IN_PLAY,PAUSED`;
+      if (leagueCode) endpoint += `&competitions=${leagueCode}`;
+
+      const data = await fetchFootballAPI(endpoint);
+      if (data?._rateLimited) {
+        return NextResponse.json({ error: 'Limite de consultas. Espera unos segundos.' }, { status: 429 });
+      }
+
+      const liveMatches = data?.matches?.filter((m: any) => m.status === 'IN_PLAY' || m.status === 'PAUSED') || [];
+
+      if (liveMatches.length > 0) {
+        return NextResponse.json({
+          type: 'live',
+          date: nowLimaDate(),
+          time: nowLimaTime(),
+          live: liveMatches.map(formatLiveMatch),
+          total: liveMatches.length,
+        });
+      }
+
+      // No live matches — fallback to today's schedule
+      const today = new Date().toISOString().split('T')[0];
+      const todayEndpoint = leagueCode
+        ? `/matches?dateFrom=${today}&dateTo=${today}&competitions=${leagueCode}`
+        : `/matches?dateFrom=${today}&dateTo=${today}`;
+      const todayData = await fetchFootballAPI(todayEndpoint, 5000);
+
+      const todayMatches = todayData?.matches || [];
+      const finished = todayMatches.filter((m: any) => m.status === 'FINISHED');
+      const scheduled = todayMatches.filter((m: any) => m.status === 'SCHEDULED' || m.status === 'TIMED');
+
+      return NextResponse.json({
+        type: 'live',
+        date: nowLimaDate(),
+        time: nowLimaTime(),
+        live: [],
+        finished: finished.slice(0, 8).map(formatLiveMatch),
+        scheduled: scheduled.slice(0, 10).map(formatLiveMatch),
+        total: todayMatches.length,
+        noLive: true,
+      });
+    }
+
+    // ---- TODAY (general overview) ----
+    if (action === 'today') {
       const today = new Date().toISOString().split('T')[0];
       let endpoint = `/matches?dateFrom=${today}&dateTo=${today}`;
       if (leagueCode) endpoint += `&competitions=${leagueCode}`;
@@ -406,16 +553,28 @@ export async function GET(request: NextRequest) {
       const data = await fetchFootballAPI(endpoint);
       if (data?.matches) {
         return NextResponse.json({
-          type: action,
-          date: today,
+          type: 'today',
+          date: nowLimaDate(),
+          time: nowLimaTime(),
           live: data.matches.filter((m: any) => m.status === 'IN_PLAY' || m.status === 'PAUSED').map(formatLiveMatch),
           finished: data.matches.filter((m: any) => m.status === 'FINISHED').map(formatLiveMatch),
-          scheduled: data.matches.filter((m: any) => m.status === 'SCHEDULED').map(formatLiveMatch),
+          scheduled: data.matches.filter((m: any) => m.status === 'SCHEDULED' || m.status === 'TIMED').map(formatLiveMatch),
           total: data.matches.length,
         });
       }
+      return NextResponse.json({
+        type: 'today',
+        date: nowLimaDate(),
+        time: nowLimaTime(),
+        live: [],
+        finished: [],
+        scheduled: [],
+        total: 0,
+        noLive: true,
+      });
     }
 
+    // ---- STANDINGS ----
     if (action === 'standings' && leagueCode) {
       const data = await fetchFootballAPI(`/competitions/${leagueCode}/standings`);
       if (data?.standings) {
@@ -425,8 +584,10 @@ export async function GET(request: NextRequest) {
           table: formatStandingsTable(data.standings),
         });
       }
+      return NextResponse.json({ error: 'Liga no encontrada.' }, { status: 404 });
     }
 
+    // ---- SCORERS ----
     if (action === 'scorers' && leagueCode) {
       const data = await fetchFootballAPI(`/competitions/${leagueCode}/scorers`);
       if (data?.scorers) {
@@ -436,8 +597,10 @@ export async function GET(request: NextRequest) {
           scorers: data.scorers.slice(0, 15).map(formatScorer),
         });
       }
+      return NextResponse.json({ error: 'Goleadores no encontrados.' }, { status: 404 });
     }
 
+    // ---- FIXTURES ----
     if (action === 'fixtures') {
       const today = new Date();
       const nextWeek = new Date(today);
@@ -449,13 +612,14 @@ export async function GET(request: NextRequest) {
       if (leagueCode) endpoint += `&competitions=${leagueCode}`;
 
       const data = await fetchFootballAPI(endpoint);
-      if (data?.matches) {
+      if (data?.matches?.length > 0) {
         return NextResponse.json({
           type: 'fixtures',
           fixtures: data.matches.slice(0, 20).map(formatFixture),
           total: data.matches.length,
         });
       }
+      return NextResponse.json({ type: 'fixtures', fixtures: [], total: 0 });
     }
 
     return NextResponse.json({ error: 'Accion no reconocida. Usa: live, today, standings, fixtures, scorers' }, { status: 400 });
