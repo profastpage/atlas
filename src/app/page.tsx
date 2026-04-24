@@ -223,6 +223,7 @@ export default function AtlasApp() {
   const startYRef = useRef<number>(0);
   const shouldAutoSendRef = useRef(false);
   const isLockedRef = useRef(false);
+  const isListeningRef = useRef(false); // Sync mirror of isListening — avoids stale closure in touch handlers
   const voiceTranscriptRef = useRef(''); // Accumulates final voice text across recognition restarts (locked mode)
   const lockedStartYRef = useRef(0);
   const [isSwipeCanceling, setIsSwipeCanceling] = useState(false);
@@ -481,6 +482,73 @@ export default function AtlasApp() {
     { label: 'Bundesliga', code: '2002' },
     { label: 'Ligue 1', code: '2015' },
   ];
+
+  // ---- Football Mock Data (shown when API fails, never raw errors) ----
+  const FOOTBALL_MOCK: Record<string, any> = {
+    live: {
+      type: 'live',
+      live: [
+        'Universitario 1-0 Alianza Lima [32\'] (Liga 1 Perú)',
+        'Sporting Cristal 2-1 Melgar [45\'+2\'] (Liga 1 Perú)',
+        'Real Madrid 0-1 Barcelona [67\'] (La Liga)',
+        'Liverpool 2-2 Arsenal [FT] (Premier League)',
+      ],
+      finished: [
+        'Cienciano 0-2 ADT [Final] (Liga 1 Perú)',
+        'Man City 3-1 Chelsea [Final] (Premier League)',
+      ],
+      scheduled: [
+        'Cusco FC vs Sport Huancayo — 15:00 (Liga 1 Perú)',
+        'Juventus vs Inter Milan — 14:00 (Serie A)',
+        'Bayern vs Dortmund — 13:30 (Bundesliga)',
+      ],
+      total: 9,
+      noLive: false,
+      _mock: true,
+    },
+    standings: {
+      type: 'standings',
+      league: 'Liga 1 Perú',
+      table: `Pos | Equipo                    | PJ  | G  | E  | P  | GF | GC | DG  | Pts
+---
+ 1  | Universitario               | 14  |  9  |  3  |  2  | 24 | 10 |  14  |  30
+ 2  | Sporting Cristal            | 14  |  8  |  4  |  2  | 22 | 12 |  10  |  28
+ 3  | Alianza Lima                | 14  |  7  |  4  |  3  | 20 | 14 |   6  |  25
+ 4  | ADT                         | 14  |  7  |  3  |  4  | 18 | 13 |   5  |  24
+ 5  | Melgar                      | 14  |  6  |  4  |  4  | 16 | 14 |   2  |  22
+ 6  | Cienciano                   | 14  |  5  |  5  |  4  | 14 | 12 |   2  |  20
+ 7  | Cusco FC                    | 14  |  5  |  4  |  5  | 15 | 17 |  -2  |  19
+ 8  | Sport Huancayo              | 14  |  4  |  5  |  5  | 12 | 15 |  -3  |  17`,
+      _mock: true,
+    },
+    fixtures: {
+      type: 'fixtures',
+      league: 'Liga 1 Perú',
+      fixtures: [
+        'Cusco FC vs Sport Huancayo — sáb 15:00 (Liga 1 Perú)',
+        'Universitario vs Cienciano — dom 11:00 (Liga 1 Perú)',
+        'Alianza Lima vs Melgar — dom 16:00 (Liga 1 Perú)',
+        'ADT vs Sporting Cristal — lun 20:00 (Liga 1 Perú)',
+        'Real Madrid vs Atletico Madrid — sáb 14:00 (La Liga)',
+        'Arsenal vs Tottenham — dom 12:30 (Premier League)',
+      ],
+      total: 6,
+      _mock: true,
+    },
+    scorers: {
+      type: 'scorers',
+      league: 'Liga 1 Perú',
+      scorers: [
+        'Valera (Universitario) — 9 goles, 2 asistencias',
+        'Hohberg (Sporting Cristal) — 7 goles, 4 asistencias',
+        'Barcos (Alianza Lima) — 6 goles, 1 asistencias',
+        'Cuesta (ADT) — 6 goles, 3 asistencias',
+        'Iberico (Melgar) — 5 goles, 2 asistencias',
+        'Urruti (Cienciano) — 5 goles, 0 asistencias',
+      ],
+      _mock: true,
+    },
+  };
 
   // ---- Favorites & Highlights: Load from localStorage ----
   const FAV_KEY = 'atlas_favorites';
@@ -1035,6 +1103,7 @@ export default function AtlasApp() {
       if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null; }
       resetVoiceAccumulation();
       sendingVoiceRef.current = false;
+      isListeningRef.current = false;
       setIsListening(false);
       setIsLocked(false);
       isLockedRef.current = false;
@@ -1058,6 +1127,7 @@ export default function AtlasApp() {
       // If we need to auto-send (quick press release)
       if (shouldAutoSendRef.current) {
         shouldAutoSendRef.current = false;
+        isListeningRef.current = false;
         setIsListening(false);
         setIsLocked(false);
         // Prevent double-send
@@ -1082,6 +1152,7 @@ export default function AtlasApp() {
         return;
       }
       resetVoiceAccumulation();
+      isListeningRef.current = false;
       setIsListening(false);
     };
 
@@ -1093,8 +1164,9 @@ export default function AtlasApp() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keep isLockedRef in sync
+  // Keep refs in sync
   useEffect(() => { isLockedRef.current = isLocked; }, [isLocked]);
+  useEffect(() => { isListeningRef.current = isListening; }, [isListening]);
   // NOTE: sendMessageRef sync is after sendMessage declaration (line ~969) to avoid TDZ
 
   // ========================================
@@ -1102,16 +1174,17 @@ export default function AtlasApp() {
   // ========================================
 
   const _startListening = useCallback(() => {
-    if (recognitionRef.current && !isListening) {
+    if (recognitionRef.current && !isListeningRef.current) {
       try {
         // Always reset accumulation when starting fresh
         voiceTranscriptRef.current = '';
         setInputValue('');
         recognitionRef.current.start();
+        isListeningRef.current = true;
         setIsListening(true);
       } catch {}
     }
-  }, [isListening]);
+  }, []);
 
   // ---- TOUCH EVENTS (Mobile-first) ----
   const handleMicTouchStart = useCallback((e: React.TouchEvent<HTMLButtonElement>) => {
@@ -1125,10 +1198,10 @@ export default function AtlasApp() {
     shouldAutoSendRef.current = false;
     trackVoiceStart();
     _startListening();
-  }, [isLoading, isStreaming, isAnalyzingDocument, _startListening]);
+  }, [isLoading, isStreaming, isAnalyzingDocument]);
 
   const handleMicTouchMove = useCallback((e: React.TouchEvent<HTMLButtonElement>) => {
-    if (!isListening || isLockedRef.current) return;
+    if (!isListeningRef.current || isLockedRef.current) return;
     e.preventDefault();
     const touch = e.touches[0];
     const diff = startYRef.current - touch.clientY;
@@ -1155,12 +1228,12 @@ export default function AtlasApp() {
       setLockSlideProgress(1);
       trackVoiceLocked();
     }
-  }, [isListening, isLocked]);
+  }, []);
 
   const handleMicTouchEnd = useCallback((e: React.TouchEvent<HTMLButtonElement>) => {
     e.preventDefault();
     isTouchingRef.current = false;
-    if (!isListening) return;
+    if (!isListeningRef.current) return;
     lockSlideProgressRef.current = 0;
     setLockSlideProgress(0);
     if (micCancelRef.current) {
@@ -1170,14 +1243,35 @@ export default function AtlasApp() {
       resetVoiceAccumulation();
       shouldAutoSendRef.current = false;
       try { recognitionRef.current?.stop(); } catch {}
+      isListeningRef.current = false;
       setIsListening(false);
       return;
     }
     if (!isLockedRef.current) {
+      // Quick press release: auto-send when recognition ends
       shouldAutoSendRef.current = true;
+      // IMMEDIATELY clear isListening so UI unblocks (send button enables)
+      isListeningRef.current = false;
+      setIsListening(false);
       try { recognitionRef.current?.stop(); } catch {}
+      // Safety net: if onend never fires, force-send after 2s
+      setTimeout(() => {
+        if (shouldAutoSendRef.current) {
+          shouldAutoSendRef.current = false;
+          const text = voiceTranscriptRef.current.trim();
+          resetVoiceAccumulation();
+          if (text && !sendingVoiceRef.current) {
+            sendingVoiceRef.current = true;
+            setInputValue('');
+            sendMessageRef.current?.(text);
+            setTimeout(() => { sendingVoiceRef.current = false; }, 500);
+          } else {
+            sendingVoiceRef.current = false;
+          }
+        }
+      }, 2000);
     }
-  }, [isListening, isLocked, resetVoiceAccumulation]);
+  }, [resetVoiceAccumulation]);
 
   // ---- POINTER EVENTS (Desktop fallback — skipped on touch devices) ----
   const handleMicPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
@@ -1191,11 +1285,11 @@ export default function AtlasApp() {
     trackVoiceStart();
     _startListening();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, [isLoading, isStreaming, isAnalyzingDocument, _startListening]);
+  }, [isLoading, isStreaming, isAnalyzingDocument]);
 
   const handleMicPointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     if (isTouchingRef.current) return;
-    if (!isListening || isLockedRef.current) return;
+    if (!isListeningRef.current || isLockedRef.current) return;
     const diff = startYRef.current - e.clientY;
     // Swipe DOWN to cancel
     if (diff < -40) {
@@ -1220,12 +1314,12 @@ export default function AtlasApp() {
       setLockSlideProgress(1);
       trackVoiceLocked();
     }
-  }, [isListening, isLocked]);
+  }, []);
 
   const handleMicPointerUp = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     if (isTouchingRef.current) return;
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    if (!isListening) return;
+    if (!isListeningRef.current) return;
     lockSlideProgressRef.current = 0;
     setLockSlideProgress(0);
     if (micCancelRef.current) {
@@ -1235,14 +1329,35 @@ export default function AtlasApp() {
       resetVoiceAccumulation();
       shouldAutoSendRef.current = false;
       try { recognitionRef.current?.stop(); } catch {}
+      isListeningRef.current = false;
       setIsListening(false);
       return;
     }
     if (!isLockedRef.current) {
+      // Quick press release: auto-send when recognition ends
       shouldAutoSendRef.current = true;
+      // IMMEDIATELY clear isListening so UI unblocks (send button enables)
+      isListeningRef.current = false;
+      setIsListening(false);
       try { recognitionRef.current?.stop(); } catch {}
+      // Safety net: if onend never fires, force-send after 2s
+      setTimeout(() => {
+        if (shouldAutoSendRef.current) {
+          shouldAutoSendRef.current = false;
+          const text = voiceTranscriptRef.current.trim();
+          resetVoiceAccumulation();
+          if (text && !sendingVoiceRef.current) {
+            sendingVoiceRef.current = true;
+            setInputValue('');
+            sendMessageRef.current?.(text);
+            setTimeout(() => { sendingVoiceRef.current = false; }, 500);
+          } else {
+            sendingVoiceRef.current = false;
+          }
+        }
+      }, 2000);
     }
-  }, [isListening, isLocked, resetVoiceAccumulation]);
+  }, [resetVoiceAccumulation]);
 
   const handleLockedSend = useCallback(() => {
     // CRITICAL: Clear any pending restart timer to prevent ghost recognition sessions
@@ -1259,6 +1374,7 @@ export default function AtlasApp() {
     setTimeout(() => {
       if (shouldAutoSendRef.current) {
         shouldAutoSendRef.current = false;
+        isListeningRef.current = false;
         setIsListening(false);
         const text = voiceTranscriptRef.current.trim();
         resetVoiceAccumulation();
@@ -1289,6 +1405,7 @@ export default function AtlasApp() {
     // so the user can review it and send manually or edit it
     resetVoiceAccumulation(); // Only clears voiceTranscriptRef, not inputValue
     try { recognitionRef.current?.stop(); } catch {}
+    isListeningRef.current = false;
     setIsListening(false);
   }, [resetVoiceAccumulation]);
 
@@ -2108,37 +2225,60 @@ export default function AtlasApp() {
     const cacheKey = `${action}${leagueCode ? `_${leagueCode}` : ''}`;
     const currentCalls = getApiCallCount();
 
-    // CHECK CACHE FIRST — instant display if data is fresh (dynamic TTL)
-    if (isCacheFresh(cacheKey)) {
-      const cached = getFootballCache(cacheKey);
-      if (cached) {
-        const ttl = getEffectiveTTL(action);
-        console.log(`[FOOTBALL] Cache hit: ${cacheKey} (age: ${Math.round((Date.now() - cached.timestamp) / 1000)}s, TTL: ${ttl / 1000}s, calls: ${currentCalls}/${FOOTBALL_DAILY_LIMIT})`);
+    // STALE-WHILE-REVALIDATE: 5-minute staleTime
+    // Show cached data immediately if less than 5 minutes old, then revalidate in background
+    const STALE_TIME_MS = 5 * 60 * 1000;
+    const cached = getFootballCache(cacheKey);
+    if (cached) {
+      const cacheAge = Date.now() - cached.timestamp;
+      if (cacheAge < STALE_TIME_MS) {
+        // Fresh — serve from cache, no revalidation needed
+        console.log(`[FOOTBALL] SWR fresh: ${cacheKey} (${Math.round(cacheAge / 1000)}s old)`);
         setFootballTab(action);
         setShowFootball(true);
         if (leagueCode) setFootballLeagueCode(String(leagueCode));
         if (action !== 'live') setFootballDetailView(true);
         setFootballData(cached.data);
         return;
+      } else if (cached.data && !cached.data._empty && !cached.data._error && !cached.data._mock) {
+        // Stale but usable — show immediately, revalidate in background
+        console.log(`[FOOTBALL] SWR stale: ${cacheKey} (${Math.round(cacheAge / 1000)}s old) — showing cached, revalidating`);
+        setFootballTab(action);
+        setShowFootball(true);
+        if (leagueCode) setFootballLeagueCode(String(leagueCode));
+        if (action !== 'live') setFootballDetailView(true);
+        setFootballData(cached.data);
+        // Revalidate in background (don't block UI)
+        fetch(`/api/football?action=${action}&timeout=3000${leagueCode ? `&league=${leagueCode}` : ''}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data && !data._empty && !data._error) {
+              setFootballCache(cacheKey, data);
+              setFootballData(data);
+              console.log(`[FOOTBALL] SWR revalidated: ${cacheKey}`);
+            }
+          })
+          .catch(() => {});
+        return;
       }
     }
 
-    // HARD BLOCK: if daily limit reached, serve stale cache or show message
+    // HARD BLOCK: if daily limit reached, serve stale cache or mock data
     if (currentCalls >= FOOTBALL_DAILY_LIMIT) {
       console.warn(`[FOOTBALL] BLOCKED — ${FOOTBALL_DAILY_LIMIT}/${FOOTBALL_DAILY_LIMIT} limit reached. Serving stale data.`);
-      const stale = getFootballCache(cacheKey);
-      if (stale) {
+      if (cached) {
         setFootballTab(action);
         setShowFootball(true);
         if (leagueCode) setFootballLeagueCode(String(leagueCode));
         if (action !== 'live') setFootballDetailView(true);
-        setFootballData({ ...stale.data, _stale: true, _staleMinutes: Math.round((Date.now() - stale.timestamp) / 60000) });
+        setFootballData({ ...cached.data, _stale: true, _staleMinutes: Math.round((Date.now() - cached.timestamp) / 60000) });
       } else {
+        // No cache — show mock data instead of error
         setFootballTab(action);
         setShowFootball(true);
         if (leagueCode) setFootballLeagueCode(String(leagueCode));
         if (action !== 'live') setFootballDetailView(true);
-        setFootballData({ error: `Límite diario alcanzado (${FOOTBALL_DAILY_LIMIT} llamadas). Los datos se renovarán mañana.` });
+        setFootballData(FOOTBALL_MOCK[action] || FOOTBALL_MOCK.live);
       }
       return;
     }
@@ -2159,10 +2299,18 @@ export default function AtlasApp() {
       const totalCalls = incrementApiCall();
       setFootballCache(cacheKey, data);
       console.log(`[FOOTBALL] API call ${totalCalls}/${FOOTBALL_DAILY_LIMIT} for ${cacheKey}`);
-      setFootballData(data);
+
+      // If API returned empty/error, show mock data instead of error message
+      if (data._empty || data._error) {
+        console.warn(`[FOOTBALL] API returned empty/error for ${cacheKey}, using mock data`);
+        setFootballData({ ...FOOTBALL_MOCK[action], _source: 'datos de ejemplo' });
+      } else {
+        setFootballData(data);
+      }
     } catch (err) {
       console.error('[FOOTBALL] Fetch error:', err);
-      setFootballData({ error: 'Error al obtener datos de futbol. Intenta de nuevo.' });
+      // Show mock data on network error, never show raw error
+      setFootballData({ ...FOOTBALL_MOCK[action], _source: 'datos de ejemplo' });
     } finally {
       setFootballLoading(false);
     }
@@ -5272,6 +5420,13 @@ export default function AtlasApp() {
                   <div className="px-4 py-8 text-center">
                     <p className="text-gray-400 text-sm">{footballData.error}</p>
                     {footballData.setup && <p className="text-gray-600 text-xs mt-2">{footballData.setup}</p>}
+                    <button
+                      onClick={() => handleFootballFetch(footballTab, footballLeagueCode || undefined)}
+                      className="mt-3 px-4 py-1.5 text-[11px] rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition flex items-center gap-1.5 mx-auto"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      Reintentar
+                    </button>
                   </div>
                 ) : (
                   <div className="p-3">
@@ -5289,6 +5444,20 @@ export default function AtlasApp() {
                       <div className="flex items-center gap-1.5 px-1 mb-2">
                         <Globe className="w-3 h-3 text-amber-400" />
                         <span className="text-[9px] text-amber-400/70 uppercase tracking-wider">Fuente: {footballData._source}</span>
+                      </div>
+                    )}
+                    {/* Mock data indicator */}
+                    {footballData?._mock && (
+                      <div className="flex items-center gap-1.5 px-1 mb-2">
+                        <AlertTriangle className="w-3 h-3 text-amber-400" />
+                        <span className="text-[9px] text-amber-400/70 uppercase tracking-wider">Datos de ejemplo — la API no respondió</span>
+                        <button
+                          onClick={() => handleFootballFetch(footballTab, footballLeagueCode || undefined)}
+                          className="ml-1 px-2 py-0.5 text-[9px] rounded bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition flex items-center gap-1"
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                          Reintentar
+                        </button>
                       </div>
                     )}
                     {/* News summary fallback */}
@@ -5410,6 +5579,13 @@ export default function AtlasApp() {
                           <div className="text-center py-8">
                             <p className="text-gray-500 text-sm">No hay partidos hoy</p>
                             <p className="text-gray-600 text-[10px] mt-1">Prueba con el calendario de otra fecha o liga</p>
+                            <button
+                              onClick={() => handleFootballFetch('live')}
+                              className="mt-3 px-4 py-1.5 text-[11px] rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition flex items-center gap-1.5 mx-auto"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                              Reintentar
+                            </button>
                           </div>
                         )}
                       </>
@@ -5440,6 +5616,13 @@ export default function AtlasApp() {
                     {footballTab === 'standings' && !footballData?.table && !footballData?.newsSummary && (
                       <div className="text-center py-8">
                         <p className="text-gray-500 text-sm">No se encontraron posiciones para esta liga</p>
+                        <button
+                          onClick={() => handleFootballFetch('standings', footballLeagueCode || undefined)}
+                          className="mt-2 mb-2 px-4 py-1.5 text-[11px] rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition flex items-center gap-1.5 mx-auto"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Reintentar
+                        </button>
                         <div className="flex flex-wrap justify-center gap-2 mt-3">
                           {FOOTBALL_LEAGUES.map(l => (
                             <button key={l.code} onClick={() => handleFootballFetch('standings', l.code)} className={`px-3 py-1.5 text-[11px] rounded-lg hover:bg-gray-700/50 transition ${l.code === '2028' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/20' : 'bg-gray-800/30 text-gray-300'}`}>
@@ -5481,6 +5664,13 @@ export default function AtlasApp() {
                     {footballTab === 'fixtures' && !footballData?.fixtures?.length && !footballData?.newsSummary && (
                       <div className="text-center py-8">
                         <p className="text-gray-500 text-sm">No hay partidos programados para esta liga</p>
+                        <button
+                          onClick={() => handleFootballFetch('fixtures', footballLeagueCode || undefined)}
+                          className="mt-2 mb-2 px-4 py-1.5 text-[11px] rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition flex items-center gap-1.5 mx-auto"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Reintentar
+                        </button>
                         <div className="flex flex-wrap justify-center gap-2 mt-3">
                           {FOOTBALL_LEAGUES.map(l => (
                             <button key={l.code} onClick={() => handleFootballFetch('fixtures', l.code)} className={`px-3 py-1.5 text-[11px] rounded-lg hover:bg-gray-700/50 transition ${l.code === '2028' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/20' : 'bg-gray-800/30 text-gray-300'}`}>
@@ -5523,6 +5713,13 @@ export default function AtlasApp() {
                     {footballTab === 'scorers' && !footballData?.scorers?.length && !footballData?.newsSummary && (
                       <div className="text-center py-8">
                         <p className="text-gray-500 text-sm">No se encontraron goleadores para esta liga</p>
+                        <button
+                          onClick={() => handleFootballFetch('scorers', footballLeagueCode || undefined)}
+                          className="mt-2 mb-2 px-4 py-1.5 text-[11px] rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition flex items-center gap-1.5 mx-auto"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Reintentar
+                        </button>
                         <div className="flex flex-wrap justify-center gap-2 mt-3">
                           {FOOTBALL_LEAGUES.map(l => (
                             <button key={l.code} onClick={() => handleFootballFetch('scorers', l.code)} className={`px-3 py-1.5 text-[11px] rounded-lg hover:bg-gray-700/50 transition ${l.code === '2028' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/20' : 'bg-gray-800/30 text-gray-300'}`}>

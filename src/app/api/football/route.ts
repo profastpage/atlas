@@ -466,7 +466,8 @@ export async function POST(request: NextRequest) {
       if (fallback) {
         return NextResponse.json(fallback);
       }
-      return NextResponse.json({ error: 'No se encontraron datos para esa liga.' }, { status: 404 });
+      // Graceful empty — never return 404, always return 200
+      return NextResponse.json({ type: 'standings', table: '', league: '', _empty: true });
     }
 
     // ---- FIXTURES ----
@@ -518,7 +519,8 @@ export async function POST(request: NextRequest) {
       if (fallback) {
         return NextResponse.json(fallback);
       }
-      return NextResponse.json({ error: 'No se encontraron datos de goleadores.' }, { status: 404 });
+      // Graceful empty — never return 404, always return 200
+      return NextResponse.json({ type: 'scorers', scorers: [], league: '', _empty: true });
     }
 
     // Default: today's matches
@@ -536,10 +538,11 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ error: 'No se encontraron datos' }, { status: 404 });
+    return NextResponse.json({ type: 'today', live: [], finished: [], scheduled: [], total: 0, _empty: true });
   } catch (error) {
-    console.error('[FOOTBALL] Error:', error);
-    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
+    // Graceful error — always return 200 with empty data
+    console.error('[FOOTBALL] POST Error:', error);
+    return NextResponse.json({ type: 'today', live: [], finished: [], scheduled: [], total: 0, _empty: true, _error: true });
   }
 }
 
@@ -703,7 +706,8 @@ export async function GET(request: NextRequest) {
       if (fallback) {
         return NextResponse.json(fallback);
       }
-      return NextResponse.json({ error: 'Liga no encontrada.' }, { status: 404 });
+      // Graceful empty — never return 404
+      return NextResponse.json({ type: 'standings', table: '', league: '', _empty: true });
     }
 
     // ---- SCORERS ----
@@ -725,7 +729,8 @@ export async function GET(request: NextRequest) {
       if (fallback) {
         return NextResponse.json(fallback);
       }
-      return NextResponse.json({ error: 'Goleadores no encontrados.' }, { status: 404 });
+      // Graceful empty — never return 404
+      return NextResponse.json({ type: 'scorers', scorers: [], league: '', _empty: true });
     }
 
     // ---- FIXTURES ----
@@ -758,9 +763,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ type: 'fixtures', fixtures: [], total: 0 });
     }
 
-    return NextResponse.json({ error: 'Accion no reconocida. Usa: live, today, standings, fixtures, scorers' }, { status: 400 });
+    return NextResponse.json({ type: 'live', live: [], finished: [], scheduled: [], total: 0, _empty: true });
   } catch (error) {
-    console.error('[FOOTBALL] Error:', error);
-    return NextResponse.json({ error: 'Error interno' }, { status: 500 });
+    // Graceful error — always return 200 with empty data
+    console.error('[FOOTBALL] GET Error:', error);
+    return NextResponse.json({ type: 'live', live: [], finished: [], scheduled: [], total: 0, _empty: true, _error: true });
   }
 }
