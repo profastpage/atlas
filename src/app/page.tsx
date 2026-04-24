@@ -359,13 +359,64 @@ export default function AtlasApp() {
   const [footballDetailView, setFootballDetailView] = useState(false);
   const [footballLeagueCode, setFootballLeagueCode] = useState<string>('2028'); // Default Liga 1 Perú
 
-  // Football cache — session-level with 5 min TTL (ref to avoid re-renders)
-  const footballCacheRef = useRef<Record<string, { data: any; timestamp: number }>>({});
-  const FOOTBALL_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-  const FOOTBALL_PRECACHE_DONE = useRef(false); // Avoid re-precache on every render
+  // Football cache — localStorage persistence with differentiated TTLs per action
+  // live: 1 min (near real-time), standings: 60 min, scorers: 60 min, fixtures: 120 min
+  const FOOTBALL_CACHE_KEY = 'atlas_football_cache';
+  const FOOTBALL_TTL: Record<string, number> = {
+    live: 1 * 60 * 1000,       // 1 minute — near real-time scores
+    standings: 60 * 60 * 1000, // 60 minutes — static table data
+    scorers: 60 * 60 * 1000,   // 60 minutes — static scorer data
+    fixtures: 120 * 60 * 1000, // 120 minutes — schedule rarely changes
+  };
 
-  // Priority league codes for precache (Liga 1 Perú + Top Europa)
-  const PRIORITY_LEAGUES = ['2028']; // standings/fixtures/scorers only fetch Liga 1 by default
+  // Helpers: read/write cache from localStorage (persists across refreshes)
+  const getFootballCache = useCallback((key: string): { data: any; timestamp: number } | null => {
+    try {
+      const raw = localStorage.getItem(FOOTBALL_CACHE_KEY);
+      if (!raw) return null;
+      const store = JSON.parse(raw);
+      return store[key] || null;
+    } catch { return null; }
+  }, []);
+
+  const setFootballCache = useCallback((key: string, data: any) => {
+    try {
+      const raw = localStorage.getItem(FOOTBALL_CACHE_KEY);
+      const store = raw ? JSON.parse(raw) : {};
+      store[key] = { data, timestamp: Date.now() };
+      localStorage.setItem(FOOTBALL_CACHE_KEY, JSON.stringify(store));
+    } catch {}
+  }, []);
+
+  const isCacheFresh = useCallback((key: string): boolean => {
+    const entry = getFootballCache(key);
+    if (!entry) return false;
+    // Determine TTL based on the action prefix (e.g. 'live_2028' → 'live')
+    const action = key.split('_')[0];
+    const ttl = FOOTBALL_TTL[action] || FOOTBALL_TTL.live;
+    return Date.now() - entry.timestamp < ttl;
+  }, [getFootballCache]);
+
+  // Cleanup expired entries on mount to avoid localStorage bloat
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(FOOTBALL_CACHE_KEY);
+      if (!raw) return;
+      const store = JSON.parse(raw);
+      let changed = false;
+      for (const [key, entry] of Object.entries(store)) {
+        const action = (key as string).split('_')[0];
+        const ttl = FOOTBALL_TTL[action] || FOOTBALL_TTL.live;
+        if (Date.now() - (entry as any).timestamp > ttl) {
+          delete store[key];
+          changed = true;
+        }
+      }
+      if (changed) localStorage.setItem(FOOTBALL_CACHE_KEY, JSON.stringify(store));
+    } catch {}
+  }, []);
+
+  const FOOTBALL_PRECACHE_DONE = useRef(false); // Avoid re-precache on every render
 
   // Football leagues — Liga 1 Perú always first (priority)
   const FOOTBALL_LEAGUES = [
@@ -1939,14 +1990,16 @@ export default function AtlasApp() {
       { action: 'scorers', league: '2028' },
     ];
 
-    // Filter out already cached items (not expired)
+    // Filter out already cached items (using per-action TTL)
     const toFetch = actions.filter(a => {
       const key = `${a.action}${a.league ? `_${a.league}` : ''}`;
-      const cached = footballCacheRef.current[key];
-      return !cached || Date.now() - cached.timestamp > FOOTBALL_CACHE_TTL;
+      return !isCacheFresh(key);
     });
 
-    if (toFetch.length === 0) return;
+    if (toFetch.length === 0) {
+      console.log('[FOOTBALL_PRECACHE] All sections already cached');
+      return;
+    }
 
     console.log(`[FOOTBALL_PRECACHE] Loading ${toFetch.length} sections in background...`);
 
@@ -1966,9 +2019,9 @@ export default function AtlasApp() {
           clearTimeout(timer);
           const data = await res.json();
 
-          // Store in cache regardless of success/error
-          footballCacheRef.current[key] = { data, timestamp: Date.now() };
-          console.log(`[FOOTBALL_PRECACHE] Cached: ${key}`);
+          // Store in localStorage cache with timestamp
+          setFootballCache(key, data);
+          console.log(`[FOOTBALL_PRECACHE] Cached: ${key} (TTL: ${FOOTBALL_TTL[action] / 1000}s)`);
         } catch {
           // Silently fail — individual requests don't block others
           console.warn(`[FOOTBALL_PRECACHE] Failed for ${action}${league ? `/${league}` : ''}`);
@@ -1978,7 +2031,7 @@ export default function AtlasApp() {
 
     FOOTBALL_PRECACHE_DONE.current = true;
     console.log('[FOOTBALL_PRECACHE] Complete');
-  }, []);
+  }, [isCacheFresh, setFootballCache]);
 
   // Trigger precache when football panel opens
   useEffect(() => {
@@ -1991,20 +2044,22 @@ export default function AtlasApp() {
     }
   }, [showFootball, precacheFootball]);
 
-  // ---- FOOTBALL DATA FETCH with cache ----
+  // ---- FOOTBALL DATA FETCH with persistent cache ----
   const handleFootballFetch = useCallback(async (action: 'live' | 'standings' | 'fixtures' | 'scorers', leagueCode?: string) => {
     const cacheKey = `${action}${leagueCode ? `_${leagueCode}` : ''}`;
 
-    // CHECK CACHE FIRST — instant display if data is fresh (< 5 min)
-    const cached = footballCacheRef.current[cacheKey];
-    if (cached && Date.now() - cached.timestamp < FOOTBALL_CACHE_TTL) {
-      console.log(`[FOOTBALL] Cache hit: ${cacheKey}`);
-      setFootballTab(action);
-      setShowFootball(true);
-      if (leagueCode) setFootballLeagueCode(String(leagueCode));
-      if (action !== 'live') setFootballDetailView(true);
-      setFootballData(cached.data);
-      return;
+    // CHECK CACHE FIRST — instant display if data is fresh (per-action TTL)
+    if (isCacheFresh(cacheKey)) {
+      const cached = getFootballCache(cacheKey);
+      if (cached) {
+        console.log(`[FOOTBALL] Cache hit: ${cacheKey} (age: ${Math.round((Date.now() - cached.timestamp) / 1000)}s, TTL: ${FOOTBALL_TTL[action] / 1000}s)`);
+        setFootballTab(action);
+        setShowFootball(true);
+        if (leagueCode) setFootballLeagueCode(String(leagueCode));
+        if (action !== 'live') setFootballDetailView(true);
+        setFootballData(cached.data);
+        return;
+      }
     }
 
     setFootballLoading(true);
@@ -2019,8 +2074,8 @@ export default function AtlasApp() {
       const res = await fetch(url);
       const data = await res.json();
 
-      // Store in cache
-      footballCacheRef.current[cacheKey] = { data, timestamp: Date.now() };
+      // Store in localStorage cache (persists across refreshes)
+      setFootballCache(cacheKey, data);
       setFootballData(data);
     } catch (err) {
       console.error('[FOOTBALL] Fetch error:', err);
@@ -2028,20 +2083,22 @@ export default function AtlasApp() {
     } finally {
       setFootballLoading(false);
     }
-  }, []);
+  }, [isCacheFresh, getFootballCache, setFootballCache]);
 
   // Navigate back from football detail to tab menu
   const handleFootballBack = useCallback(() => {
     setFootballDetailView(false);
     setFootballTab('live');
-    // Restore cached live data if available
-    const liveCache = footballCacheRef.current['live'];
-    if (liveCache && Date.now() - liveCache.timestamp < FOOTBALL_CACHE_TTL) {
-      setFootballData(liveCache.data);
-    } else {
-      setFootballData(null);
+    // Restore cached live data if available (1 min TTL for near real-time)
+    if (isCacheFresh('live')) {
+      const liveCache = getFootballCache('live');
+      if (liveCache) {
+        setFootballData(liveCache.data);
+        return;
+      }
     }
-  }, []);
+    setFootballData(null);
+  }, [isCacheFresh, getFootballCache]);
 
   // ---- IMAGE GENERATION (FLUX) ----
   const handleGenerateImage = useCallback(async () => {
