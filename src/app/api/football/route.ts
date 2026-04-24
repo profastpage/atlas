@@ -552,6 +552,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get('action') || 'live';
     const league = searchParams.get('league');
+    // Timeout parameter: frontend sends timeout=3000 for fast fallback
+    const clientTimeout = searchParams.get('timeout');
+    const apiTimeout = clientTimeout ? parseInt(clientTimeout, 10) : 8000;
 
     const apiKey = getApiKey();
     if (!apiKey) {
@@ -568,7 +571,7 @@ export async function GET(request: NextRequest) {
       let endpoint = `/matches?status=IN_PLAY,PAUSED`;
       if (leagueCode) endpoint += `&competitions=${leagueCode}`;
 
-      const data = await fetchFootballAPI(endpoint);
+      const data = await fetchFootballAPI(endpoint, apiTimeout);
       if (data?._rateLimited) {
         return NextResponse.json({ error: 'Limite de consultas. Espera unos segundos.' }, { status: 429 });
       }
@@ -598,7 +601,7 @@ export async function GET(request: NextRequest) {
       const todayEndpoint = leagueCode
         ? `/matches?dateFrom=${today}&dateTo=${today}&competitions=${leagueCode}`
         : `/matches?dateFrom=${today}&dateTo=${today}`;
-      const todayData = await fetchFootballAPI(todayEndpoint, 5000);
+      const todayData = await fetchFootballAPI(todayEndpoint, Math.min(apiTimeout, 5000));
 
       const todayMatches = todayData?.matches || [];
       // Sort: Peruvian matches first
@@ -626,8 +629,8 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      // PLAN B: Web search fallback
-      console.log('[FOOTBALL] GET live — primary API empty, activating fallback...');
+      // PLAN B: Web search fallback (fast — triggered when primary times out)
+      console.log('[FOOTBALL] GET live — primary API empty/timeout, activating fallback...');
       const fallback = await getFootballFallback('live', leagueCode);
       if (fallback) {
         return NextResponse.json(fallback);
@@ -651,7 +654,7 @@ export async function GET(request: NextRequest) {
       let endpoint = `/matches?dateFrom=${today}&dateTo=${today}`;
       if (leagueCode) endpoint += `&competitions=${leagueCode}`;
 
-      const data = await fetchFootballAPI(endpoint);
+      const data = await fetchFootballAPI(endpoint, apiTimeout);
       if (data?.matches && data.matches.length > 0) {
         return NextResponse.json({
           type: 'today',
@@ -664,7 +667,7 @@ export async function GET(request: NextRequest) {
         });
       }
       // PLAN B: Web search fallback
-      console.log('[FOOTBALL] GET today — primary API empty, activating fallback...');
+      console.log('[FOOTBALL] GET today — primary API empty/timeout, activating fallback...');
       const fallback = await getFootballFallback('live', leagueCode);
       if (fallback) {
         return NextResponse.json({ ...fallback, type: 'today' });
@@ -686,7 +689,7 @@ export async function GET(request: NextRequest) {
       if (!leagueCode) {
         return NextResponse.json({ type: 'standings', needsLeague: true, error: 'Selecciona una liga para ver posiciones' });
       }
-      const data = await fetchFootballAPI(`/competitions/${leagueCode}/standings`);
+      const data = await fetchFootballAPI(`/competitions/${leagueCode}/standings`, apiTimeout);
       if (data?.standings) {
         return NextResponse.json({
           type: 'standings',
@@ -695,7 +698,7 @@ export async function GET(request: NextRequest) {
         });
       }
       // PLAN B: Web search fallback
-      console.log('[FOOTBALL] GET standings — primary API empty, activating fallback...');
+      console.log('[FOOTBALL] GET standings — primary API empty/timeout, activating fallback...');
       const fallback = await getFootballFallback('standings', leagueCode);
       if (fallback) {
         return NextResponse.json(fallback);
@@ -708,7 +711,7 @@ export async function GET(request: NextRequest) {
       if (!leagueCode) {
         return NextResponse.json({ type: 'scorers', needsLeague: true, error: 'Selecciona una liga para ver goleadores' });
       }
-      const data = await fetchFootballAPI(`/competitions/${leagueCode}/scorers`);
+      const data = await fetchFootballAPI(`/competitions/${leagueCode}/scorers`, apiTimeout);
       if (data?.scorers) {
         return NextResponse.json({
           type: 'scorers',
@@ -717,7 +720,7 @@ export async function GET(request: NextRequest) {
         });
       }
       // PLAN B: Web search fallback
-      console.log('[FOOTBALL] GET scorers — primary API empty, activating fallback...');
+      console.log('[FOOTBALL] GET scorers — primary API empty/timeout, activating fallback...');
       const fallback = await getFootballFallback('scorers', leagueCode);
       if (fallback) {
         return NextResponse.json(fallback);
@@ -736,7 +739,7 @@ export async function GET(request: NextRequest) {
       let endpoint = `/matches?dateFrom=${dateFrom}&dateTo=${dateTo}&status=SCHEDULED`;
       if (leagueCode) endpoint += `&competitions=${leagueCode}`;
 
-      const data = await fetchFootballAPI(endpoint);
+      const data = await fetchFootballAPI(endpoint, apiTimeout);
       if (data?.matches?.length > 0) {
         const leagueName = data.matches[0]?.competition?.name || (leagueCode ? `Liga ${leagueCode}` : '');
         return NextResponse.json({
@@ -747,7 +750,7 @@ export async function GET(request: NextRequest) {
         });
       }
       // PLAN B: Web search fallback
-      console.log('[FOOTBALL] GET fixtures — primary API empty, activating fallback...');
+      console.log('[FOOTBALL] GET fixtures — primary API empty/timeout, activating fallback...');
       const fallback = await getFootballFallback('fixtures', leagueCode);
       if (fallback) {
         return NextResponse.json(fallback);

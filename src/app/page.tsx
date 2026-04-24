@@ -359,6 +359,14 @@ export default function AtlasApp() {
   const [footballDetailView, setFootballDetailView] = useState(false);
   const [footballLeagueCode, setFootballLeagueCode] = useState<string>('2028'); // Default Liga 1 Perú
 
+  // Football cache — session-level with 5 min TTL (ref to avoid re-renders)
+  const footballCacheRef = useRef<Record<string, { data: any; timestamp: number }>>({});
+  const FOOTBALL_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  const FOOTBALL_PRECACHE_DONE = useRef(false); // Avoid re-precache on every render
+
+  // Priority league codes for precache (Liga 1 Perú + Top Europa)
+  const PRIORITY_LEAGUES = ['2028']; // standings/fixtures/scorers only fetch Liga 1 by default
+
   // Football leagues — Liga 1 Perú always first (priority)
   const FOOTBALL_LEAGUES = [
     { label: 'Liga 1 Perú', code: '2028' },
@@ -1922,18 +1930,97 @@ export default function AtlasApp() {
     }
   }, [inputValue, lastUserMsgForSug]);
 
-  // ---- FOOTBALL DATA ----
+  // ---- FOOTBALL PRECACHE: Load all 4 tabs in background ----
+  const precacheFootball = useCallback(async () => {
+    const actions: Array<{ action: 'live' | 'standings' | 'fixtures' | 'scorers'; league?: string }> = [
+      { action: 'live' },
+      { action: 'standings', league: '2028' },
+      { action: 'fixtures', league: '2028' },
+      { action: 'scorers', league: '2028' },
+    ];
+
+    // Filter out already cached items (not expired)
+    const toFetch = actions.filter(a => {
+      const key = `${a.action}${a.league ? `_${a.league}` : ''}`;
+      const cached = footballCacheRef.current[key];
+      return !cached || Date.now() - cached.timestamp > FOOTBALL_CACHE_TTL;
+    });
+
+    if (toFetch.length === 0) return;
+
+    console.log(`[FOOTBALL_PRECACHE] Loading ${toFetch.length} sections in background...`);
+
+    // Fire all requests in PARALLEL with Promise.allSettled (no blocking)
+    await Promise.allSettled(
+      toFetch.map(async ({ action, league }) => {
+        try {
+          const key = `${action}${league ? `_${league}` : ''}`;
+          let url = `/api/football?action=${action}&timeout=3000`;
+          if (league) url += `&league=${league}`;
+
+          // Frontend hard timeout: 8s (backend handles 3s → fallback internally)
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 8000);
+
+          const res = await fetch(url, { signal: controller.signal });
+          clearTimeout(timer);
+          const data = await res.json();
+
+          // Store in cache regardless of success/error
+          footballCacheRef.current[key] = { data, timestamp: Date.now() };
+          console.log(`[FOOTBALL_PRECACHE] Cached: ${key}`);
+        } catch {
+          // Silently fail — individual requests don't block others
+          console.warn(`[FOOTBALL_PRECACHE] Failed for ${action}${league ? `/${league}` : ''}`);
+        }
+      })
+    );
+
+    FOOTBALL_PRECACHE_DONE.current = true;
+    console.log('[FOOTBALL_PRECACHE] Complete');
+  }, []);
+
+  // Trigger precache when football panel opens
+  useEffect(() => {
+    if (showFootball && !FOOTBALL_PRECACHE_DONE.current) {
+      precacheFootball();
+    }
+    // Reset precache flag when panel closes so next open re-triggers
+    if (!showFootball) {
+      FOOTBALL_PRECACHE_DONE.current = false;
+    }
+  }, [showFootball, precacheFootball]);
+
+  // ---- FOOTBALL DATA FETCH with cache ----
   const handleFootballFetch = useCallback(async (action: 'live' | 'standings' | 'fixtures' | 'scorers', leagueCode?: string) => {
+    const cacheKey = `${action}${leagueCode ? `_${leagueCode}` : ''}`;
+
+    // CHECK CACHE FIRST — instant display if data is fresh (< 5 min)
+    const cached = footballCacheRef.current[cacheKey];
+    if (cached && Date.now() - cached.timestamp < FOOTBALL_CACHE_TTL) {
+      console.log(`[FOOTBALL] Cache hit: ${cacheKey}`);
+      setFootballTab(action);
+      setShowFootball(true);
+      if (leagueCode) setFootballLeagueCode(String(leagueCode));
+      if (action !== 'live') setFootballDetailView(true);
+      setFootballData(cached.data);
+      return;
+    }
+
     setFootballLoading(true);
     setFootballTab(action);
     setShowFootball(true);
     if (leagueCode) setFootballLeagueCode(String(leagueCode));
     if (action !== 'live') setFootballDetailView(true);
+
     try {
-      let url = `/api/football?action=${action}`;
+      let url = `/api/football?action=${action}&timeout=3000`;
       if (leagueCode) url += `&league=${leagueCode}`;
       const res = await fetch(url);
       const data = await res.json();
+
+      // Store in cache
+      footballCacheRef.current[cacheKey] = { data, timestamp: Date.now() };
       setFootballData(data);
     } catch (err) {
       console.error('[FOOTBALL] Fetch error:', err);
@@ -1947,7 +2034,13 @@ export default function AtlasApp() {
   const handleFootballBack = useCallback(() => {
     setFootballDetailView(false);
     setFootballTab('live');
-    setFootballData(null);
+    // Restore cached live data if available
+    const liveCache = footballCacheRef.current['live'];
+    if (liveCache && Date.now() - liveCache.timestamp < FOOTBALL_CACHE_TTL) {
+      setFootballData(liveCache.data);
+    } else {
+      setFootballData(null);
+    }
   }, []);
 
   // ---- IMAGE GENERATION (FLUX) ----
