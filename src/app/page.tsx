@@ -359,10 +359,22 @@ export default function AtlasApp() {
   const [footballDetailView, setFootballDetailView] = useState(false);
   const [footballLeagueCode, setFootballLeagueCode] = useState<string>('2028'); // Default Liga 1 Perú
 
-  // Football cache — localStorage persistence with differentiated TTLs per action
-  // live: 1 min (near real-time), standings: 60 min, scorers: 60 min, fixtures: 120 min
+  // ========================================
+  // FOOTBALL CACHE — localStorage + rate limit protection
+  // ========================================
+  // TTLs per action (normal mode):
+  //   live: 1 min, standings: 60 min, scorers: 60 min, fixtures: 120 min
+  // When approaching rate limit (≥80/day), ALL TTLs jump to 4 hours.
+  // This prevents exhausting the free 100 calls/day on football-data.org.
+  // ========================================
+
   const FOOTBALL_CACHE_KEY = 'atlas_football_cache';
-  const FOOTBALL_TTL: Record<string, number> = {
+  const FOOTBALL_RATE_KEY = 'atlas_football_rate'; // { date: 'YYYY-MM-DD', count: number }
+  const FOOTBALL_DAILY_LIMIT = 100;       // football-data.org free tier hard limit
+  const FOOTBALL_RATE_THRESHOLD = 80;     // activate protection at 80 calls
+  const FOOTBALL_SAFE_TTL = 4 * 60 * 60 * 1000; // 4 hours — emergency mode
+
+  const FOOTBALL_TTL_NORMAL: Record<string, number> = {
     live: 1 * 60 * 1000,       // 1 minute — near real-time scores
     standings: 60 * 60 * 1000, // 60 minutes — static table data
     scorers: 60 * 60 * 1000,   // 60 minutes — static scorer data
@@ -388,16 +400,57 @@ export default function AtlasApp() {
     } catch {}
   }, []);
 
+  // ---- Rate limit tracker: counts daily API calls ----
+  const getTodayLima = useCallback((): string => {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date()); // 'YYYY-MM-DD'
+  }, []);
+
+  const getApiCallCount = useCallback((): number => {
+    try {
+      const raw = localStorage.getItem(FOOTBALL_RATE_KEY);
+      if (!raw) return 0;
+      const data = JSON.parse(raw);
+      const today = getTodayLima();
+      // Reset counter if new day (Lima timezone)
+      if (data.date !== today) {
+        localStorage.setItem(FOOTBALL_RATE_KEY, JSON.stringify({ date: today, count: 0 }));
+        return 0;
+      }
+      return data.count || 0;
+    } catch { return 0; }
+  }, [getTodayLima]);
+
+  const incrementApiCall = useCallback((): number => {
+    try {
+      const today = getTodayLima();
+      const raw = localStorage.getItem(FOOTBALL_RATE_KEY);
+      let data = raw ? JSON.parse(raw) : { date: today, count: 0 };
+      if (data.date !== today) data = { date: today, count: 0 };
+      data.count = (data.count || 0) + 1;
+      localStorage.setItem(FOOTBALL_RATE_KEY, JSON.stringify(data));
+      return data.count;
+    } catch { return 0; }
+  }, [getTodayLima]);
+
+  // Dynamic TTL: if daily calls >= threshold, force 4-hour safe TTL
+  const getEffectiveTTL = useCallback((action: string): number => {
+    const count = getApiCallCount();
+    if (count >= FOOTBALL_RATE_THRESHOLD) {
+      console.warn(`[FOOTBALL_RATE] Protection active: ${count}/${FOOTBALL_DAILY_LIMIT} calls today — safe TTL 4h for ${action}`);
+      return FOOTBALL_SAFE_TTL;
+    }
+    return FOOTBALL_TTL_NORMAL[action] || FOOTBALL_TTL_NORMAL.live;
+  }, [getApiCallCount]);
+
   const isCacheFresh = useCallback((key: string): boolean => {
     const entry = getFootballCache(key);
     if (!entry) return false;
-    // Determine TTL based on the action prefix (e.g. 'live_2028' → 'live')
     const action = key.split('_')[0];
-    const ttl = FOOTBALL_TTL[action] || FOOTBALL_TTL.live;
+    const ttl = getEffectiveTTL(action);
     return Date.now() - entry.timestamp < ttl;
-  }, [getFootballCache]);
+  }, [getFootballCache, getEffectiveTTL]);
 
-  // Cleanup expired entries on mount to avoid localStorage bloat
+  // Cleanup expired entries on mount (uses effective TTL, accounts for rate protection)
   useEffect(() => {
     try {
       const raw = localStorage.getItem(FOOTBALL_CACHE_KEY);
@@ -406,7 +459,7 @@ export default function AtlasApp() {
       let changed = false;
       for (const [key, entry] of Object.entries(store)) {
         const action = (key as string).split('_')[0];
-        const ttl = FOOTBALL_TTL[action] || FOOTBALL_TTL.live;
+        const ttl = getEffectiveTTL(action);
         if (Date.now() - (entry as any).timestamp > ttl) {
           delete store[key];
           changed = true;
@@ -414,7 +467,7 @@ export default function AtlasApp() {
       }
       if (changed) localStorage.setItem(FOOTBALL_CACHE_KEY, JSON.stringify(store));
     } catch {}
-  }, []);
+  }, [getEffectiveTTL]);
 
   const FOOTBALL_PRECACHE_DONE = useRef(false); // Avoid re-precache on every render
 
@@ -1990,18 +2043,25 @@ export default function AtlasApp() {
       { action: 'scorers', league: '2028' },
     ];
 
-    // Filter out already cached items (using per-action TTL)
+    // Filter out already cached items (using dynamic per-action TTL)
     const toFetch = actions.filter(a => {
       const key = `${a.action}${a.league ? `_${a.league}` : ''}`;
       return !isCacheFresh(key);
     });
+
+    // Block ALL precache if rate limit protection is active
+    if (getApiCallCount() >= FOOTBALL_DAILY_LIMIT) {
+      console.warn(`[FOOTBALL_PRECACHE] BLOCKED — ${FOOTBALL_DAILY_LIMIT}/${FOOTBALL_DAILY_LIMIT} daily limit reached. Serving from cache only.`);
+      FOOTBALL_PRECACHE_DONE.current = true;
+      return;
+    }
 
     if (toFetch.length === 0) {
       console.log('[FOOTBALL_PRECACHE] All sections already cached');
       return;
     }
 
-    console.log(`[FOOTBALL_PRECACHE] Loading ${toFetch.length} sections in background...`);
+    console.log(`[FOOTBALL_PRECACHE] Loading ${toFetch.length} sections in background... (${getApiCallCount()}/${FOOTBALL_DAILY_LIMIT} calls today)`);
 
     // Fire all requests in PARALLEL with Promise.allSettled (no blocking)
     await Promise.allSettled(
@@ -2011,7 +2071,6 @@ export default function AtlasApp() {
           let url = `/api/football?action=${action}&timeout=3000`;
           if (league) url += `&league=${league}`;
 
-          // Frontend hard timeout: 8s (backend handles 3s → fallback internally)
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), 8000);
 
@@ -2019,11 +2078,11 @@ export default function AtlasApp() {
           clearTimeout(timer);
           const data = await res.json();
 
-          // Store in localStorage cache with timestamp
+          // Track API call and store in cache
+          const totalCalls = incrementApiCall();
           setFootballCache(key, data);
-          console.log(`[FOOTBALL_PRECACHE] Cached: ${key} (TTL: ${FOOTBALL_TTL[action] / 1000}s)`);
+          console.log(`[FOOTBALL_PRECACHE] Cached: ${key} (TTL: ${getEffectiveTTL(action) / 1000}s, calls: ${totalCalls}/${FOOTBALL_DAILY_LIMIT})`);
         } catch {
-          // Silently fail — individual requests don't block others
           console.warn(`[FOOTBALL_PRECACHE] Failed for ${action}${league ? `/${league}` : ''}`);
         }
       })
@@ -2031,7 +2090,7 @@ export default function AtlasApp() {
 
     FOOTBALL_PRECACHE_DONE.current = true;
     console.log('[FOOTBALL_PRECACHE] Complete');
-  }, [isCacheFresh, setFootballCache]);
+  }, [isCacheFresh, getApiCallCount, incrementApiCall, getEffectiveTTL, setFootballCache]);
 
   // Trigger precache when football panel opens
   useEffect(() => {
@@ -2044,15 +2103,17 @@ export default function AtlasApp() {
     }
   }, [showFootball, precacheFootball]);
 
-  // ---- FOOTBALL DATA FETCH with persistent cache ----
+  // ---- FOOTBALL DATA FETCH with persistent cache + rate limit protection ----
   const handleFootballFetch = useCallback(async (action: 'live' | 'standings' | 'fixtures' | 'scorers', leagueCode?: string) => {
     const cacheKey = `${action}${leagueCode ? `_${leagueCode}` : ''}`;
+    const currentCalls = getApiCallCount();
 
-    // CHECK CACHE FIRST — instant display if data is fresh (per-action TTL)
+    // CHECK CACHE FIRST — instant display if data is fresh (dynamic TTL)
     if (isCacheFresh(cacheKey)) {
       const cached = getFootballCache(cacheKey);
       if (cached) {
-        console.log(`[FOOTBALL] Cache hit: ${cacheKey} (age: ${Math.round((Date.now() - cached.timestamp) / 1000)}s, TTL: ${FOOTBALL_TTL[action] / 1000}s)`);
+        const ttl = getEffectiveTTL(action);
+        console.log(`[FOOTBALL] Cache hit: ${cacheKey} (age: ${Math.round((Date.now() - cached.timestamp) / 1000)}s, TTL: ${ttl / 1000}s, calls: ${currentCalls}/${FOOTBALL_DAILY_LIMIT})`);
         setFootballTab(action);
         setShowFootball(true);
         if (leagueCode) setFootballLeagueCode(String(leagueCode));
@@ -2060,6 +2121,26 @@ export default function AtlasApp() {
         setFootballData(cached.data);
         return;
       }
+    }
+
+    // HARD BLOCK: if daily limit reached, serve stale cache or show message
+    if (currentCalls >= FOOTBALL_DAILY_LIMIT) {
+      console.warn(`[FOOTBALL] BLOCKED — ${FOOTBALL_DAILY_LIMIT}/${FOOTBALL_DAILY_LIMIT} limit reached. Serving stale data.`);
+      const stale = getFootballCache(cacheKey);
+      if (stale) {
+        setFootballTab(action);
+        setShowFootball(true);
+        if (leagueCode) setFootballLeagueCode(String(leagueCode));
+        if (action !== 'live') setFootballDetailView(true);
+        setFootballData({ ...stale.data, _stale: true, _staleMinutes: Math.round((Date.now() - stale.timestamp) / 60000) });
+      } else {
+        setFootballTab(action);
+        setShowFootball(true);
+        if (leagueCode) setFootballLeagueCode(String(leagueCode));
+        if (action !== 'live') setFootballDetailView(true);
+        setFootballData({ error: `Límite diario alcanzado (${FOOTBALL_DAILY_LIMIT} llamadas). Los datos se renovarán mañana.` });
+      }
+      return;
     }
 
     setFootballLoading(true);
@@ -2074,8 +2155,10 @@ export default function AtlasApp() {
       const res = await fetch(url);
       const data = await res.json();
 
-      // Store in localStorage cache (persists across refreshes)
+      // Track API call and store in cache
+      const totalCalls = incrementApiCall();
       setFootballCache(cacheKey, data);
+      console.log(`[FOOTBALL] API call ${totalCalls}/${FOOTBALL_DAILY_LIMIT} for ${cacheKey}`);
       setFootballData(data);
     } catch (err) {
       console.error('[FOOTBALL] Fetch error:', err);
@@ -2083,7 +2166,7 @@ export default function AtlasApp() {
     } finally {
       setFootballLoading(false);
     }
-  }, [isCacheFresh, getFootballCache, setFootballCache]);
+  }, [isCacheFresh, getFootballCache, setFootballCache, getApiCallCount, incrementApiCall, getEffectiveTTL]);
 
   // Navigate back from football detail to tab menu
   const handleFootballBack = useCallback(() => {
@@ -5192,6 +5275,15 @@ export default function AtlasApp() {
                   </div>
                 ) : (
                   <div className="p-3">
+                    {/* Rate limit stale data indicator */}
+                    {footballData?._stale && (
+                      <div className="flex items-center gap-1.5 px-1 mb-2">
+                        <AlertTriangle className="w-3 h-3 text-amber-400" />
+                        <span className="text-[9px] text-amber-400/70 uppercase tracking-wider">
+                          Datos guardados hace {footballData._staleMinutes || '?'} min (límite diario alcanzado)
+                        </span>
+                      </div>
+                    )}
                     {/* Fallback source indicator */}
                     {footballData?._fallback && footballData._source !== 'news_summary' && (
                       <div className="flex items-center gap-1.5 px-1 mb-2">
