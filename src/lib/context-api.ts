@@ -477,6 +477,23 @@ export function getServerTime(): string {
 }
 
 export function buildTimeInjection(): string {
-  const now = getServerTime();
-  return `\n\n[HORA ACTUAL DEL SISTEMA]\n${now} (hora de Lima, Peru). Si el usuario habla de tiempos relativos ('en 3 horas', 'manana a las 8', 'dentro de 15 minutos', 'ayer', 'la semana que viene'), calcula la hora exacta basandote en esta HORA ACTUAL y dile la hora resultante al usuario.`;
+  // Round to nearest 15 minutes for higher OpenRouter cache hit rate.
+  // Within a 15-min window, all requests get the same time string → cache hit.
+  // The 7.5min max drift is acceptable for relative time calculations.
+  const now = new Date();
+  const minutes = now.getMinutes();
+  const roundedMinutes = Math.floor(minutes / 15) * 15;
+  now.setMinutes(roundedMinutes, 0, 0);
+
+  const formatted = now.toLocaleString('es-PE', {
+    timeZone: 'America/Lima',
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  return `\n\n[HORA ACTUAL DEL SISTEMA]\n${formatted} (hora de Lima, Peru). Si el usuario habla de tiempos relativos ('en 3 horas', 'manana a las 8', 'dentro de 15 minutos', 'ayer', 'la semana que viene'), calcula la hora exacta basandote en esta HORA ACTUAL y dile la hora resultante al usuario.`;
 }

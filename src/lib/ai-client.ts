@@ -45,15 +45,23 @@ function timeoutSignal(ms: number): AbortSignal {
   return ctrl.signal;
 }
 
-// Retry wrapper for transient errors (429, 5xx)
+// Retry wrapper for transient errors (429, 502, 503, 5xx)
 async function fetchWithRetry(url: string, init: RequestInit, retries = 1): Promise<Response> {
+  let res: Response;
   for (let i = 0; i <= retries; i++) {
-    const res = await fetch(url, init);
-    if (res.status < 500 && res.status !== 429) return res;
-    if (i === retries) return res;
-    await new Promise(r => setTimeout(r, 800 * Math.pow(2, i)));
+    res = await fetch(url, init);
+    // Retry on transient server errors (502 Bad Gateway, 503 Service Unavailable, 5xx)
+    // and 429 Rate Limit (backoff and retry)
+    if (res.status === 429 || res.status === 502 || res.status === 503 || res.status >= 500) {
+      if (i === retries) return res;
+      const delay = 800 * Math.pow(2, i);
+      console.warn(`[RETRY] ${res.status} on attempt ${i + 1}, retrying in ${delay}ms...`);
+      await new Promise(r => setTimeout(r, delay));
+      continue;
+    }
+    return res;
   }
-  return res; // unreachable
+  return res!; // unreachable
 }
 
 // ========================================
@@ -93,10 +101,17 @@ export async function createChatCompletion(body: {
       max_tokens: maxTokens,
     }),
     signal: timeoutSignal(25000),
-  });
+  }, 2); // 2 retries for 502/503/429 resilience
 
   if (!response.ok) {
     const errorBody = await response.text();
+    // Map common API errors to user-friendly messages
+    if (response.status === 503) {
+      throw new Error('El servicio de IA esta temporalmente no disponible. Intenta de nuevo en unos segundos.');
+    }
+    if (response.status === 429) {
+      throw new Error('Demasiadas solicitudes. Espera un momento e intenta de nuevo.');
+    }
     throw new Error(`Qwen API ${response.status}: ${errorBody}`);
   }
 
@@ -140,10 +155,16 @@ export async function streamChatCompletion(body: {
       stream: true,
     }),
     signal: timeoutSignal(25000),
-  });
+  }, 2); // 2 retries for 502/503/429 resilience
 
   if (!response.ok) {
     const errorBody = await response.text();
+    if (response.status === 503) {
+      throw new Error('El servicio de IA esta temporalmente no disponible. Intenta de nuevo en unos segundos.');
+    }
+    if (response.status === 429) {
+      throw new Error('Demasiadas solicitudes. Espera un momento e intenta de nuevo.');
+    }
     throw new Error(`Qwen API ${response.status}: ${errorBody}`);
   }
 

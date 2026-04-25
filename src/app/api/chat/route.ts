@@ -296,49 +296,15 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
       }
     }
 
-    // ---- PASO 3: CONSTRUIR MENSAJES (Token-Optimized) ----
-    // Structure: [STATIC PROMPT (cached)] + [USER CONTEXT (dynamic)] + [CONDITIONAL MODULES] + [DYNAMIC DATA]
-    // The static prompt is identical for ALL users → OpenRouter caches this prefix → cheaper & faster
-    let systemPrompt = ATLAS_STATIC_PROMPT;
-
-    // Append user context (dynamic, short ~200 chars)
-    systemPrompt += '\n\n' + buildAtlasUserContext(userName || 'Desconocido', contextSummary || 'Sin informacion previa. Es un nuevo usuario.', userCity);
-
-    // Conditional modules: only inject when relevant data exists (saves ~500 tokens for irrelevant queries)
-    if (hasFinancialData) {
-      systemPrompt += '\n\n' + ATLAS_FINANCIAL_MODULE;
-    }
-    if (hasCinemaData) {
-      systemPrompt += '\n\n' + ATLAS_CINEMA_MODULE;
-    }
-
-    // If document was processed by Llama, add Qwen-specific instructions
-    if (documentText) {
-      systemPrompt += '\n\n[CONTEXTO DE DOCUMENTO ADJUNTO]\nEl usuario subio un documento. Los datos extraidos ya estan incluidos en el mensaje del usuario. Responde como Atlas de manera directa y estrategica basandote en los datos extraidos. Manten tu tono habitual, usa viñetas y negritas.';
-    }
-
-    // If image was described by Gemini, add context instructions
-    if (imageBase64) {
-      systemPrompt += '\n\n[CONTEXTO DE IMAGEN ADJUNTA]\nEl usuario subio una imagen. La descripcion generada ya esta incluida en el mensaje del usuario. Responde como Atlas de manera directa basandote en la descripcion. Manten tu tono habitual.';
-    }
-
-    // If financial data was fetched, inject into system prompt (HIGH PRIORITY for markets)
-    if (financialContext) {
-      systemPrompt += '\n\n' + financialContext;
-    }
-
-    // If auto-research found sources, inject into system prompt (HIGHEST PRIORITY)
-    if (autoResearchContext) {
-      systemPrompt += '\n\n' + autoResearchContext;
-    }
-
-    // If weather/news context detected, append to system prompt
-    if (contextInjection) {
-      systemPrompt += contextInjection;
-    }
-
-    // Always inject server time (zero cost, enables time-relative calculations)
-    systemPrompt += buildTimeInjection();
+    // ---- PASO 3: CONSTRUIR MENSAJES (Token-Optimized + Prefix Cache) ----
+    //
+    // ARCHITECTURE — TWO-SYSTEM-MESSAGE SPLIT (OpenRouter prefix cache):
+    //   Message 1 (system): ATLAS_STATIC_PROMPT → IDENTICAL for ALL users → CACHED by OpenRouter
+    //   Message 2 (system): Dynamic context + modules + data → varies per user/query → NOT cached
+    //   Messages 3..N:       History (clean content only, no timestamps/IDs) → cached if unchanged
+    //
+    // This means the first ~3,800 chars (~1,250 tokens) are ALWAYS cached,
+    // saving ~60% on input tokens for the static identity/personality prompt.
 
     // ---- MEMORY EFFICIENCY: Limit history to avoid excessive token usage ----
     // Load only the last MAX_HISTORIAL messages (most recent) for LLM context.
@@ -359,6 +325,8 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
       }
       // Take only MAX_HISTORIAL, reverse to chronological order (oldest first)
       const slicedRows = rows.length > MAX_HISTORIAL ? rows.slice(0, MAX_HISTORIAL) : rows;
+      // IMPORTANT: Extract ONLY role + content — no timestamps, no IDs, no metadata
+      // This ensures OpenRouter cache recognizes identical message content as cache hits
       history = slicedRows.map((m) => ({
         role: m.role as string,
         content: m.content as string,
@@ -367,13 +335,73 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
       console.error('[CEREBRO] History read error:', dbError);
     }
 
-    // ---- SLIDING WINDOW SUMMARY: Inform LLM about older messages not in context ----
-    if (hasOlderMessages) {
-      systemPrompt += '\n\n[CONTEXTO DE MENSAJES ANTERIORES]\nEl usuario y tu tuvieron mensajes adicionales antes de los visibles. Usa esta informacion para mantener coherencia contextual.';
+    // ---- MESSAGE 1: STATIC SYSTEM PROMPT (cached by OpenRouter — never changes) ----
+    // This is the ~3,800 char base identity that is IDENTICAL for every user and query.
+    // OpenRouter caches this prefix, saving ~1,250 tokens on every request.
+    const staticSystemMessage: { role: string; content: string } = {
+      role: 'system',
+      content: ATLAS_STATIC_PROMPT,
+    };
+
+    // ---- MESSAGE 2: DYNAMIC CONTEXT (varies per user/query — NOT cached) ----
+    // All variable content goes here: user identity, memory, conditional modules,
+    // financial data, research, weather, time. Separated so Message 1 stays cacheable.
+    let dynamicContext = '';
+
+    // Append user context (dynamic, short ~200 chars)
+    dynamicContext += buildAtlasUserContext(userName || 'Desconocido', contextSummary || 'Sin informacion previa. Es un nuevo usuario.', userCity);
+
+    // Conditional modules: only inject when relevant data exists (saves ~500 tokens for irrelevant queries)
+    if (hasFinancialData) {
+      dynamicContext += '\n\n' + ATLAS_FINANCIAL_MODULE;
+    }
+    if (hasCinemaData) {
+      dynamicContext += '\n\n' + ATLAS_CINEMA_MODULE;
     }
 
+    // If document was processed by Llama, add Qwen-specific instructions
+    if (documentText) {
+      dynamicContext += '\n\n[CONTEXTO DE DOCUMENTO ADJUNTO]\nEl usuario subio un documento. Los datos extraidos ya estan incluidos en el mensaje del usuario. Responde como Atlas de manera directa y estrategica basandote en los datos extraidos. Manten tu tono habitual, usa viñetas y negritas.';
+    }
+
+    // If image was described by Gemini, add context instructions
+    if (imageBase64) {
+      dynamicContext += '\n\n[CONTEXTO DE IMAGEN ADJUNTA]\nEl usuario subio una imagen. La descripcion generada ya esta incluida en el mensaje del usuario. Responde como Atlas de manera directa basandote en la descripcion. Manten tu tono habitual.';
+    }
+
+    // If financial data was fetched, inject into system prompt (HIGH PRIORITY for markets)
+    if (financialContext) {
+      dynamicContext += '\n\n' + financialContext;
+    }
+
+    // If auto-research found sources, inject into system prompt (HIGHEST PRIORITY)
+    if (autoResearchContext) {
+      dynamicContext += '\n\n' + autoResearchContext;
+    }
+
+    // If weather/news context detected, append
+    if (contextInjection) {
+      dynamicContext += contextInjection;
+    }
+
+    // ---- SLIDING WINDOW SUMMARY: Inform LLM about older messages not in context ----
+    if (hasOlderMessages) {
+      dynamicContext += '\n\n[CONTEXTO DE MENSAJES ANTERIORES]\nEl usuario y tu tuvieron mensajes adicionales antes de los visibles. Usa esta informacion para mantener coherencia contextual.';
+    }
+
+    // Always inject server time (rounded to 15min for higher cache hit rate)
+    dynamicContext += buildTimeInjection();
+
+    const dynamicSystemMessage: { role: string; content: string } = {
+      role: 'system',
+      content: dynamicContext,
+    };
+
+    // ---- BUILD FINAL MESSAGE ARRAY ----
+    // [1] Static system prompt (cached) → [2] Dynamic context → [3..N] Clean history
     const llmMessages: Array<{ role: string; content: string }> = [
-      { role: 'system', content: systemPrompt },
+      staticSystemMessage,
+      dynamicSystemMessage,
     ];
     for (const msg of history) {
       if (msg.role === 'user' || msg.role === 'assistant') {
