@@ -20,6 +20,7 @@ import { getSupabaseServer } from '@/lib/supabase';
 import { enrichContext, buildContextInjection, buildTimeInjection } from '@/lib/context-api';
 import { performAutoResearch, type AutoSource } from '@/lib/auto-research';
 import { fetchCinemaData } from '@/lib/cinema-api';
+import { isFinancialQuery, fetchAllFinancialData } from '@/lib/financial-api';
 
 // ========================================
 // MAX_HISTORIAL — Optimizacion de memoria
@@ -27,7 +28,7 @@ import { fetchCinemaData } from '@/lib/cinema-api';
 // El system prompt (instrucciones) siempre se mantiene completo.
 // Esto reduce el consumo de tokens en conversaciones largas.
 // ========================================
-const MAX_HISTORIAL = 10;
+const MAX_HISTORIAL = parseInt(process.env.MAX_HISTORIAL || '10', 10);
 
 // ========================================
 // POST /api/chat — STREAMING (SSE) + JSON fallback
@@ -117,6 +118,24 @@ export async function POST(request: NextRequest) {
         } catch {}
         return NextResponse.json({ response: SAFETY_RESPONSE });
       }
+    }
+
+    // ---- PASO 2.3: FINANCIAL DATA — Crypto + Gold + Stocks (real-time) ----
+    let financialContext = '';
+    try {
+      if (message && !documentText && !imageBase64 && isFinancialQuery(message)) {
+        console.log('[CEREBRO] Financial query detected:', message.substring(0, 60));
+        const financialData = await Promise.race([
+          fetchAllFinancialData(),
+          new Promise<{ crypto: []; gold: null; indices: []; context: '' }>(r =>
+            setTimeout(() => r({ crypto: [], gold: null, indices: [], context: '' }), 8000)
+          ),
+        ]);
+        financialContext = financialData.context;
+        console.log(`[CEREBRO] Financial data: ${financialData.crypto.length} crypto, gold: ${financialData.gold ? 'yes' : 'no'}, ${financialData.indices.length} indices`);
+      }
+    } catch (financialErr) {
+      console.warn('[CEREBRO] Financial data fetch failed:', financialErr);
     }
 
     // ---- PASO 2.4: RESEARCH — Cinema-aware (TMDb+OMDB) + Web ----
@@ -295,6 +314,11 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
       systemPrompt += imgPrompt;
     }
 
+    // If financial data was fetched, inject into system prompt (HIGH PRIORITY for markets)
+    if (financialContext) {
+      systemPrompt += '\n\n' + financialContext;
+    }
+
     // If auto-research found sources, inject into system prompt (HIGHEST PRIORITY)
     if (autoResearchContext) {
       systemPrompt += '\n\n' + autoResearchContext;
@@ -311,6 +335,17 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
     // ---- MEMORY EFFICIENCY: Limit history to avoid excessive token usage ----
     // Load only the last MAX_HISTORIAL messages (most recent) for LLM context.
     // System prompt is always preserved separately — never truncated.
+
+    // Count total messages to detect sliding window
+    let totalMessageCount = 0;
+    try {
+      const countResult = await db.execute(
+        `SELECT COUNT(*) as cnt FROM Message WHERE sessionId = ?`,
+        [sessionId]
+      );
+      totalMessageCount = Number(countResult.rows[0]?.cnt || 0);
+    } catch {}
+
     let history: Array<{ role: string; content: string }> = [];
     try {
       // Get last MAX_HISTORIAL messages (most recent first), then reverse for chronological order
@@ -325,6 +360,12 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
       })).reverse();
     } catch (dbError) {
       console.error('[CEREBRO] History read error:', dbError);
+    }
+
+    // ---- SLIDING WINDOW SUMMARY: Inform LLM about older messages not in context ----
+    if (totalMessageCount > MAX_HISTORIAL) {
+      const olderCount = totalMessageCount - MAX_HISTORIAL;
+      systemPrompt += `\n\n[CONTEXTO DE MENSAJES ANTERIORES]\nEl usuario y tú tuvieron ${olderCount} mensajes adicionales en esta conversación antes de los mensajes visibles. El tema principal de esa parte era: conversación previa más antigua (resumen no disponible). Usa esta información para mantener coherencia contextual.`;
     }
 
     const llmMessages: Array<{ role: string; content: string }> = [
@@ -831,9 +872,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'sessionId requerido' }, { status: 400 });
     }
 
+    // Pagination: optional limit (default 50, max 200) and offset (default 0)
+    let limit = parseInt(searchParams.get('limit') || '50', 10);
+    if (isNaN(limit) || limit < 1) limit = 50;
+    if (limit > 200) limit = 200;
+
+    let offset = parseInt(searchParams.get('offset') || '0', 10);
+    if (isNaN(offset) || offset < 0) offset = 0;
+
     const result = await db.execute(
-      `SELECT id, role, content, timestamp FROM Message WHERE sessionId = ? ORDER BY timestamp ASC`,
-      [sessionId]
+      `SELECT id, role, content, timestamp FROM Message WHERE sessionId = ? ORDER BY timestamp ASC LIMIT ? OFFSET ?`,
+      [sessionId, limit, offset]
     );
 
     return NextResponse.json({
@@ -843,6 +892,7 @@ export async function GET(request: NextRequest) {
         content: m.content,
         timestamp: m.timestamp,
       })),
+      pagination: { limit, offset },
     });
   } catch (error) {
     console.error('[MEMORIA] Error:', error);

@@ -61,6 +61,12 @@ const RESEARCH_TRIGGER_PATTERNS = [
   // Cinema / Movies — triggers auto-research for real-time scores, reviews, testimonials
   /\b(pelicula|película|cine|film|movie|peliculas|películas|peliculon|taquillera|estreno|cartelera|direct[oa]r?|actor|actriz|guionista|productora|oscar|premio cannes|festival de cine|sundance|venecia|berlin)\b/i,
   /\b(netflix|hbo|max|disney\+?|prime video|apple tv|paramount\+?|peacock|crunchyroll|stan|hulu|mubi|filmaffinity|imdb|rotten tomatoes|letterboxd|metacritic)\b/i,
+  // Finance / Crypto — triggers research for real-time market data
+  /\b(bitcoin|btc|ethereum|eth|solana|sol|crypto|cripto|criptomoneda|dogecoin|doge|ripple|xrp|cardano|ada|tether|usdt|bnb)\b/i,
+  /\b(oro|gold|xau|plata|silver|petroleo|petróleo|oil|commodity)\b/i,
+  /\b(bolsa|stock market|acciones|sp500|s&p 500|nasdaq|dow jones|indices)\b/i,
+  /\b(coingecko|coinmarketcap|investing\.com|tradingview|yahoo finance)\b/i,
+  /\b(precio (del|del|de|actual|hoy)|cotizacion|variacion|market cap|capitalizacion|volumen de trading)\b/i,
   /\b(que pelicula|que peli|recomend[ae]s? pelicula|mejores peliculas|peliculas del (ano|2024|2025|2026)|estrenos (del mes|de |de este|2024|2025|2026)|vale la pena ver|que ver en|pelicula de (terror|accion|comedia|drama|ciencia ficcion|thriller|romance|animacion|fantasia|documental))\b/i,
 ];
 

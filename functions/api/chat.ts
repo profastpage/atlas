@@ -1,6 +1,6 @@
 // ================================================
 // ATLAS — Cloudflare Pages Function
-// Archivo: /functions/api/chat.js
+// Archivo: /functions/api/chat.ts
 // Endpoint: POST https://<tu-sitio>.pages.dev/api/chat
 // ================================================
 //
@@ -11,14 +11,56 @@
 // para la tienda Urban Style.
 // ================================================
 
+interface CorsHeaders {
+  'Access-Control-Allow-Origin': string;
+  'Access-Control-Allow-Methods': string;
+  'Access-Control-Allow-Headers': string;
+  'Content-Type': string;
+  'Access-Control-Max-Age'?: string;
+}
+
+interface ChatRequestBody {
+  message: string;
+  history?: Array<{ role: string; content: string }>;
+}
+
+interface ChatResponseBody {
+  role?: string;
+  content?: string;
+  timestamp?: string;
+  error?: string;
+}
+
+interface PagesFunctionContext {
+  request: Request;
+  env: {
+    QWEN_API_KEY?: string;
+  };
+}
+
+interface QwenMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+interface QwenChoice {
+  message?: {
+    content?: string;
+  };
+}
+
+interface QwenResponse {
+  choices?: QwenChoice[];
+}
+
 // Allowed origins for CORS
-const ALLOWED_ORIGINS = [
+const ALLOWED_ORIGINS: readonly string[] = [
   'https://tienda-online-oficial.vercel.app',
   'https://tiendaonlineoficial.com',
   'https://www.tiendaonlineoficial.com',
 ];
 
-function getCorsHeaders(origin) {
+function getCorsHeaders(origin: string): CorsHeaders {
   return {
     'Access-Control-Allow-Origin': ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -27,33 +69,33 @@ function getCorsHeaders(origin) {
   };
 }
 
-export async function onRequestPost(context) {
-  const origin = context.request.headers.get('Origin') || '';
-  const corsHeaders = getCorsHeaders(origin);
+export async function onRequestPost(context: PagesFunctionContext): Promise<Response> {
+  const origin: string = context.request.headers.get('Origin') || '';
+  const corsHeaders: CorsHeaders = getCorsHeaders(origin);
 
   try {
-    const req = context.request;
+    const req: Request = context.request;
 
     if (req.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
     // ---- Validar Content-Type ----
-    const contentType = req.headers.get('content-type') || '';
+    const contentType: string = req.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
       return new Response(
-        JSON.stringify({ error: 'Content-Type debe ser application/json' }),
+        JSON.stringify({ error: 'Content-Type debe ser application/json' } as ChatResponseBody),
         { status: 415, headers: corsHeaders }
       );
     }
 
     // ---- Leer body ----
-    let body;
+    let body: ChatRequestBody;
     try {
-      body = await req.json();
+      body = await req.json() as ChatRequestBody;
     } catch {
       return new Response(
-        JSON.stringify({ error: 'Body invalido. Envía JSON válido.' }),
+        JSON.stringify({ error: 'Body invalido. Envía JSON válido.' } as ChatResponseBody),
         { status: 400, headers: corsHeaders }
       );
     }
@@ -63,29 +105,29 @@ export async function onRequestPost(context) {
     // ---- Validar mensaje ----
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
       return new Response(
-        JSON.stringify({ error: 'El campo "message" es obligatorio.' }),
+        JSON.stringify({ error: 'El campo "message" es obligatorio.' } as ChatResponseBody),
         { status: 400, headers: corsHeaders }
       );
     }
 
     if (message.length > 4000) {
       return new Response(
-        JSON.stringify({ error: 'El mensaje no puede superar los 4000 caracteres.' }),
+        JSON.stringify({ error: 'El mensaje no puede superar los 4000 caracteres.' } as ChatResponseBody),
         { status: 413, headers: corsHeaders }
       );
     }
 
     // ---- API Key ----
-    const QWEN_API_KEY = context.env.QWEN_API_KEY;
+    const QWEN_API_KEY: string | undefined = context.env.QWEN_API_KEY;
     if (!QWEN_API_KEY) {
       return new Response(
-        JSON.stringify({ error: 'API key no configurada en el servidor.' }),
+        JSON.stringify({ error: 'API key no configurada en el servidor.' } as ChatResponseBody),
         { status: 503, headers: corsHeaders }
       );
     }
 
     // ---- Construir mensajes para Qwen ----
-    const systemPrompt = {
+    const systemPrompt: QwenMessage = {
       role: 'system',
       content: `Eres ATLAS, un consultor experto en estilo personal, moda masculina y estrategia de tienda para "Urban Style".
 
@@ -105,7 +147,7 @@ Reglas:
     };
 
     // Historial de conversación (opcional, máx 10 mensajes para contexto)
-    const messages = [systemPrompt];
+    const messages: QwenMessage[] = [systemPrompt];
 
     if (Array.isArray(history) && history.length > 0) {
       const recentHistory = history.slice(-10);
@@ -121,9 +163,9 @@ Reglas:
     messages.push({ role: 'user', content: message.trim() });
 
     // ---- Llamar a Qwen Turbo (DashScope OpenAI-compatible) ----
-    let atlasResponse;
+    let atlasResponse: string;
     try {
-      const qwenRes = await fetch(
+      const qwenRes: Response = await fetch(
         'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
         {
           method: 'POST',
@@ -142,17 +184,17 @@ Reglas:
       );
 
       if (!qwenRes.ok) {
-        const errorBody = await qwenRes.text();
+        const errorBody: string = await qwenRes.text();
         console.error('[ATLAS] Qwen API error:', qwenRes.status, errorBody);
         return new Response(
           JSON.stringify({
             error: 'Error temporal con el servicio de IA. Intenta en unos segundos.',
-          }),
+          } as ChatResponseBody),
           { status: 502, headers: corsHeaders }
         );
       }
 
-      const qwenData = await qwenRes.json();
+      const qwenData: QwenResponse = await qwenRes.json() as QwenResponse;
       atlasResponse =
         qwenData.choices?.[0]?.message?.content ||
         'No pude generar una respuesta. Intenta de nuevo.';
@@ -161,10 +203,10 @@ Reglas:
       if (!atlasResponse) {
         atlasResponse = 'No pude generar una respuesta. Intenta de nuevo.';
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('[ATLAS] Fetch error:', err);
       return new Response(
-        JSON.stringify({ error: 'Error de conexión con el servicio de IA.' }),
+        JSON.stringify({ error: 'Error de conexión con el servicio de IA.' } as ChatResponseBody),
         { status: 502, headers: corsHeaders }
       );
     }
@@ -175,22 +217,22 @@ Reglas:
         role: 'assistant',
         content: atlasResponse,
         timestamp: new Date().toISOString(),
-      }),
+      } as ChatResponseBody),
       { status: 200, headers: corsHeaders }
     );
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[ATLAS] Unexpected error:', err);
     return new Response(
-      JSON.stringify({ error: 'Error interno del servidor.' }),
+      JSON.stringify({ error: 'Error interno del servidor.' } as ChatResponseBody),
       { status: 500, headers: corsHeaders }
     );
   }
 }
 
 // ---- Handle OPTIONS (CORS preflight) ----
-export async function onRequestOptions(context) {
-  const origin = context.request.headers.get('Origin') || '';
-  const headers = getCorsHeaders(origin);
-  headers['Access-Control-Max-Age'] = '86400';
-  return new Response(null, { status: 204, headers });
+export async function onRequestOptions(context: PagesFunctionContext): Promise<Response> {
+  const origin: string = context.request.headers.get('Origin') || '';
+  const headers: CorsHeaders = getCorsHeaders(origin);
+  const preflightHeaders: Record<string, string> = { ...headers, 'Access-Control-Max-Age': '86400' };
+  return new Response(null, { status: 204, headers: preflightHeaders });
 }

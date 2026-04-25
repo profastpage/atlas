@@ -1862,17 +1862,30 @@ export default function AtlasApp() {
       });
 
       try {
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: currentSessionId,
-            message: text.trim(),
-            tenantId: currentTenantId,
-            ...(documentText ? { documentText } : {}),
-            ...(imageBase64 ? { imageBase64 } : {}),
-          }),
-        });
+        // ---- AUTO-RETRY: fetch with 1 retry on network failure ----
+        const fetchBody = {
+          sessionId: currentSessionId,
+          message: text.trim(),
+          tenantId: currentTenantId,
+          ...(documentText ? { documentText } : {}),
+          ...(imageBase64 ? { imageBase64 } : {}),
+        };
+        let res: Response;
+        try {
+          res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(fetchBody),
+          });
+        } catch (fetchErr) {
+          console.warn('[CEREBRO] Fetch failed, retrying in 2s:', fetchErr);
+          await new Promise(r => setTimeout(r, 2000));
+          res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(fetchBody),
+          });
+        }
 
         // ---- CHECK FOR HTTP ERRORS FIRST ----
         if (!res.ok) {
