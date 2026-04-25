@@ -8,6 +8,11 @@
 // DB operations to crash with "XMLHttpRequest is not defined".
 //
 // FIX: Polyfill XMLHttpRequest before any route handlers execute.
+//
+// WARNING: Cloudflare Workers do NOT support setInterval, setImmediate,
+// process.nextTick, or any Node.js timer APIs at module scope.
+// Only setTimeout (within request handlers) and request-scoped APIs are supported.
+// Using setInterval at module scope WILL crash the entire worker → 500 on ALL routes.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { NextMiddleware } from 'next/server';
@@ -27,6 +32,8 @@ if (typeof globalThis.XMLHttpRequest === 'undefined') {
 // ========================================
 // IP-BASED RATE LIMITER (Edge-compatible in-memory Map)
 // 20 requests per minute per IP on /api/chat
+// Cleanup is LAZY (on each checkRateLimit call) — NO setInterval needed.
+// Cloudflare Workers do not support setInterval at module scope.
 // ========================================
 interface RateLimitEntry {
   timestamps: number[];
@@ -36,8 +43,11 @@ const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 20;
 const rateLimitMap = new Map<string, RateLimitEntry>();
 
-// Periodically clean up stale entries to prevent memory leaks
-setInterval(() => {
+// Lazy cleanup threshold — clean map when it grows beyond this size
+const CLEANUP_THRESHOLD = 200;
+
+function lazyCleanup(): void {
+  if (rateLimitMap.size <= CLEANUP_THRESHOLD) return;
   const now = Date.now();
   for (const [key, entry] of rateLimitMap.entries()) {
     entry.timestamps = entry.timestamps.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
@@ -45,7 +55,7 @@ setInterval(() => {
       rateLimitMap.delete(key);
     }
   }
-}, 30_000);
+}
 
 function getClientIP(request: NextRequest): string {
   return (
@@ -57,6 +67,9 @@ function getClientIP(request: NextRequest): string {
 }
 
 function checkRateLimit(ip: string): { allowed: boolean; remaining: number; resetIn: number } {
+  // Lazy cleanup: only runs when map grows beyond threshold (Edge-safe, no setInterval)
+  lazyCleanup();
+
   const now = Date.now();
   let entry = rateLimitMap.get(ip);
 
