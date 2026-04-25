@@ -9,8 +9,12 @@ export const runtime = 'edge';
 import { NextRequest, NextResponse } from 'next/server';
 import { createChatCompletion, streamChatCompletion, extractPdfStructured, describeImage } from '@/lib/ai-client';
 import {
+  ATLAS_STATIC_PROMPT,
   ATLAS_SYSTEM_PROMPT,
   ATLAS_SYSTEM_PROMPT_EXPANDED,
+  ATLAS_FINANCIAL_MODULE,
+  ATLAS_CINEMA_MODULE,
+  buildAtlasUserContext,
   WELCOME_MESSAGE_NEW,
   SAFETY_RESPONSE,
   SAFETY_KEYWORDS,
@@ -122,16 +126,18 @@ export async function POST(request: NextRequest) {
 
     // ---- PASO 2.3: FINANCIAL DATA — Crypto + Gold + Stocks (real-time) ----
     let financialContext = '';
+    let hasFinancialData = false;
     try {
       if (message && !documentText && !imageBase64 && isFinancialQuery(message)) {
         console.log('[CEREBRO] Financial query detected:', message.substring(0, 60));
         const financialData = await Promise.race([
-          fetchAllFinancialData(),
+          fetchAllFinancialData(undefined, message),
           new Promise<{ crypto: []; gold: null; indices: []; context: '' }>(r =>
             setTimeout(() => r({ crypto: [], gold: null, indices: [], context: '' }), 8000)
           ),
         ]);
         financialContext = financialData.context;
+        hasFinancialData = !!financialData.context;
         console.log(`[CEREBRO] Financial data: ${financialData.crypto.length} crypto, gold: ${financialData.gold ? 'yes' : 'no'}, ${financialData.indices.length} indices`);
       }
     } catch (financialErr) {
@@ -141,6 +147,7 @@ export async function POST(request: NextRequest) {
     // ---- PASO 2.4: RESEARCH — Cinema-aware (TMDb+OMDB) + Web ----
     let autoResearchSources: AutoSource[] = [];
     let autoResearchContext = '';
+    let hasCinemaData = false;
     try {
       if (message && !documentText && !imageBase64) {
         console.log('[CEREBRO] Research check for:', message.substring(0, 60));
@@ -156,6 +163,7 @@ export async function POST(request: NextRequest) {
         if (cinemaResult.needed) {
           autoResearchSources = cinemaResult.sources;
           autoResearchContext = cinemaResult.contextBlock;
+          hasCinemaData = true;
           console.log(`[CEREBRO] Cinema research: ${cinemaResult.movies.length} movies found`);
         } else {
           // General auto-research (factual questions, football, nutrition, etc.)
@@ -288,30 +296,30 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
       }
     }
 
-    // ---- PASO 3: CONSTRUIR MENSAJES ----
-    const basePrompt = ATLAS_SYSTEM_PROMPT;
-    let systemPrompt = basePrompt
-      .replace('{user_name}', userName || 'Desconocido')
-      .replace(
-        '{context_summary}',
-        contextSummary || 'Sin información previa. Es un nuevo usuario.'
-      );
+    // ---- PASO 3: CONSTRUIR MENSAJES (Token-Optimized) ----
+    // Structure: [STATIC PROMPT (cached)] + [USER CONTEXT (dynamic)] + [CONDITIONAL MODULES] + [DYNAMIC DATA]
+    // The static prompt is identical for ALL users → OpenRouter caches this prefix → cheaper & faster
+    let systemPrompt = ATLAS_STATIC_PROMPT;
 
-    // Inject user's city into system prompt if available (identity persistence)
-    if (userCity) {
-      systemPrompt += `\n\n[CIUDAD DEL USUARIO] El usuario vive en **${userCity}**. Usa esta información naturalmente en la conversación (por ejemplo, cuando hables de clima, horarios, eventos locales, referencias geográficas). No le preguntes su ciudad — ya la sabes. Inclúyela como contexto conocido.`;
+    // Append user context (dynamic, short ~200 chars)
+    systemPrompt += '\n\n' + buildAtlasUserContext(userName || 'Desconocido', contextSummary || 'Sin informacion previa. Es un nuevo usuario.', userCity);
+
+    // Conditional modules: only inject when relevant data exists (saves ~500 tokens for irrelevant queries)
+    if (hasFinancialData) {
+      systemPrompt += '\n\n' + ATLAS_FINANCIAL_MODULE;
+    }
+    if (hasCinemaData) {
+      systemPrompt += '\n\n' + ATLAS_CINEMA_MODULE;
     }
 
     // If document was processed by Llama, add Qwen-specific instructions
     if (documentText) {
-      const docPrompt = `\n\n[CONTEXTO DE DOCUMENTO ADJUNTO]\nEl usuario subió un documento. Los datos extraidos ya estan incluidos en el mensaje del usuario. Responde como Atlas de manera directa y estratégica basandote en los datos extraidos. Manten tu tono habitual, usa vinetas y negritas.`;
-      systemPrompt += docPrompt;
+      systemPrompt += '\n\n[CONTEXTO DE DOCUMENTO ADJUNTO]\nEl usuario subio un documento. Los datos extraidos ya estan incluidos en el mensaje del usuario. Responde como Atlas de manera directa y estrategica basandote en los datos extraidos. Manten tu tono habitual, usa viñetas y negritas.';
     }
 
     // If image was described by Gemini, add context instructions
     if (imageBase64) {
-      const imgPrompt = `\n\n[CONTEXTO DE IMAGEN ADJUNTA]\nEl usuario subió una imagen. La descripción generada ya esta incluida en el mensaje del usuario. Responde como Atlas de manera directa basandote en la descripción. Manten tu tono habitual.`;
-      systemPrompt += imgPrompt;
+      systemPrompt += '\n\n[CONTEXTO DE IMAGEN ADJUNTA]\nEl usuario subio una imagen. La descripcion generada ya esta incluida en el mensaje del usuario. Responde como Atlas de manera directa basandote en la descripcion. Manten tu tono habitual.';
     }
 
     // If financial data was fetched, inject into system prompt (HIGH PRIORITY for markets)
@@ -335,26 +343,23 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
     // ---- MEMORY EFFICIENCY: Limit history to avoid excessive token usage ----
     // Load only the last MAX_HISTORIAL messages (most recent) for LLM context.
     // System prompt is always preserved separately — never truncated.
-
-    // Count total messages to detect sliding window
-    let totalMessageCount = 0;
-    try {
-      const countResult = await db.execute(
-        `SELECT COUNT(*) as cnt FROM Message WHERE sessionId = ?`,
-        [sessionId]
-      );
-      totalMessageCount = Number(countResult.rows[0]?.cnt || 0);
-    } catch {}
+    // Optimization: Fetch MAX_HISTORIAL + 1 to detect older messages (eliminates separate COUNT query)
 
     let history: Array<{ role: string; content: string }> = [];
+    let hasOlderMessages = false;
     try {
-      // Get last MAX_HISTORIAL messages (most recent first), then reverse for chronological order
       const result = await db.execute(
         `SELECT role, content FROM Message WHERE sessionId = ? ORDER BY timestamp DESC LIMIT ?`,
-        [sessionId, MAX_HISTORIAL]
+        [sessionId, MAX_HISTORIAL + 1]
       );
-      // Reverse to chronological order (oldest first) for proper LLM context
-      history = result.rows.map((m) => ({
+      const rows = result.rows;
+      // If we got more than MAX_HISTORIAL, there are older messages
+      if (rows.length > MAX_HISTORIAL) {
+        hasOlderMessages = true;
+      }
+      // Take only MAX_HISTORIAL, reverse to chronological order (oldest first)
+      const slicedRows = rows.length > MAX_HISTORIAL ? rows.slice(0, MAX_HISTORIAL) : rows;
+      history = slicedRows.map((m) => ({
         role: m.role as string,
         content: m.content as string,
       })).reverse();
@@ -363,9 +368,8 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
     }
 
     // ---- SLIDING WINDOW SUMMARY: Inform LLM about older messages not in context ----
-    if (totalMessageCount > MAX_HISTORIAL) {
-      const olderCount = totalMessageCount - MAX_HISTORIAL;
-      systemPrompt += `\n\n[CONTEXTO DE MENSAJES ANTERIORES]\nEl usuario y tú tuvieron ${olderCount} mensajes adicionales en esta conversación antes de los mensajes visibles. El tema principal de esa parte era: conversación previa más antigua (resumen no disponible). Usa esta información para mantener coherencia contextual.`;
+    if (hasOlderMessages) {
+      systemPrompt += '\n\n[CONTEXTO DE MENSAJES ANTERIORES]\nEl usuario y tu tuvieron mensajes adicionales antes de los visibles. Usa esta informacion para mantener coherencia contextual.';
     }
 
     const llmMessages: Array<{ role: string; content: string }> = [

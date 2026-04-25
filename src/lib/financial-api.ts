@@ -53,14 +53,14 @@ const SYMBOL_TO_ID: Record<string, string> = Object.fromEntries(
   Object.entries(CRYPTO_MAP).map(([id, { symbol }]) => [symbol.toLowerCase(), id])
 );
 
-// Crypto por defecto si no se especifican símbolos
-const DEFAULT_CRYPTO_IDS = Object.keys(CRYPTO_MAP).join(',');
+// Crypto por defecto si no se especifican símbolos (solo los 3 mas consultados para ahorrar tokens)
+const DEFAULT_CRYPTO_IDS = 'bitcoin,ethereum,solana';
 
 // Índices bursátiles a consultar
-const STOCK_INDICES: Array<{ name: string; symbol: string; yahooSymbol: string; url: string }> = [
-  { name: 'S&P 500',    symbol: 'SPX',    yahooSymbol: '%5EGSPC', url: 'https://finance.yahoo.com/quote/%5EGSPC/' },
-  { name: 'Nasdaq 100', symbol: 'NDX',    yahooSymbol: '%5ENDX',  url: 'https://finance.yahoo.com/quote/%5ENDX/' },
-  { name: 'Dow Jones',  symbol: 'DJI',    yahooSymbol: '%5EDJI',  url: 'https://finance.yahoo.com/quote/%5EDJI/' },
+const STOCK_INDICES: Array<{ name: string; symbol: string; yahooSymbol: string; url: string; keywords: string[] }> = [
+  { name: 'S&P 500',    symbol: 'SPX',    yahooSymbol: '%5EGSPC', url: 'https://finance.yahoo.com/quote/%5EGSPC/', keywords: ['sp500', 's&p', 'sp 500', 'standard & poors'] },
+  { name: 'Nasdaq 100', symbol: 'NDX',    yahooSymbol: '%5ENDX',  url: 'https://finance.yahoo.com/quote/%5ENDX/', keywords: ['nasdaq', 'ndx', 'tech 100'] },
+  { name: 'Dow Jones',  symbol: 'DJI',    yahooSymbol: '%5EDJI',  url: 'https://finance.yahoo.com/quote/%5EDJI/', keywords: ['dow', 'dow jones', 'industrial', 'dji'] },
 ];
 
 // Timeout estándar para todas las llamadas externas (5 segundos)
@@ -435,15 +435,28 @@ export interface FinancialData {
 
 /**
  * Obtiene todos los datos financieros en paralelo y construye el contexto.
+ * Smart fetching: solo indices si usuario los menciona, solo criptos mencionadas o default 3.
  * Ideal para llamar una sola vez por request cuando se detecta una consulta financiera.
  */
+/** Detect if user message mentions stock indices (avoid unnecessary API calls) */
+const INDEX_KEYWORDS = ['bolsa', 'stock', 'mercado', 'sp500', 's&p', 'nasdaq', 'dow jones', 'dji', 'indice', 'accion', 'shares'];
+
+function messageMentionsIndices(message: string): boolean {
+  const lower = message.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return INDEX_KEYWORDS.some(kw => lower.includes(kw));
+}
+
 export async function fetchAllFinancialData(
-  cryptoSymbols?: string[]
+  cryptoSymbols?: string[],
+  userMessage?: string,
 ): Promise<FinancialData> {
+  // Only fetch indices if user mentions stock-related keywords (saves ~2s for pure crypto queries)
+  const shouldFetchIndices = userMessage ? messageMentionsIndices(userMessage) : true;
+
   const [crypto, gold, indices] = await Promise.all([
     fetchCryptoPrices(cryptoSymbols),
     fetchGoldPrice(),
-    fetchStockIndices(),
+    shouldFetchIndices ? fetchStockIndices() : Promise.resolve([]),
   ]);
 
   const context = buildFinancialContext(crypto, gold, indices);

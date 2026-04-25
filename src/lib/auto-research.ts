@@ -187,7 +187,7 @@ async function searchSearXNG(query: string, maxResults = 5): Promise<AutoSource[
           'Accept': 'application/json',
           'User-Agent': 'AtlasBot/2.0 (Research Agent)',
         },
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(5000),
       });
 
       if (!res.ok) continue;
@@ -304,7 +304,7 @@ async function searchDuckDuckGoLite(query: string, maxResults = 5): Promise<Auto
   try {
     const ddgRes = await fetch(ddgUrl, {
       headers: SEARCH_HEADERS,
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(5000),
     });
 
     if (!ddgRes.ok) return [];
@@ -387,7 +387,7 @@ async function searchDuckDuckGo(query: string, maxResults = 5): Promise<AutoSour
   try {
     const ddgRes = await fetch(ddgUrl, {
       headers: SEARCH_HEADERS,
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(5000),
     });
 
     if (!ddgRes.ok) return [];
@@ -452,7 +452,7 @@ async function searchBrave(query: string, maxResults = 5): Promise<AutoSource[]>
   try {
     const res = await fetch(url, {
       headers: SEARCH_HEADERS,
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(5000),
     });
 
     if (!res.ok) return [];
@@ -499,7 +499,7 @@ async function searchBing(query: string, maxResults = 5): Promise<AutoSource[]> 
   try {
     const res = await fetch(url, {
       headers: SEARCH_HEADERS,
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(5000),
     });
 
     if (!res.ok) return [];
