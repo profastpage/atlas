@@ -58,6 +58,10 @@ const RESEARCH_TRIGGER_PATTERNS = [
   // Teams and players
   /\b(real madrid|barcelona|atletico|manchester city|liverpool|arsenal|chelsea|bayern|psg|juventus|inter|milan|river plate|boca juniors|alianza lima|universitario|sporting cristal|flamengo|palmeiras)\b/i,
   /\b(messi|ronaldo|cristiano|mbappe|haaland|vinicius|bellingham|rodri|salah|neymar|de bruyne|pedri|gavi|valverde|ollie watkins|saka|palmer|isak|lewandowski)\b/i,
+  // Cinema / Movies — triggers auto-research for real-time scores, reviews, testimonials
+  /\b(pelicula|película|cine|film|movie|peliculas|películas|peliculon|taquillera|estreno|cartelera|direct[oa]r?|actor|actriz|guionista|productora|oscar|premio cannes|festival de cine|sundance|venecia|berlin)\b/i,
+  /\b(netflix|hbo|max|disney\+?|prime video|apple tv|paramount\+?|peacock|crunchyroll|stan|hulu|mubi|filmaffinity|imdb|rotten tomatoes|letterboxd|metacritic)\b/i,
+  /\b(que pelicula|que peli|recomend[ae]s? pelicula|mejores peliculas|peliculas del (ano|2024|2025|2026)|estrenos (del mes|de |de este|2024|2025|2026)|vale la pena ver|que ver en|pelicula de (terror|accion|comedia|drama|ciencia ficcion|thriller|romance|animacion|fantasia|documental))\b/i,
 ];
 
 export function needsAutoResearch(message: string): boolean {
