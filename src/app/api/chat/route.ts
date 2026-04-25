@@ -22,6 +22,14 @@ import { performAutoResearch, type AutoSource } from '@/lib/auto-research';
 import { fetchCinemaData } from '@/lib/cinema-api';
 
 // ========================================
+// MAX_HISTORIAL — Optimizacion de memoria
+// Solo envia los ultimos N mensajes al modelo LLM.
+// El system prompt (instrucciones) siempre se mantiene completo.
+// Esto reduce el consumo de tokens en conversaciones largas.
+// ========================================
+const MAX_HISTORIAL = 10;
+
+// ========================================
 // POST /api/chat — STREAMING (SSE) + JSON fallback
 // ========================================
 
@@ -301,18 +309,20 @@ ${message || 'Describe lo que ves en esta imagen.'}`;
     systemPrompt += buildTimeInjection();
 
     // ---- MEMORY EFFICIENCY: Limit history to avoid excessive token usage ----
-    // Load recent messages + use condensed summary for older context
+    // Load only the last MAX_HISTORIAL messages (most recent) for LLM context.
+    // System prompt is always preserved separately — never truncated.
     let history: Array<{ role: string; content: string }> = [];
     try {
-      // Get last 30 messages for actual conversation context
+      // Get last MAX_HISTORIAL messages (most recent first), then reverse for chronological order
       const result = await db.execute(
-        `SELECT role, content FROM Message WHERE sessionId = ? ORDER BY timestamp ASC LIMIT 30`,
-        [sessionId]
+        `SELECT role, content FROM Message WHERE sessionId = ? ORDER BY timestamp DESC LIMIT ?`,
+        [sessionId, MAX_HISTORIAL]
       );
+      // Reverse to chronological order (oldest first) for proper LLM context
       history = result.rows.map((m) => ({
         role: m.role as string,
         content: m.content as string,
-      }));
+      })).reverse();
     } catch (dbError) {
       console.error('[CEREBRO] History read error:', dbError);
     }
@@ -416,17 +426,17 @@ async function handleExpandMode(
       contextSummary || 'Sin información previa. Es un nuevo usuario.'
     );
 
-  // Load chat history (last 30 messages)
+  // Load chat history (last MAX_HISTORIAL messages for LLM context)
   let history: Array<{ role: string; content: string }> = [];
   try {
     const result = await db.execute(
-      `SELECT role, content FROM Message WHERE sessionId = ? ORDER BY timestamp ASC LIMIT 30`,
-      [sessionId]
+      `SELECT role, content FROM Message WHERE sessionId = ? ORDER BY timestamp DESC LIMIT ?`,
+      [sessionId, MAX_HISTORIAL]
     );
     history = result.rows.map((m) => ({
       role: m.role as string,
       content: m.content as string,
-    }));
+    })).reverse();
   } catch {}
 
   const llmMessages: Array<{ role: string; content: string }> = [
