@@ -18,7 +18,8 @@ import {
 import { db } from '@/lib/sql';
 import { getSupabaseServer } from '@/lib/supabase';
 import { enrichContext, buildContextInjection, buildTimeInjection } from '@/lib/context-api';
-import { performAutoResearch, AutoSource } from '@/lib/auto-research';
+import { performAutoResearch, type AutoSource } from '@/lib/auto-research';
+import { fetchCinemaData } from '@/lib/cinema-api';
 
 // ========================================
 // POST /api/chat — STREAMING (SSE) + JSON fallback
@@ -110,28 +111,44 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ---- PASO 2.4: AUTO-RESEARCH — Busca web para preguntas factuales ----
+    // ---- PASO 2.4: RESEARCH — Cinema-aware (TMDb+OMDB) + Web ----
     let autoResearchSources: AutoSource[] = [];
     let autoResearchContext = '';
     try {
       if (message && !documentText && !imageBase64) {
-        console.log('[CEREBRO] Auto-research check for:', message.substring(0, 60));
-        const researchResult = await Promise.race([
-          performAutoResearch(message),
-          new Promise<{ needed: false; sources: []; contextBlock: '' }>(r =>
-            setTimeout(() => r({ needed: false, sources: [], contextBlock: '' }), 6000)
+        console.log('[CEREBRO] Research check for:', message.substring(0, 60));
+
+        // Try cinema-specific research first (TMDb + OMDB + enhanced web search)
+        const cinemaResult = await Promise.race([
+          fetchCinemaData(message),
+          new Promise<{ needed: false; contextBlock: ''; sources: []; movies: [] }>(r =>
+            setTimeout(() => r({ needed: false, contextBlock: '', sources: [], movies: [] }), 10000)
           ),
         ]);
-        if (researchResult.needed) {
-          autoResearchSources = researchResult.sources;
-          autoResearchContext = researchResult.contextBlock;
-          console.log('[CEREBRO] Auto-research found', researchResult.sources.length, 'sources');
+
+        if (cinemaResult.needed) {
+          autoResearchSources = cinemaResult.sources;
+          autoResearchContext = cinemaResult.contextBlock;
+          console.log(`[CEREBRO] Cinema research: ${cinemaResult.movies.length} movies found`);
         } else {
-          console.log('[CEREBRO] Auto-research not needed for this message');
+          // General auto-research (factual questions, football, nutrition, etc.)
+          const researchResult = await Promise.race([
+            performAutoResearch(message),
+            new Promise<{ needed: false; sources: []; contextBlock: '' }>(r =>
+              setTimeout(() => r({ needed: false, sources: [], contextBlock: '' }), 6000)
+            ),
+          ]);
+          if (researchResult.needed) {
+            autoResearchSources = researchResult.sources;
+            autoResearchContext = researchResult.contextBlock;
+            console.log('[CEREBRO] Auto-research found', researchResult.sources.length, 'sources');
+          } else {
+            console.log('[CEREBRO] No research needed');
+          }
         }
       }
     } catch (researchErr) {
-      console.warn('[CEREBRO] Auto-research failed (continuing without it):', researchErr);
+      console.warn('[CEREBRO] Research failed (continuing without it):', researchErr);
     }
 
     // ---- PASO 2.5: CONTEXTO AMBIENTAL (clima + noticias) + CIUDAD DEL USUARIO ----
