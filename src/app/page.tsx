@@ -3618,9 +3618,9 @@ export default function AtlasApp() {
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {/* Desktop: center messages in a max-w-3xl column */}
-        <div className="max-w-3xl mx-auto flex flex-col gap-3">
+        <div className="max-w-3xl mx-auto flex flex-col gap-3 min-h-full">
         {messages.length === 0 && !isLoading && (
-          <div className="flex flex-col items-center justify-center h-full text-center px-6">
+          <div className="flex flex-col items-center justify-center min-h-full text-center px-6 py-8">
             {/* Wireframe Globe — CSS/SVG Animated */}
             <div className="atlas-globe-container w-24 h-24 sm:w-28 sm:h-28 mb-6 relative">
               {/* Enhanced outer glow — soft emerald aura */}
